@@ -1,0 +1,81 @@
+.count {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.description {
+  margin-top: 8px;
+  color: var(--muted);
+}
+.row {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.thumb {
+  position: relative;
+  width: 150px;
+  aspect-ratio: 4 / 3;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--tint);
+}
+.thumb :global(.picture) {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+.detailRows {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.detailRow span {
+  color: var(--muted);
+}
+.hoursGrid {
+  display: grid;
+  gap: 10px;
+}
+.hoursRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.inlineNote {
+  color: var(--muted);
+  font-size: 14px;
+}
+@media (max-width: 700px) {
+  .row {
+    flex-direction: column;
+  }
+  .thumb {
+    width: 100%;
+  }
+  .hoursRow {
+    grid-template-columns: 1fr;
+  }
+}

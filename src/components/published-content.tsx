@@ -1,0 +1,173 @@
+"use client";
+import Link from "next/link";
+import { useState } from "react";
+import { copy, demoMode, bookingHref } from "@/lib/content";
+import { useDemoStore } from "@/lib/mock-store";
+import { promoActive } from "@/lib/rules";
+import { Action, Empty, Picture, Section } from "./ui";
+import { BrandText } from "./brand-text";
+import { PublicForm } from "./forms/public-form";
+import { Dialog } from "./dialog";
+export function PublishedBlog() {
+  const store = useDemoStore();
+  const posts = store.content.filter((c) => c.module === "Blog" && c.published);
+  return posts.length ? (
+    <div className="grid three">
+      {posts.map((p) => (
+        <Link
+          href={`/blog/${p.published!.slug}`}
+          className="service-card"
+          key={p.id}
+        >
+          <Picture
+            photo={
+              p.published!.image
+                ? { src: p.published!.image, alt: p.published!.alt }
+                : undefined
+            }
+          />
+          <div className="card-body">
+            <h2>{p.published!.title}</h2>
+            <p>{p.published!.summary}</p>
+            <span className="text-link">Read Article ↗</span>
+          </div>
+        </Link>
+      ))}
+    </div>
+  ) : (
+    <Empty title={copy("12", "Empty heading")} body={copy("12", "Empty body")}>
+      <div className="actions">
+        <Action href="/services">Explore Services</Action>
+        <Action href="/contact" secondary>
+          Contact the Team
+        </Action>
+      </div>
+    </Empty>
+  );
+}
+export function PublishedArticle({ slug }: { slug: string }) {
+  const store = useDemoStore();
+  const post = store.content.find(
+    (c) => c.module === "Blog" && c.published?.slug === slug,
+  )?.published;
+  if (!post)
+    return (
+      <Empty
+        title="We couldn’t find that page"
+        body="The article is unpublished or unavailable."
+      >
+        <Action href="/blog">All Articles</Action>
+      </Empty>
+    );
+  return (
+    <article className="narrow article">
+      <Link href="/blog" className="back-link">
+        ← All Articles
+      </Link>
+      <h1>
+        <BrandText text={post.title} />
+      </h1>
+      <p className="lead">
+        <BrandText text={post.summary} />
+      </p>
+      <Picture
+        photo={post.image ? { src: post.image, alt: post.alt } : undefined}
+      />
+      {post.body.split("\n\n").map((p, i) => (
+        <p key={i}>
+          <BrandText text={p} />
+        </p>
+      ))}
+      <Action href="/services" secondary>
+        Explore Services
+      </Action>
+    </article>
+  );
+}
+export function PublishedReviews() {
+  const store = useDemoStore();
+  const reviews = store.leads.filter(
+    (l) =>
+      l.kind === "review" &&
+      l.status === "approved" &&
+      l.fields.consent === "yes",
+  );
+  return reviews.length ? (
+    <div className="review-cards">
+      {reviews.map((r) => (
+        <blockquote key={r.id}>
+          <p>{r.fields.review}</p>
+          <footer>
+            {r.fields.name}
+            {r.fields.rating && ` · ${r.fields.rating}/5`}
+          </footer>
+        </blockquote>
+      ))}
+    </div>
+  ) : (
+    <Empty title={copy("15", "Empty")} />
+  );
+}
+export function Newsletter() {
+  const store = useDemoStore();
+  if (!store.settings.newsletter) return null;
+  return (
+    <Section
+      className="newsletter"
+      title={copy("16", "Heading")}
+      description={copy("16", "Body")}
+    >
+      <PublicForm kind="newsletter" />
+    </Section>
+  );
+}
+export function Promotion({ force = false }: { force?: boolean }) {
+  const store = useDemoStore();
+  const [open, setOpen] = useState(false);
+  const approved = store.content.find(
+    (c) =>
+      c.module === "Promotions" &&
+      c.published &&
+      c.extra.enabled === "yes" &&
+      c.extra.yearConfirmed === "yes" &&
+      promoActive(true, c.extra.start, c.extra.end),
+  );
+  if (!force && !approved) return null;
+  return (
+    <section className="promotion">
+      <span className="eyebrow">Wash, Ironing & Fold</span>
+      <h2>{copy("14", "Heading")}</h2>
+      <p>{copy("14", "Body")}</p>
+      <p>{copy("14", "Terms")}</p>
+      <div className="actions">
+        <Action href={bookingHref("wash-ironing-fold")}>
+          Book Wash, Ironing & Fold
+        </Action>
+        <button className="button secondary" onClick={() => setOpen(true)}>
+          View Offer Details
+        </button>
+      </div>
+      {force && demoMode && (
+        <small>
+          Preview only. Offer activation requires client confirmation.
+        </small>
+      )}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={copy("14", "Heading")}
+      >
+        <p>{copy("14", "Body")}</p>
+        <h3>{copy("14", "Terms heading")}</h3>
+        <p>{copy("14", "Terms")}</p>
+        <p>{copy("14", "Supporting line")}</p>
+        <Action href={bookingHref("wash-ironing-fold")}>
+          Book Wash, Ironing & Fold
+        </Action>
+        <button className="text-link" onClick={() => setOpen(false)}>
+          Not Now
+        </button>
+      </Dialog>
+    </section>
+  );
+}
