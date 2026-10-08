@@ -105,7 +105,8 @@ The landing experience, built from these sections top to bottom.
 
 **Hero**
 - **Desktop (with motion allowed)**: a three-chapter scrolling story. Scrolling pins the hero and moves through "Opening", "Care in Motion" and "Collection & Drop-off", with a progress indicator.
-- **Mobile / reduced motion / short screens**: a **static hero** is shown instead — a single, calmer hero with the brand line, intro, quick facts (walk-ins welcome, three branches, pickup 7am–5pm) and calls to action. This is automatic and is why phones do not get the long scroll animation.
+- **Mobile (with motion allowed)**: the same three-chapter scrolling story is shown, with the layout stacked for a narrow screen.
+- **Reduced motion**: a **static hero** is shown instead — a single, calmer hero with the brand line, intro, quick facts (walk-ins welcome, three branches, pickup 7am–5pm) and calls to action.
 
 **Services** — a three-column card grid on desktop; on mobile it becomes the **swipe track** with a peek of the next card and dots. A "View All Services" button follows.
 
@@ -455,7 +456,7 @@ This is the most important section for testing, because the links differ by modu
 ## 11. Suggested test checklist
 
 ### Public
-- [ ] Home hero looks calm and correct on a phone (static hero) and animates on a wide desktop screen.
+- [ ] Home hero scrolls through all three chapters on a phone and a wide desktop screen; reduced-motion settings show the static hero.
 - [ ] Home services and the Services page swipe on mobile with a next-card peek and dots; they are a grid on desktop.
 - [ ] Home "A closer look" and the Gallery page show a peek slider with arrows on desktop; captions are hidden on mobile and visible in the image viewer.
 - [ ] Book a Pickup: complete all four steps; try an invalid phone, a past date, and Express today after the cutoff.

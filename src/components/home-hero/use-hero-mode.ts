@@ -3,8 +3,7 @@ import { useEffect, useLayoutEffect, useState } from "react";
 
 export type HeroMode = "animated" | "static";
 
-const STATIC_QUERY =
-  "(prefers-reduced-motion: reduce), (max-width: 900px) and (max-height: 800px), (min-width: 901px) and (max-height: 560px)";
+const STATIC_QUERY = "(prefers-reduced-motion: reduce)";
 
 const useIsoLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
