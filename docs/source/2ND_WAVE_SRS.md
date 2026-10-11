@@ -6,7 +6,7 @@ Companions: final AI Technical PRD v1.0, CONTENT.md v1.0, Design.md. Prior SRS v
 
 ## 1. Actors and system boundary
 
-Anonymous visitor submits pickup, contact, commercial quote, review or consented newsletter interest. One invited admin controls private records/content. Supabase authenticates admin and stores data. R2 stores approved public media and private photos. Next server validates submissions and mediates trusted operations. WhatsApp opens manual drafts; no outbound API/send receipt. Walk-ins occur at branches, outside online booking workflow. All operational scheduling uses Africa/Accra.
+Anonymous visitor submits pickup, contact, commercial quote, review or consented newsletter interest. Two invited administrator roles control private records/content: `full_admin` (entire console) and `operational_admin` (bookings and reviews only) — see PRD §2a, formally authorised 10 October 2026. Supabase authenticates admins (email/password, cookie-based sessions, invite-only accounts, recovery through Supabase Auth) and stores data. R2 stores approved public media and private photos. Next server validates submissions and mediates trusted operations. WhatsApp opens manual drafts; no outbound API/send receipt. Walk-ins occur at branches, outside online booking workflow. All operational scheduling uses Africa/Accra.
 
 ## 2. Public route coverage
 
@@ -48,7 +48,7 @@ Private routes: /admin/login and recovery, /admin, /admin/bookings, /admin/booki
 | BOOK-05 | P0 | Pending confirmation result, reference/copy, editable draft preview, main recipient 233595224280, open/copy/retry. Closing/unavailable WhatsApp cannot delete booking; no sent/delivered claims. |
 | BOOK-06 | P0 | Pause checked server-side including stale open forms; refusal preserves input and contact alternative. Saved idempotent replay still returns prior result. |
 | PHOTO-01 | P0 | Maximum three private JPEG/PNG/WebP photos, each at most 5,000,000 bytes (decimal 5MB). Validate actual bytes, ownership/session, size/count and processing outcome before linking. Unsupported files rejected; booking can continue without photos. |
-| ADM-01 | P0 | One invited admin only. No public signup/self-promotion. Every private read/write verifies session and admin membership; RLS and grants independently deny guests/ordinary authenticated users. |
+| ADM-01 | P0 | Invited administrators only, in one of two roles: `full_admin` or `operational_admin` (PRD §2a). No public signup/self-promotion. Role is resolved server-side from the session; client-supplied role claims are never trusted. Every private read/write verifies session and role at entry; RLS and grants independently deny guests, ordinary authenticated users and out-of-scope roles. **Foundation implemented 10 October 2026 (Sprint 1A, code complete — awaiting hosted configuration):** Supabase Auth email/password with persistent cookie sessions; accounts created only by a trusted administrator (no `/admin/signup`); identity re-verified with `auth.getUser()` and the role read from `admin_profiles` on every protected render and privileged server call; a missing, disabled or unrecognised profile resolves to no access; missing configuration fails closed; user-visible authentication errors do not reveal whether an address belongs to an administrator. |
 | ADM-02 | P0 | Search/filter/list/detail, private photo access, assign branch, notes, contact outcome and history. Version conflict prevents silent overwrite. Customer notes distinct from private internal notes. |
 | ADM-03 | P0 | Confirm requires assigned branch, agreed pickup timestamp, fee/currency/contact outcome/confirmation note; nonnegative fee; zero needs explicit reason. Missing values rejected atomically. |
 | ADM-04 | P0 | Allowed lifecycle transitions enforced/audited with actor/time; cancellation reason required. Terminal correction deliberate and audited. No customer-controlled status/assignment/fee fields. |
@@ -95,7 +95,7 @@ Migrations are versioned, reversible where practical and reviewed before product
 
 | Entity | Core fields / constraints |
 | --- | --- |
-| admin_profiles | auth user PK/FK, authorised role; provisioned only by trusted workflow |
+| admin_profiles | auth user PK/FK, role constrained to full_admin or operational_admin (no default granting elevated access); disabled_at; provisioned only by trusted workflow. RLS: enabled and non-permissive — anonymous denied by grant and policy, an authenticated administrator reads only their own row, a Full Admin may read all rows, and no client role may insert, update or delete; role helpers are `SECURITY DEFINER` with a pinned `search_path` and execution granted only to `authenticated` |
 | site_settings | validated public contacts/rules/feature flags, version, timestamps; secrets excluded |
 | locations | UUID, unique slug, title, primary flag, E.164 phone, optional verified map/directions, opening-hour data with nullable unknown days, publish revision |
 | services | UUID, unique approved slug, title, booking kind laundry/modifier/information/commercial, order/feature fields, revision links |
@@ -120,7 +120,7 @@ Indexes: unique reference/submission scope+key; bookings(status, requested_date)
 
 ## 7. Access-control matrix
 
-| Resource | Anonymous | Ordinary authenticated user | Invited admin | Trusted server/job |
+| Resource | Anonymous | Ordinary authenticated user | Admin (role-scoped) | Trusted server/job |
 | --- | --- | --- | --- | --- |
 | Published safe content | Read | Read | Read/manage | Controlled publish |
 | Draft content/policies | Denied | Denied | Read/manage | Controlled |
@@ -132,6 +132,10 @@ Indexes: unique reference/submission scope+key; bookings(status, requested_date)
 | Admin role/site secrets | Denied | Denied | No arbitrary role grant/secrets exposure | Trusted provisioning/config |
 | Public marketing R2 | Approved read | Approved read | Scoped management | Validated upload |
 | Private R2 | Denied | Denied | Short-lived authorised read | Scoped upload/cleanup |
+
+**Role-scoped routing implemented 10 October 2026 (Sprint 1B, code complete — awaiting hosted configuration).** A central permission registry (`src/lib/auth/permissions.ts`) maps `full_admin` and `operational_admin` to capabilities and to the canonical administrative routes; the admin route resolves the authenticated administrator server-side on every request and returns allowed, redirect (dashboard → the role's landing page), forbidden (access-denied state, no module data resolved) or unknown (not-found). Operational Admins reach `/admin/bookings` and `/admin/reviews` only and never receive `reviews.override`. Desktop and mobile navigation are filtered from the same registry, and module links are omitted rather than disabled. Details: `docs/implementation/SPRINT_1B_ROLE_BASED_ADMIN.md`.
+
+Role interpretation of the "Admin (role-scoped)" column: `operational_admin` is limited to booking rows and review rows (moderation and reply drafting); every other row in this matrix requires `full_admin`. Emergency review overrides — approve, reject or edit where an operational decision has already been made or the record state would otherwise block the action — are `full_admin` only and must write an audit entry containing actor, review, action, before/after values, reason and timestamp in the same transaction as the change.
 
 RLS enabled on exposed tables; revoke direct public mutation privileges where validated server submits are required. Guest API is not direct anonymous table insertion. Private signed URLs are short-lived bearer credentials issued only after authorisation, and photo retention is rechecked. Service/elevated credential bypasses RLS: validate in trusted code; never describe RLS as protecting a compromised service key. Test ordinary authenticated access as well as anonymous access. Middleware/navigation hiding alone is insufficient.
 
@@ -218,7 +222,7 @@ Client privacy bodies pending: forms disabled in production until notices/policy
 
 Typecheck, lint and production build; focused tests for scheduling boundaries, payload schemas, transitions, transactions/idempotency, permission matrix, private photo handling, publication/expiry, retention cleanup and restore. Owner validates actual visual designs and navigation; agent does not run screenshot/browser matrices unless requested. Do not declare backend tests passed when only mock states exist.
 
-Before live form activation: approved policy bodies/versions; verified real contacts/domain configuration; production env/redirects/RLS/private bucket settings; durable rate limiting and cleanup job; backup recovery; client-approved promo year if activated; subscriber/review retention if those collections enabled. Missing secondary directions and articles do not justify invention or stopping unrelated implementation. Final release approval is separate from document drafting.
+Before live form activation: approved policy bodies/versions; verified real contacts and mailbox configuration under the confirmed domain 2ndwavelaundry.com (mailbox names pending); production env/redirects/RLS/private bucket settings; durable rate limiting and cleanup job; backup recovery; client-approved promo year if activated; subscriber/review retention if those collections enabled. Missing secondary directions and articles do not justify invention or stopping unrelated implementation. Final release approval is separate from document drafting.
 
 ## 14. Change control / handoff defects
 

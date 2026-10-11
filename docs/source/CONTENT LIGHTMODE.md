@@ -25,7 +25,7 @@ Only visible copy is rendered. Routes, rules, tokens and internal notes are not 
 
 ### Unset facts — do not invent
 
-Actual business email/domain: unset. The PDF's enquiry@example.com is an EXAMPLE, not a real mailbox. Secondary branch days/directions: unset; show supplied hours without inventing days. Main Google Maps link confirmed by user. Exact selectable windows unspecified: use a requested preferred clock time, not fake bookable slots. Client policy bodies pending. Genuine reviews/blog articles not provided. Facebook link malformed: hide until validated.
+Business domain confirmed 10 October 2026: **2ndwavelaundry.com**. Individual mailbox names (e.g. info@) are not yet decided and must not be invented. The PDF's enquiry@example.com is an EXAMPLE, not a real mailbox. Secondary branch days/directions: unset; show supplied hours without inventing days. Main Google Maps link confirmed by user. Exact selectable windows unspecified: use a requested preferred clock time, not fake bookable slots. Client policy bodies pending. Genuine reviews/blog articles not provided. Facebook link malformed: hide until validated.
 
 ### Dynamic tokens
 
@@ -46,7 +46,7 @@ Actual business email/domain: unset. The PDF's enquiry@example.com is an EXAMPLE
 - Copyright: © {current_year} 2nd Wave Laundry Services.
 - Social labels: Instagram; TikTok; Facebook (conditional)
 
-INTERNAL targets: Book Now /book; phone tel:+233595224280; business WhatsApp https://wa.me/233595224280; Instagram https://www.instagram.com/2ndwave_laundry/; TikTok https://www.tiktok.com/@2ndwave.com. Logo /; Services /services; FAQs /faq; privacy /privacy; terms /terms; laundry terms /laundry-care-terms. No example mailbox.
+INTERNAL targets: Book Now /book; phone tel:+233595224280; business WhatsApp https://wa.me/233595224280; Instagram https://www.instagram.com/2ndwave_laundry/; TikTok https://www.tiktok.com/@2ndwave.com. Logo /; Services /services; FAQs /faq; privacy /privacy; terms /terms; laundry terms /laundry-care-terms. Business domain: 2ndwavelaundry.com (mailbox names pending — no example mailbox in any UI).
 
 ## 02. Homepage — /
 

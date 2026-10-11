@@ -1,7 +1,7 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
@@ -20,21 +20,65 @@ import {
   Files,
   Images,
   Settings,
+  Users,
   LogOut,
 } from "lucide-react";
-import { adminNav, publicNav, contact, demoMode } from "@/lib/content";
+import { publicNav, contact, demoMode } from "@/lib/content";
+import { signOutAdmin } from "@/lib/auth/actions";
+import { isFrameworkNavigation } from "@/lib/auth/client-navigation";
+import { adminNavigationFor } from "@/lib/auth/permissions";
+import { isAdminRole, type AdminRole } from "@/lib/auth/roles";
 import { BrandText } from "./brand-text";
 import { Dialog } from "./dialog";
-const adminIcons = [
-  LayoutDashboard,
-  CalendarDays,
-  MessageSquare,
-  Star,
-  Mail,
-  Files,
-  Images,
-  Settings,
-];
+
+/**
+ * Real administrator sign-out.
+ *
+ * Clears the preview-only demo flag, ends the Supabase session on the server and
+ * returns to the login screen. If the server action cannot complete for an
+ * unexpected reason, the browser is still sent to the login page so no
+ * authenticated view is left on screen.
+ */
+export function SignOutButton({
+  className = "button small danger",
+  children,
+}: {
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      className={className}
+      disabled={busy}
+      onClick={async () => {
+        sessionStorage.removeItem("wave-demo-session");
+        setBusy(true);
+        try {
+          await signOutAdmin();
+        } catch (cause) {
+          if (!isFrameworkNavigation(cause)) router.push("/admin/login");
+        }
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+/** Console icons keyed by canonical route key (see src/lib/auth/permissions.ts). */
+const adminIcons: Record<string, typeof LayoutDashboard> = {
+  dashboard: LayoutDashboard,
+  bookings: CalendarDays,
+  enquiries: MessageSquare,
+  reviews: Star,
+  newsletter: Mail,
+  content: Files,
+  media: Images,
+  settings: Settings,
+  staff: Users,
+};
 const headerNavLabels = [
   "Services",
   "How It Works",
@@ -111,7 +155,49 @@ export function Header() {
   });
   const navRef = useRef<HTMLElement | null>(null);
   const linkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
-  const links = admin ? adminNav : publicNav;
+  const [consoleRole, setConsoleRole] = useState<AdminRole | null>(null);
+  useEffect(() => {
+    if (!admin) {
+      setConsoleRole(null);
+      return;
+    }
+    let active = true;
+    // Navigation filtering only. The role comes from the server-verified session
+    // endpoint, and every protected route is authorised again on the server, so a
+    // tampered response cannot grant access. While the role is unknown no module
+    // link is rendered, so an inaccessible module never flashes.
+    fetch("/api/admin/session", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { role?: unknown } | null) => {
+        if (!active) return;
+        setConsoleRole(
+          data && isAdminRole(data.role)
+            ? data.role
+            : demoMode
+              ? "full_admin"
+              : null,
+        );
+      })
+      .catch(() => {
+        if (active) setConsoleRole(demoMode ? "full_admin" : null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [admin, path]);
+  const dialogItems = admin
+    ? adminNavigationFor(consoleRole).map(({ key, label, href }) => ({
+        key,
+        label,
+        href,
+        Icon: adminIcons[key] as typeof LayoutDashboard | undefined,
+      }))
+    : publicNav.map(([label, href]) => ({
+        key: href,
+        label,
+        href,
+        Icon: undefined,
+      }));
   const isActive = (href: string) =>
     href === "/" ? path === href : path.startsWith(href);
   const activeHref = !admin
@@ -181,14 +267,10 @@ export function Header() {
               </Link>
             )}
             {admin && (
-              <Link
-                className="button small danger admin-signout"
-                href="/admin/login"
-                onClick={() => sessionStorage.removeItem("wave-demo-session")}
-              >
+              <SignOutButton className="button small danger admin-signout">
                 <LogOut size={16} />
                 Sign Out
-              </Link>
+              </SignOutButton>
             )}
             <button
               className="icon-button"
@@ -221,11 +303,10 @@ export function Header() {
           </>
         )}
         <nav aria-label={admin ? "Admin navigation" : "Mobile navigation"}>
-          {links.map(([label, href], i) => {
-            const Icon = adminIcons[i];
+          {dialogItems.map(({ key, label, href, Icon }) => {
             return (
               <Link
-                key={href}
+                key={key}
                 href={href}
                 onClick={() => setOpen(false)}
                 className={[
@@ -278,17 +359,10 @@ export function Header() {
             >
               Return Home <ArrowUpRight size={18} />
             </Link>
-            <Link
-              className="button danger"
-              href="/admin/login"
-              onClick={() => {
-                sessionStorage.removeItem("wave-demo-session");
-                setOpen(false);
-              }}
-            >
+            <SignOutButton className="button danger">
               <LogOut size={18} />
               Sign Out
-            </Link>
+            </SignOutButton>
           </div>
         )}
       </Dialog>
@@ -370,17 +444,38 @@ export function DemoBanner() {
     </div>
   ) : null;
 }
-export function AdminSidebar() {
+/**
+ * Shared responsive console shell navigation.
+ *
+ * The role is passed down from the server-authorised render: a real session uses
+ * its own database-resolved role, while the demo preview passes the preview role
+ * for design review only. Only accessible modules are rendered; inaccessible ones
+ * are omitted rather than shown disabled. If no role is supplied, no module link
+ * is rendered — navigation never defaults to full access.
+ */
+export function AdminSidebar({
+  role,
+  account,
+}: {
+  role?: AdminRole;
+  account?: { identifier: string; role: string };
+}) {
   const path = usePathname();
+  const navigation = adminNavigationFor(role);
   return (
     <aside className="admin-sidebar">
-      <p className="eyebrow">Workspace</p>
+      <p className="eyebrow">{account?.role ?? "Workspace"}</p>
+      {account?.identifier && (
+        <p>
+          <small>{account.identifier}</small>
+        </p>
+      )}
       <nav>
-        {adminNav.map(([label, href], i) => {
-          const Icon = adminIcons[i];
+        {navigation.map(({ key, label, href }) => {
+          const Icon = adminIcons[key];
           return (
             <Link
-              key={href}
+              key={key}
               href={href}
               className={
                 (href === "/admin" ? path === href : path.startsWith(href))
@@ -398,13 +493,7 @@ export function AdminSidebar() {
       <Link className="text-link" href="/">
         Return Home ↗
       </Link>
-      <Link
-        className="text-link"
-        href="/admin/login"
-        onClick={() => sessionStorage.removeItem("wave-demo-session")}
-      >
-        Sign Out
-      </Link>
+      <SignOutButton className="text-link">Sign Out</SignOutButton>
     </aside>
   );
 }

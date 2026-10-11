@@ -118,8 +118,44 @@ The desktop admin header shows a `Sign Out` button (`.button.small.danger`) in `
 
 `npm run typecheck`, `npm run lint`, the 70-test suite and a production build pass after these updates.
 
+## Updates since the review (10 October 2026) — Admin operations decisions (documentation only)
+
+Investigation report produced at `docs/investigations/ADMIN_OPERATIONS_EMAIL_ARCHITECTURE.md` (read-only; no application code, schema, configuration or infrastructure was changed). The owner authorised the following decisions, and the source documents were updated to match. No implementation has started.
+
+1. **Two administrator roles formally authorised.** `full_admin` (entire console, including emergency review overrides with mandatory reason and audit) and `operational_admin` (bookings and review moderation/replies only). This supersedes the earlier single-invited-admin assumption and removes "extra staff roles" from the PRD excluded list. Recorded in PRD §2a, PRD product goal, PRD excluded-scope note, PRD §7, SRS §1, SRS ADM-01, SRS §6 (`admin_profiles.role`) and the SRS access-control matrix (column renamed to "Admin (role-scoped)" with a role-interpretation note covering emergency overrides).
+2. **Business domain confirmed: `2ndwavelaundry.com`.** Individual mailbox names (e.g. `info@`) are still undecided and must not be invented; `enquiry@example.com` remains illustrative only. Recorded in PRD §3, PRD §13, CONTENT LIGHTMODE "Unset facts" and INTERNAL targets, and the SRS verification gates.
+3. **Hosting decision.** Vercel during development and testing; production hosting moves to Cloudflare once implementation and validation are complete. Next.js runtime feature compatibility (route handlers, middleware, scheduled/queue workers, Node APIs) must be confirmed against the chosen Cloudflare product before cutover. Recorded in PRD §5.
+4. **Deferred to a later decision (not blocking design or Phase 1).** Individual mailbox/sender identities, approved marketing-consent privacy wording, retention periods for business email/reviews/newsletter subscribers, and verification of Brevo/Cloudflare/Supabase plan quotas against current official documentation. These gate activation of sending and collection features, not the engineering of roles, persistence or moderation.
+
+No `npm run check` was required for these updates: only Markdown documentation changed. Visual and behavioural acceptance remains unchanged from the prior record.
+
+## Updates since the review (10 October 2026) — Sprint 1A: Supabase foundation & administrator authentication
+
+**Status: code complete — awaiting hosted configuration.** Supabase Auth is now wired into the administration console: `@supabase/supabase-js` + `@supabase/ssr` client infrastructure (`src/lib/supabase/`), a Next.js 16 Proxy (`src/proxy.ts`) that refreshes cookie sessions and redirects unauthenticated visitors away from protected `/admin` routes when demo mode is disabled, server-side identity and role resolution (`src/lib/auth/`), real sign-in/sign-out and password recovery, and two reviewed migrations creating `admin_profiles` with a constrained role enum and non-permissive RLS. Operational Admins can authenticate but are conservatively denied the console until Sprint 1B delivers role-filtered routes. Business data is unchanged: bookings, enquiries, reviews, newsletter, media and settings remain the in-memory demo store.
+
+Full detail, manual Supabase steps, verification results and remaining work: `docs/implementation/SPRINT_1A_SUPABASE_AUTH.md`.
+
+Boundaries that remain in force: the RLS policies are written but **have not been executed** against any database; no hosted migration has been applied; no real administrator account has been created; the demo `sessionStorage` flag is preview-only and inert when `NEXT_PUBLIC_DEMO_MODE=false`.
+
+## Updates since the review (10 October 2026) — Sprint 1B: role-based administration
+
+**Status: code complete — awaiting hosted configuration.** The administration console now has two properly separated role experiences. A central permission registry (`src/lib/auth/permissions.ts`) owns the permission list, the role→capability mapping, the canonical administrative route table, the per-role landing page and the navigation filter. The catch-all admin page resolves the authenticated administrator server-side and returns allowed, redirect (dashboard → landing page), forbidden (access-denied state, no module data resolved) or unknown (not-found) for every request. Operational Admins reach `/admin/bookings` and `/admin/reviews` only and never hold `reviews.override`; Full Admins retain every existing module. Desktop and mobile navigation render the same filtered list, with inaccessible modules omitted rather than disabled. Authentication is real but business data is not connected, so `src/lib/features.ts` drives one honest availability notice and the existing in-memory writes continue to fail closed outside the isolated demo preview. No CSS, booking rule, contract or migration changed.
+
+Full detail, verification results and remaining work: `docs/implementation/SPRINT_1B_ROLE_BASED_ADMIN.md`.
+
+## Updates since the review (10 October 2026) — Sprint 1C: security hardening, staff management & audit logging
+
+**Status: PHASE 1 CODE COMPLETE — AWAITING DATABASE ACTIVATION / LIVE VERIFICATION.** Four new migrations and the staff-management module are written: an append-only `public.audit_events` log (Full-Admin readable, immutable even for the table owner, written only inside the transaction that performs the change), a staged `public.admin_invitations` lifecycle, and five `SECURITY DEFINER` `public.staff_*` functions that are executable only by `service_role`. A Full Admin-only `/admin/staff` module (server actions, `401`/`403` API, origin verification, per-actor rate limiting, reason-and-confirmation dialogs, activity log) now invites administrators through the server-only Supabase Auth Admin client, changes roles, and suspends or restores accounts — each with database-enforced invariants (no self-changes, last active Full Admin protected under an advisory lock, optimistic concurrency on stale edits) and a transactional audit event. Invitations grant nothing until accepted: the invitee's profile is created from the invited role by reconciliation at sign-in/`auth/callback`, and a failed invitation is recorded as failed rather than reported as success. The reviewed bootstrap scripts now write audit events too. No CSS, booking rule, contract, review behaviour or demo-mode behaviour changed; no dependency was added.
+
+Boundaries that remain in force: **no Sprint 1C migration has been applied to the hosted project**, no real invitation has been sent, no live signed-in staff flow was exercised, and the database security tests (`supabase/tests/sprint_1c_staff_security.sql`) are **NOT EXECUTED**. Denied pages still return `200` with the access-denied state; rate limiting is per process, not distributed; suspension denies authorisation on the next request but is not provider-level session revocation.
+
+Consolidated Phase 1 reference: `docs/implementation/PHASE_1_COMPLETE_IMPLEMENTATION.md`. Sprint detail: `docs/implementation/SPRINT_1C_SECURITY_STAFF_AUDIT.md`.
+
 ## Verification performed
 
+- Sprint 1C: `npm run typecheck`, `npm run lint` (0 errors; one pre-existing warning in the tooling file `.opencode/plugins/graphify.js`), `npm test` (**106 tests**, including 15 new staff-domain tests and a staff-capability permissions test) and `npm run build` all pass. HTTP smoke against the built server: `GET /api/admin/staff` → `401`, `GET /admin/staff` → `307` to `/admin/login?next=%2Fadmin%2Fstaff`, `/admin/login` and `/` → `200`, and `Cache-Control: private, no-store, max-age=0` on `/admin/staff`. A client-bundle review confirmed no `SUPABASE_SECRET_KEY`/`SUPABASE_SERVICE_ROLE_KEY` string in `.next/static/**` and no privileged key under a `NEXT_PUBLIC_*` name. No live signed-in staff flow, no hosted migration and no database test was executed.
+- Sprint 1B: `npm run typecheck`, `npm run lint`, `npm test` (90 tests, including 11 new permission/role-matrix tests) and `npm run build` all pass; HTTP smoke checks confirm demo routes still serve and that a `NEXT_PUBLIC_DEMO_MODE=false` build redirects every protected `/admin` path — including unknown paths — to `/admin/login` with a validated `next` parameter. Authenticated role routing is covered by unit tests of the decision function; no live signed-in session was tested.
+- Sprint 1A: `npm run typecheck`, `npm run lint`, `npm test` (80 tests, including 10 new auth tests) and `npm run build` all pass; a production-mode build (`NEXT_PUBLIC_DEMO_MODE=false`, no Supabase configuration) redirects every protected `/admin` route to `/admin/login` with a validated `next` parameter and offers no demo fallback. See `docs/implementation/SPRINT_1A_SUPABASE_AUTH.md` §14.
 - TypeScript strict typecheck passed.
 - ESLint passed.
 - Production Next.js build passed.
@@ -158,10 +194,10 @@ No claim is made that real backend persistence, authentication, permissions, upl
 
 ## Backend integration sequence
 
-1. Real invited-admin auth, session/role checks, database schema, migrations and RLS tests.
+1. ~~Real invited-admin auth, session/role checks, database schema and migrations.~~ Delivered in Sprint 1A (code complete); administrator invitations, role changes, suspension/restoration and audit logging were delivered in Sprint 1C. Remaining: apply the six migrations to the hosted project, execute both RLS/security test files against a disposable database, provision or invite the first Full Admin, and complete the Phase 1 manual QA checklist.
 2. Published CMS reads and isolated draft revisions; contact settings; media storage and in-use references.
 3. Booking creation transaction, idempotency, attachment claims, trusted scheduling, pause checks and rate limiting.
-4. Admin lifecycle/version transactions, audit trail, private notes/photos, manual draft activity.
+4. Admin lifecycle/version transactions, audit trail, private notes/photos, manual draft activity. (Route-level role authorisation was delivered ahead of this step in Sprint 1B, and the audit trail plus administrator lifecycle transactions were delivered in Sprint 1C; persistence-level authorisation for *business* records still arrives with these transactions.)
 5. Enquiries/quotes, review moderation, consented interest and withdrawal.
 6. Retention jobs, deletion/restore handling, redacted logs, alerts and backup verification.
 7. Approved domain/policies/assets, production SEO, accessibility/device review, measured performance and authorised release.

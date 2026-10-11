@@ -12,6 +12,8 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.3",
     "libphonenumber-js": "1.13.14",
     "lucide-react": "1.52.0",
     "motion": "14.0.0",

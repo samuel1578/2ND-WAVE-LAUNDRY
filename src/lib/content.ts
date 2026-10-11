@@ -1,5 +1,8 @@
 import content from "@/data/content.json";
 import assetData from "@/data/assets.json";
+import { demoMode } from "./demo-mode";
+import { adminRoutes } from "./auth/permissions";
+export { demoMode };
 export type Photo = { src: string; alt: string };
 type Section = {
   heading: string;
@@ -19,7 +22,6 @@ export const photos = Object.fromEntries(
     ),
   ]),
 ) as Record<string, Photo[]>;
-export const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
 export const contact = {
   phone: "059 522 4280",
   tel: "tel:+233595224280",
@@ -215,16 +217,18 @@ export const publicNav = [
   ["Contact", "/contact"],
   ["FAQs", "/faq"],
 ];
-export const adminNav = [
-  ["Dashboard", "/admin"],
-  ["Bookings", "/admin/bookings"],
-  ["Enquiries", "/admin/enquiries"],
-  ["Reviews", "/admin/reviews"],
-  ["Newsletter Interest", "/admin/newsletter"],
-  ["Website Content", "/admin/content"],
-  ["Media Library", "/admin/media"],
-  ["Settings", "/admin/settings"],
-];
+/**
+ * Full administrative navigation, derived from the central permission registry
+ * (`src/lib/auth/permissions.ts`) so labels and hrefs have a single source.
+ *
+ * This list is deliberately role-independent: role-filtered navigation is built
+ * with `adminNavigationFor(role)`. Never render this unfiltered list for a role
+ * other than `full_admin`.
+ */
+export const adminNav: [string, string][] = adminRoutes.map(({ label, href }) => [
+  label,
+  href,
+]);
 export const slugify = (value: string) =>
   value
     .toLowerCase()

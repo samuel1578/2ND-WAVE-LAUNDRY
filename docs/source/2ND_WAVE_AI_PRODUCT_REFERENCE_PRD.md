@@ -6,7 +6,7 @@ Companions: CONTENT.md (exact words), 2ND_WAVE_SRS.md (testable requirements), D
 
 ## 1. Product goal
 
-Build a conversion-focused laundry WEBSITE for household and business customers. Visitors discover services, visit branches, request collection and communicate with staff. One invited admin manages content, private requests and enquiries. Walk-ins/drop-offs must be as discoverable as pickup. Measure qualified saved requests, enquiries and branch-contact actions without collecting unnecessary personal analytics data.
+Build a conversion-focused laundry WEBSITE for household and business customers. Visitors discover services, visit branches, request collection and communicate with staff. Two invited administrator roles manage content, private requests and enquiries: a Full Admin with access to the entire administration console, and an Operational Admin limited to bookings and reviews. Walk-ins/drop-offs must be as discoverable as pickup. Measure qualified saved requests, enquiries and branch-contact actions without collecting unnecessary personal analytics data.
 
 Locale: British English; Africa/Accra scheduling; GHS for privately recorded fees. No customer account is necessary.
 
@@ -22,9 +22,26 @@ Home, Services, ten service detail routes plus Commercial Laundry, How It Works,
 
 Invited admin auth/recovery, dashboard, booking queue/detail/history/notes/branch assignment/manual WhatsApp drafts, general/commercial enquiry queues, newsletter-interest records, media library, CMS for Home/About/services/locations/gallery/blog/FAQs/reviews/promotions/policies, public contact settings, pickup rules and booking pause.
 
+### 2a. Administrator roles — formally authorised 10 October 2026
+
+Two administrator roles are in scope. Both are invited accounts only; there is no public signup and no self-promotion path.
+
+| Role | Key | Access |
+| --- | --- | --- |
+| Full Admin | `full_admin` | The entire administration dashboard: bookings, reviews (including emergency overrides), enquiries, newsletter, Website Content CMS, Media Library, settings, booking-alert recipient management, and any later email/composer/inbox/newsletter-campaign modules. |
+| Operational Admin | `operational_admin` | Bookings and their permitted operational actions only; review moderation and review-reply drafting. No access to any other administration module. |
+
+Full Admins additionally hold emergency override permissions over review moderation (approve, reject or edit), each requiring a recorded reason and producing an audit entry. Role data lives in an `admin_profiles` table keyed to the auth user; the role is always resolved server-side from the session and never trusted from the client. Enforcement occurs independently at the middleware, application-server and database (RLS) layers — navigation hiding alone is insufficient. Roles are provisioned only by a trusted workflow; no endpoint permits an admin to change any role value.
+
+This supersedes the earlier single-invited-admin assumption. The SRS access-control matrix is updated accordingly.
+
+**Sprint 1B status — 10 October 2026: role-based dashboard implemented (code complete — awaiting hosted configuration).** Full Admins retain every existing module; Operational Admins reach Bookings and Reviews only, enforced server-side per route, with role-filtered desktop and mobile navigation, role-specific landing pages (`/admin` versus `/admin/bookings`) and access-denied states. Business-data persistence is still not connected, so writes keep failing closed outside the isolated demo preview. Details: `docs/implementation/SPRINT_1B_ROLE_BASED_ADMIN.md`.
+
+**Implementation status — Sprint 1A, 10 October 2026: code complete, awaiting hosted configuration.** Supabase Auth (email/password, cookie sessions, Supabase Auth recovery, invite-only provisioning by a trusted administrator) with server-side role resolution and RLS on `admin_profiles` is implemented; details, manual steps and remaining work are in `docs/implementation/SPRINT_1A_SUPABASE_AUTH.md`. Business data (bookings, enquiries, reviews, newsletter, media, settings) is still the in-memory demo store, and the Operational Admin console remains conservatively withheld until Sprint 1B delivers role-filtered routes. Role changes are performed only through a reviewed provisioning statement, never by an application endpoint.
+
 ### Excluded
 
-Customer accounts, public tracking, online prices/payments, instant commercial quotes, automatic WhatsApp sends or delivery receipts, driver dispatch/live maps, rigid branch pickup zones, Google review scraping/API, automated marketing campaigns/Brevo integration, extra staff roles, native app navigation, unapproved service offerings.
+Customer accounts, public tracking, online prices/payments, instant commercial quotes, automatic WhatsApp sends or delivery receipts, driver dispatch/live maps, rigid branch pickup zones, Google review scraping/API, native app navigation, unapproved service offerings. (Note: "extra staff roles" was removed from this excluded list on 10 October 2026 when the two-role admin model was formally authorised — see §2a.) Automated marketing campaigns/Brevo integration remain out of the original release scope and are authorised only as the later phases defined in `docs/investigations/ADMIN_OPERATIONS_EMAIL_ARCHITECTURE.md`.
 
 ## 3. Business facts and scheduling
 
@@ -34,7 +51,7 @@ Customer accounts, public tracking, online prices/payments, instant commercial q
 | Katamanso No. 1 | 059 814 8620 | 7am–8pm; days unspecified |
 | Newland Katamanso | 024 614 4412 | 7am–8pm; days unspecified |
 
-Main map: https://maps.app.goo.gl/MfrvXSLGNtUu22HL8?g_st=ic — user confirms main branch. Do not infer a street address/Tema label. Secondary maps/directions omitted until supplied. Business email/domain unset; enquiry@example.com in the client PDF is illustrative. Instagram https://www.instagram.com/2ndwave_laundry/; TikTok https://www.tiktok.com/@2ndwave.com. Facebook remains hidden pending validation.
+Main map: https://maps.app.goo.gl/MfrvXSLGNtUu22HL8?g_st=ic — user confirms main branch. Do not infer a street address/Tema label. Secondary maps/directions omitted until supplied. **Business domain confirmed 10 October 2026: `2ndwavelaundry.com`.** Individual mailbox names under that domain (for example `info@`) are not yet decided and must not be invented; enquiry@example.com in the client PDF remains illustrative only. Instagram https://www.instagram.com/2ndwave_laundry/; TikTok https://www.tiktok.com/@2ndwave.com. Facebook remains hidden pending validation.
 
 ### Collection rule — replaces previous interpretation
 
@@ -64,7 +81,7 @@ Commercial route /commercial-laundry; quote /commercial-laundry/quote. Other det
 
 ## 5. Stack and architecture
 
-Next.js App Router, React, TypeScript, Tailwind using the approved design tokens; Motion/Framer Motion for restrained transitions. Supabase Postgres/Auth for records and one admin. Cloudflare R2 for media: separate public marketing and private booking buckets. Next server is the trusted submission/administration boundary. Compatible Next hosting (Vercel is the intended default unless project deployment context chooses otherwise). No static-only export for production server features.
+Next.js App Router, React, TypeScript, Tailwind using the approved design tokens; Motion/Framer Motion for restrained transitions. Supabase Postgres/Auth for records and one admin. Cloudflare R2 for media: separate public marketing and private booking buckets. Next server is the trusted submission/administration boundary. Compatible Next hosting. **Hosting decision (10 October 2026): Vercel during development and testing; production hosting moves to Cloudflare once implementation and validation are complete.** Confirm Next.js runtime feature compatibility (route handlers, middleware, scheduled/queue workers, Node APIs) with the chosen Cloudflare product before cutover, and re-run the full check suite against the production build target. No static-only export for production server features.
 
 At implementation start, inspect existing package versions and pin current compatible stable dependencies in the lockfile. Do not blindly upgrade a working repository or copy Stitch's CDN Tailwind scripts. This PRD does not freeze unverified SDK syntax or plan pricing.
 
@@ -91,7 +108,7 @@ Walk-ins/drop-offs are a branch-visit path, not an online drop-off booking syste
 
 ## 7. Admin workflow and state model
 
-States: pending → confirmed → scheduled → picked_up → processing → ready → out_for_delivery → completed. Allow confirmed → picked_up when separate scheduling stage is unnecessary; ready → completed when return is collected directly. Cancellation from any nonterminal state with reason. Terminal corrections require a deliberate authorised audited action; no silent backward changes.
+Both administrator roles (§2a) may perform the operational booking workflow below. States: pending → confirmed → scheduled → picked_up → processing → ready → out_for_delivery → completed. Allow confirmed → picked_up when separate scheduling stage is unnecessary; ready → completed when return is collected directly. Cancellation from any nonterminal state with reason. Terminal corrections require a deliberate authorised audited action; no silent backward changes.
 
 Confirmation requires assigned branch, agreed pickup datetime, agreed nonnegative pickup fee in GHS, contact outcome and confirmation note. A zero fee is allowed only when deliberately recorded with a reason; no public free-pickup promise. Admin records service charge/return detail if agreed, independently of any payment gateway. No fabricated paid/unpaid lifecycle gate.
 
@@ -136,7 +153,7 @@ WCAG 2.2 AA target: keyboard/focus, labels/error summaries, dialogs, contrast, r
 
 ## 13. Remaining configuration dependencies — INTERNAL
 
-Real email/domain; secondary days/directions (omit rather than block unrelated work); client policies; actual blog/reviews/photos; validation of Facebook link; promo year activation check; subscriber retention; backup/cleanup deployment schedule. Preferred clock-time model and cutoff equality are documented engineering choices because exact slot inventory was not provided. No new customer-facing “final details to confirm” section. Do not claim all client questions were explicitly answered.
+Verified business mailbox names under the confirmed domain 2ndwavelaundry.com (domain itself is confirmed; individual mailboxes and sender identities are still to be decided); secondary days/directions (omit rather than block unrelated work); client policies; actual blog/reviews/photos; validation of Facebook link; promo year activation check; subscriber retention; backup/cleanup deployment schedule. Preferred clock-time model and cutoff equality are documented engineering choices because exact slot inventory was not provided. No new customer-facing “final details to confirm” section. Do not claim all client questions were explicitly answered.
 
 ## 14. Done definition
 

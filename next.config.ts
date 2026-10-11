@@ -5,6 +5,16 @@ const config: NextConfig = {
   async headers() {
     return [
       {
+        // Authenticated administration HTML must never be cached or shared.
+        source: "/admin/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "private, no-store, max-age=0",
+          },
+        ],
+      },
+      {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },

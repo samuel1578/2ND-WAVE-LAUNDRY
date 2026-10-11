@@ -57,6 +57,10 @@ export function TextField({
             .filter(Boolean)
             .join(" ") || undefined
         }
+        // Email inputs are mutated by browser extensions (temp-mail, autofill
+        // managers) before React hydrates, so attribute parity cannot be
+        // guaranteed. Scope the tolerance to this element only.
+        suppressHydrationWarning={props.type === "email"}
         {...props}
       />
     </Field>
