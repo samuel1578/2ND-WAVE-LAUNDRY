@@ -2084,6 +2084,28 @@ input[type="file"]::file-selector-button {
   border: 1px solid var(--line);
   border-radius: 8px;
 }
+.file-row__thumb {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.photo-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.photo-thumbs img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
 .review-list {
   margin: 0;
 }
@@ -2104,17 +2126,33 @@ input[type="file"]::file-selector-button {
   white-space: pre-wrap;
 }
 .booking-result {
-  max-width: 730px;
-  margin: auto;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 0.65fr 1.35fr;
+  gap: 64px;
+  align-items: start;
+}
+.booking-result__content {
+  grid-column: 2;
+  justify-self: center;
+  width: 100%;
+  max-width: 620px;
 }
 .booking-result h1 {
   font-size: 42px;
 }
-.booking-result > .field {
+.booking-result .field {
   margin-block: 28px;
 }
 .booking-result .actions {
   margin-bottom: 25px;
+}
+.booking-result .dotted-glow {
+  top: -56px;
+  left: calc(50% - 50vw);
+  right: calc(67.5% - 43.2px);
+  z-index: -1;
 }
 .success-symbol {
   display: grid;
@@ -2124,7 +2162,27 @@ input[type="file"]::file-selector-button {
   color: var(--success);
   background: var(--success-bg);
   border-radius: 50%;
+  margin-inline: auto;
   margin-bottom: 25px;
+}
+.success-symbol__icon {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.success-symbol__fallback {
+  display: none;
+  width: 48px;
+  height: 48px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .success-symbol__icon {
+    display: none;
+  }
+  .success-symbol__fallback {
+    display: block;
+  }
 }
 .reference {
   background: var(--tint);
@@ -3209,8 +3267,27 @@ tbody tr:hover {
     font-size: 13px;
     grid-template-columns: 0.8fr 1.2fr;
   }
+  .booking-result {
+    display: block;
+  }
+  .booking-result__content {
+    max-width: none;
+  }
   .booking-result h1 {
     font-size: 32px;
+  }
+  .booking-result__hero {
+    position: relative;
+  }
+  /* Dots become the backdrop of the whole hero (icon + heading + notice). */
+  .booking-result .dotted-glow {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    height: auto;
+    opacity: 0.65;
   }
   .reference strong {
     font-size: 25px;
@@ -3335,6 +3412,24 @@ tbody tr:hover {
   }
   .admin-main .back-link {
     margin-bottom: 20px;
+  }
+}
+/* Taller handsets only (iPhone X and up). SE-class screens are also 375px
+   wide but stop at 667px tall, so the gate has to be height, not width. The
+   hero — dots + GIF + heading + green notice — pins under the header while the
+   rest of the confirmation scrolls beneath it, then releases at the end of
+   .booking-result__content, well above .site-footer. The canvas backdrop hides
+   the content passing underneath; the dots render on top of it. */
+@media (max-width: 700px) and (min-height: 700px) {
+  .booking-result__hero {
+    position: sticky;
+    top: var(--header);
+    z-index: 1;
+    background: var(--canvas);
+    /* Stops the notice's bottom margin collapsing out of the hero, so the
+       backdrop stays opaque right to its edge and nothing peeks through. */
+    padding-bottom: 10px;
+    box-shadow: 0 10px 18px -12px rgb(0 0 0 / 0.45);
   }
 }
 /* ---------------- Swipe track (mobile carousel) + cascading gallery slider ---------------- */

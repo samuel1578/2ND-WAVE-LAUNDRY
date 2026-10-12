@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, ArrowRight, X, Upload } from "lucide-react";
 import { services, contact, copy, demoMode } from "@/lib/content";
@@ -14,7 +15,8 @@ import {
   validPhone,
   clockLabel,
 } from "@/lib/rules";
-import type { Booking, BookingInput } from "@/lib/contracts";
+import type { BookingInput } from "@/lib/contracts";
+import { createIdempotencyKey } from "@/lib/bookings/reference";
 import { DemoFailure, Field, Notice, Submit, TextField } from "./controls";
 import { DottedGlowBackground } from "../dotted-glow-background";
 const labels = [
@@ -66,7 +68,7 @@ export function BookingForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState<Booking>();
+  const [saved, setSaved] = useState<{ reference: string }>();
   const key = useRef("");
   const submittedPayload = useRef("");
   const heading = useRef<HTMLHeadingElement>(null);
@@ -141,6 +143,62 @@ export function BookingForm({
     change("photoNames", [...input.photoNames, ...incoming.map((f) => f.name)]);
     setError("");
   }
+  /**
+   * Production submission.
+   *
+   * The screen is never told a request succeeded until the trusted server has
+   * committed it and returned a reference. A failure preserves every entered
+   * value and keeps the same idempotency key, so a retry cannot create a second
+   * booking.
+   */
+  async function submitToServer(idempotencyKey: string): Promise<string> {
+    const response = await fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, idempotencyKey }),
+    });
+    let data: {
+      ok?: boolean;
+      reference?: string;
+      message?: string;
+      fieldErrors?: Record<string, string>;
+    } | null = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+    if (response.ok && data?.reference) return data.reference;
+    const fieldErrors = data?.fieldErrors;
+    if (fieldErrors && Object.keys(fieldErrors).length) {
+      setErrors((current) => ({ ...current, ...fieldErrors }));
+      // Return the customer to the earliest step that needs their attention.
+      const order: Record<string, number> = {
+        services: 0,
+        items: 0,
+        category: 0,
+        notes: 0,
+        address: 1,
+        landmark: 1,
+        map: 1,
+        date: 1,
+        time: 1,
+        transport: 1,
+        name: 2,
+        phone: 2,
+        email: 2,
+        whatsapp: 2,
+        contactMethod: 2,
+        acknowledged: 2,
+      };
+      const steps = Object.keys(fieldErrors).map((field) => order[field] ?? 3);
+      if (steps.length) setStep(Math.min(...steps));
+    }
+    throw new Error(
+      data?.message ??
+        "We couldn’t save your request. Your details are still here — please try again.",
+    );
+  }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (step < 3) {
@@ -162,13 +220,17 @@ export function BookingForm({
     try {
       const payload = JSON.stringify(input);
       if (!key.current || submittedPayload.current !== payload) {
-        key.current = crypto.randomUUID();
+        key.current = createIdempotencyKey();
         submittedPayload.current = payload;
       }
-      const b = await repository.createBooking(input, key.current);
-      setSaved(b);
+      // Demo mode stays entirely in memory; production must commit on the server
+      // before any success is shown.
+      const reference = demoMode
+        ? (await repository.createBooking(input, key.current)).reference
+        : await submitToServer(key.current);
+      setSaved({ reference });
       setMessage(
-        `Hello 2nd Wave team. I would like to discuss pickup request ${b.reference}.\nName: ${input.name}\nServices: ${input.services.map((slug) => services.find((s) => s.slug === slug)?.title).join(", ")}\nPreferred date: ${input.date}\nPreferred time: ${input.time || "As soon as possible"}\nPlease contact me to agree the fee and arrangements.`,
+        `Hello 2nd Wave team. I would like to discuss pickup request ${reference}.\nName: ${input.name}\nServices: ${input.services.map((slug) => services.find((s) => s.slug === slug)?.title).join(", ")}\nPreferred date: ${input.date}\nPreferred time: ${input.time || "As soon as possible"}\nPlease contact me to agree the fee and arrangements.`,
       );
     } catch (e) {
       setError(
@@ -191,56 +253,77 @@ export function BookingForm({
   if (saved)
     return (
       <div className="booking-result">
-        <span className="success-symbol">
-          <Check />
-        </span>
-        <h1>{copy("06.05", "H1")}</h1>
-        <Notice>
-          Demo request only. The business has not received this request.
-        </Notice>
-        <p>{copy("06.05", "Body")}</p>
-        <div className="reference">
-          <small>Your request reference</small>
-          <strong>{saved.reference}</strong>
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => clipboard(saved.reference, "Reference copied")}
-          >
-            <Copy size={18} />
-            Copy Reference
-          </button>
+        <div className="booking-result__content">
+          <div className="booking-result__hero">
+            <DottedGlowBackground
+              className="booking-result-glow"
+              gap={14}
+              radius={1.8}
+              opacity={0.75}
+            />
+            <span className="success-symbol">
+              <Image
+                src="/check.gif"
+                alt=""
+                width={48}
+                height={48}
+                unoptimized
+                className="success-symbol__icon"
+              />
+              <Check className="success-symbol__fallback" aria-hidden="true" />
+            </span>
+            <h1>{copy("06.05", "H1")}</h1>
+            <Notice success={!demoMode}>
+              {demoMode
+                ? "Demo request only. The business has not received this request."
+                : "Your request has been received and is pending. The team will contact you to confirm the arrangements."}
+            </Notice>
+          </div>
+          <p>{copy("06.05", "Body")}</p>
+          <div className="reference">
+            <small>Your request reference</small>
+            <strong>{saved.reference}</strong>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => clipboard(saved.reference, "Reference copied")}
+            >
+              <Copy size={18} />
+              Copy Reference
+            </button>
+          </div>
+          <p>{copy("06.05", "Reassurance")}</p>
+          <Field id="draft" label="WhatsApp message (optional)">
+            <textarea
+              id="draft"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={8}
+            />
+          </Field>
+          <p>{copy("06.05", "Explanation")}</p>
+          <div className="actions">
+            <a
+              className="button whatsapp"
+              href={`${contact.whatsapp}?text=${encodeURIComponent(message)}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Continue on WhatsApp <ArrowRight size={18} />
+            </a>
+            <button
+              className="button secondary"
+              onClick={() => clipboard(message, "Message copied")}
+            >
+              Copy Message
+            </button>
+          </div>
+          <p>{copy("06.05", "Fallback")}</p>
+          {feedback && <Notice>{feedback}</Notice>}
+          <Link className="text-link" href="/">
+            Return Home
+          </Link>
         </div>
-        <Field id="draft" label="WhatsApp message">
-          <textarea
-            id="draft"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={8}
-          />
-        </Field>
-        <p>{copy("06.05", "Explanation")}</p>
-        <div className="actions">
-          <a
-            className="button whatsapp"
-            href={`${contact.whatsapp}?text=${encodeURIComponent(message)}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Continue on WhatsApp <ArrowRight size={18} />
-          </a>
-          <button
-            className="button secondary"
-            onClick={() => clipboard(message, "Message copied")}
-          >
-            Copy Message
-          </button>
-        </div>
-        <p>{copy("06.05", "Fallback")}</p>
-        {feedback && <Notice>{feedback}</Notice>}
-        <Link className="text-link" href="/">
-          Return Home
-        </Link>
       </div>
     );
   if (!store.settings.acceptBookings || previewState === "paused")
@@ -260,13 +343,6 @@ export function BookingForm({
           </Link>
         </div>
       </div>
-    );
-  if (!demoMode)
-    return (
-      <Notice>
-        Online submissions are not active yet. Please contact our team to
-        arrange a pickup.
-      </Notice>
     );
   const text = (
     name: keyof BookingInput,
@@ -415,7 +491,13 @@ export function BookingForm({
               </div>
               {photos.map((p, i) => (
                 <div className="file-row" key={p.url}>
-                  <span>{p.name} · Photo added (local preview)</span>
+                  <img
+                    className="file-row__thumb"
+                    src={p.url}
+                    alt={p.name}
+                    width={56}
+                    height={56}
+                  />
                   <button
                     type="button"
                     className="icon-button"
@@ -460,6 +542,10 @@ export function BookingForm({
                 })}
               </div>
               <p>{copy("06.02", "Date helper")}</p>
+              <p>
+                Pickup is available every day, including public holidays, from
+                7:00 AM to 5:00 PM. Please choose a time within these hours.
+              </p>
               <p>
                 Pickup operates from {clockLabel(store.settings.start)} to{" "}
                 {clockLabel(store.settings.end)}. Your preferred time is subject
@@ -556,7 +642,24 @@ export function BookingForm({
                 }).map(([label, value]) => (
                   <div key={label}>
                     <dt>{label}</dt>
-                    <dd>{value}</dd>
+                    <dd>
+                      {label === "Photos" && photos.length ? (
+                        <span className="photo-thumbs">
+                          {photos.map((p) => (
+                            <img
+                              key={p.url}
+                              src={p.url}
+                              alt={p.name}
+                              title={p.name}
+                              width={72}
+                              height={72}
+                            />
+                          ))}
+                        </span>
+                      ) : (
+                        value
+                      )}
+                    </dd>
                   </div>
                 ))}
               </dl>

@@ -36,6 +36,15 @@ test("past and malformed dates rejected", () => {
 });
 test("past preferred time rejected", () =>
   assert.notEqual(schedulingError(day, "08:00", false, at("09:00:00")), ""));
+test("demo pickup window rejects 06:30 and accepts the 07:00–17:00 boundaries", () => {
+  const future = "2026-10-06";
+  // The client-reported defect: a 06:30 pickup request must not be accepted.
+  assert.notEqual(schedulingError(future, "06:30", false, at("09:00:00")), "");
+  assert.equal(schedulingError(future, "07:00", false, at("09:00:00")), "");
+  assert.equal(schedulingError(future, "17:00", false, at("09:00:00")), "");
+  assert.notEqual(schedulingError(future, "17:30", false, at("09:00:00")), "");
+  assert.notEqual(schedulingError(future, "19:00", false, at("09:00:00")), "");
+});
 test("default advances after pickup closure", () =>
   assert.equal(defaultPickupDate(at("17:00:00")), "2026-10-06"));
 test("three decimal 5MB files accepted; fourth and oversize rejected", () => {

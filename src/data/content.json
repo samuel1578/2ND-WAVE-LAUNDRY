@@ -634,10 +634,10 @@
       "Label/value": "Your request reference / {booking_reference}",
       "Actions": "Copy Reference / Continue on WhatsApp / Copy Message / Return Home",
       "Feedback": "Reference copied / Message copied",
-      "Explanation": "Open the prepared message, review it and send it to our team on WhatsApp.",
+      "Explanation": "Send the prepared message on WhatsApp if you’d like, or simply wait. Our customer service team will contact you as soon as possible.",
       "Fallback": "If WhatsApp doesn’t open, copy the message or call us on 059 522 4280.",
       "Retry": "Open WhatsApp Again",
-      "Reassurance": "Your saved request remains available to our team even if you do not send the WhatsApp message."
+      "Reassurance": "Your request is already with our team — sending the message below is entirely optional."
     },
     "faq": []
   },
