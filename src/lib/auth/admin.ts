@@ -54,7 +54,16 @@ export async function getCurrentAdmin(): Promise<AdminIdentity | null> {
     .maybeSingle();
 
   // Any lookup failure (missing table, RLS denial, transport error) denies.
-  if (profileError) return null;
+  // Diagnostic only: the PostgREST code and schema-level message identify a
+  // missing column, a policy denial (42501) or a transport problem. Neither
+  // contains credentials, tokens or personal data, and the browser still
+  // receives nothing.
+  if (profileError) {
+    console.warn(
+      `[auth] admin_profiles lookup failed code=${profileError.code ?? "unknown"} message=${profileError.message ?? ""}`,
+    );
+    return null;
+  }
 
   return resolveAdminIdentity(
     { id: user.id, email: user.email ?? "" },

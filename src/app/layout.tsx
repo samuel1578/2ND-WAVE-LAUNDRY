@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Boogaloo } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { Header, Footer, DemoBanner } from "@/components/shell";
+import { ScrollToTop } from "@/components/scroll-to-top";
 import "./globals.css";
 const jakarta = localFont({
   src: "../../public/plus-jakarta-sans.woff2",
@@ -43,6 +44,7 @@ export default function RootLayout({
     <html lang="en-GH" suppressHydrationWarning>
       <body className={`${jakarta.variable} ${boogaloo.variable}`}>
         <Providers>
+          <ScrollToTop />
           <a className="skip-link" href="#main">
             Skip to content
           </a>

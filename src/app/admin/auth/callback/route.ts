@@ -30,9 +30,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(url, { headers: PRIVATE_HEADERS });
   };
 
-  if (!isSupabaseConfigured) return target("unavailable");
-  if (request.nextUrl.searchParams.get("error"))
+  if (!isSupabaseConfigured) {
+    console.warn("[auth] recovery callback: Supabase is not configured.");
     return target("unavailable");
+  }
+  const providerError = request.nextUrl.searchParams.get("error");
+  if (providerError) {
+    // Server-side diagnosis only; the browser keeps the generic state.
+    console.warn(
+      `[auth] recovery callback rejected by the provider code=${request.nextUrl.searchParams.get("error_code") ?? providerError}`,
+    );
+    return target("unavailable");
+  }
 
   const supabase = await createSupabaseServerClient();
   const code = request.nextUrl.searchParams.get("code");
@@ -41,7 +50,12 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) return target("unavailable");
+    if (error) {
+      console.warn(
+        `[auth] recovery callback code exchange failed code=${error.code ?? "unknown"}`,
+      );
+      return target("unavailable");
+    }
     await reconcileInvitedAdministrator();
     return target();
   }
@@ -51,11 +65,22 @@ export async function GET(request: NextRequest) {
       type: type === "invite" ? "invite" : "recovery",
       token_hash: tokenHash,
     });
-    if (error) return target("unavailable");
+    if (error) {
+      console.warn(
+        `[auth] recovery callback token verification failed code=${error.code ?? "unknown"}`,
+      );
+      return target("unavailable");
+    }
     await reconcileInvitedAdministrator();
     return target();
   }
 
+  // No usable credential reached the server. When the provider reports a failure
+  // it places the details in the URL fragment ("#error=..."), which is never sent
+  // to the server — so this is the branch a dead or already-used link produces.
+  console.warn(
+    "[auth] recovery callback reached without a code or token_hash; the provider likely returned its result in the URL fragment.",
+  );
   return target("unavailable");
 
   /**

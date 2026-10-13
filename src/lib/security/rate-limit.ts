@@ -30,7 +30,22 @@ export const staffRateLimits = {
   change: { limit: 30, windowMs: 15 * 60 * 1000 },
 } as const satisfies Record<string, RateLimitRule>;
 
-export type RateLimitKey = keyof typeof staffRateLimits;
+/**
+ * Limits for administrative booking operations. Keyed separately from the staff
+ * limits so a busy booking queue can never exhaust a staff administrator's own
+ * allowance (the bucket key is the limit key plus the acting account).
+ */
+export const bookingRateLimits = {
+  booking_mutation: { limit: 120, windowMs: 15 * 60 * 1000 },
+} as const satisfies Record<string, RateLimitRule>;
+
+/** Every administrative limit the limiter knows about. */
+export const adminRateLimits = {
+  ...staffRateLimits,
+  ...bookingRateLimits,
+} as const satisfies Record<string, RateLimitRule>;
+
+export type RateLimitKey = keyof typeof adminRateLimits;
 
 type Bucket = { timestamps: number[] };
 
@@ -46,7 +61,7 @@ export function consumeRateLimit(
   identity: string,
   now: number = Date.now(),
 ): RateLimitResult {
-  const rule = staffRateLimits[limitKey];
+  const rule = adminRateLimits[limitKey];
   const key = `${limitKey}:${identity}`;
   const bucket = buckets.get(key) ?? { timestamps: [] };
   const cutoff = now - rule.windowMs;
@@ -74,7 +89,7 @@ export function consumeRateLimit(
 function prune(now: number): void {
   if (buckets.size < 500) return;
   for (const [key, bucket] of buckets) {
-    const rule = staffRateLimits[key.split(":")[0] as RateLimitKey];
+    const rule = adminRateLimits[key.split(":")[0] as RateLimitKey];
     if (!rule) {
       buckets.delete(key);
       continue;

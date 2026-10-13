@@ -105,6 +105,13 @@ export async function POST(request: NextRequest) {
       catalogue,
       rateLimiter: resolveBookingRateLimiter(),
       submit: (input) => submitPublicBooking(input),
+      // The elevated key signs the short-lived photo upload token; it never
+      // leaves the server and is never logged or returned.
+      photoTokenSecret: isElevatedConfigured
+        ? process.env.SUPABASE_SECRET_KEY ??
+          process.env.SUPABASE_SERVICE_ROLE_KEY ??
+          null
+        : null,
       log: (event) => {
         // Operational diagnosis only: status, stable code and correlation id.
         // Never a name, phone number, email address or pickup address.

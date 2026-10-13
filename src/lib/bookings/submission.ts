@@ -24,6 +24,10 @@ import {
   bookingErrorStatus,
   type BookingErrorCode,
 } from "./errors";
+import {
+  createPhotoUploadToken,
+  PHOTO_UPLOAD_TOKEN_TTL_SECONDS,
+} from "./photos";
 import { isValidIdempotencyKey } from "./reference";
 import {
   selectedServiceSlugs,
@@ -70,6 +74,13 @@ export type BookingSubmissionDeps = {
   catalogue: readonly CatalogueService[] | null;
   rateLimiter: { consume(identity: string): Promise<RateLimitOutcome> } | null;
   submit: BookingSubmitCall;
+  /**
+   * Mints the short-lived photo upload token returned alongside a successful
+   * reference, so the same browser can attach photos to the booking it just
+   * created. A `null` secret disables photo attachment without affecting the
+   * booking itself (SRS AT-14: an unpictured booking is still valid).
+   */
+  photoTokenSecret?: string | null;
   now?: () => Date;
   log?: (event: BookingLogEvent) => void;
 };
@@ -227,6 +238,13 @@ export async function handleBookingSubmission(
       },
     });
 
+  // A replayed submission returns the original token-less body: the booking
+  // already exists and its upload window may well have closed.
+  const photoToken =
+    !submission.data.replayed && deps.photoTokenSecret
+      ? createPhotoUploadToken(submission.data.bookingId, deps.photoTokenSecret)
+      : null;
+
   return finish({
     status: submission.data.replayed ? 200 : 201,
     headers: { ...NO_STORE },
@@ -236,6 +254,12 @@ export async function handleBookingSubmission(
       status: submission.data.status,
       replayed: submission.data.replayed,
       message: CONFIRMATION_MESSAGE,
+      ...(photoToken
+        ? {
+            photoUploadToken: photoToken,
+            photoUploadExpiresInSeconds: PHOTO_UPLOAD_TOKEN_TTL_SECONDS,
+          }
+        : {}),
       correlationId: input.correlationId,
     },
   });

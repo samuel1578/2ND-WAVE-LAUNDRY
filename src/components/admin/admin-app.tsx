@@ -24,7 +24,7 @@ import {
   type AdminRouteDefinition,
 } from "@/lib/auth/permissions";
 import { roleLabel, type AdminIdentity } from "@/lib/auth/roles";
-import { dataBackendNotice } from "@/lib/features";
+import { bookingsBackendConnected, dataBackendNotice } from "@/lib/features";
 import { useDemoStore } from "@/lib/mock-store";
 import { statusLabel } from "@/lib/rules";
 import { AdminSidebar, Logo } from "@/components/shell";
@@ -162,7 +162,9 @@ export function AdminApp({
     ];
     content =
       route === "bookings" ? (
-        <Bookings id={segments[1]} state={state} />
+        // `demo` is true only for the isolated in-memory workspace (no verified
+        // session). A real session always uses the persisted booking path.
+        <Bookings id={segments[1]} state={state} demo={!session} />
       ) : route === "enquiries" ? (
         <Enquiries id={segments[1]} state={state} />
       ) : route === "reviews" ? (
@@ -183,6 +185,7 @@ export function AdminApp({
       ) : route === "" ? (
         <Dashboard
           empty={state === "empty"}
+          demo={!session}
           modules={navigation.filter((item) => item.key !== "dashboard")}
         />
       ) : (
@@ -257,7 +260,9 @@ export function AdminApp({
           {session ? (
             <>
               <span className="badge">{roleLabel(session.role)}</span>
-              <span className="badge">Sample data</span>
+              <span className="badge">
+                {bookingsBackendConnected ? "Live bookings" : "Sample data"}
+              </span>
             </>
           ) : (
             <span className="badge">Demo workspace</span>
@@ -461,49 +466,125 @@ function Auth({
   );
 }
 
+type DashboardBookingRow = {
+  id: string;
+  reference: string;
+  customerName: string;
+  status: string;
+  subtitle: string;
+};
+
 function Dashboard({
   empty,
+  demo,
   modules,
 }: {
   empty: boolean;
+  demo: boolean;
   modules: AdminRouteDefinition[];
 }) {
   const store = useDemoStore();
-  const bookings = empty ? [] : store.bookings;
-  const leads = empty ? [] : store.leads;
-  const cards = [
-    [
-      "Pending bookings",
-      bookings.filter((b) => b.status === "pending").length,
-      CalendarDays,
-      "",
-    ],
-    [
-      "Active bookings",
-      bookings.filter(
+  // Live booking counters and recent rows. Loaded only for a verified session;
+  // the demo workspace keeps using the isolated sample store.
+  const [liveBookings, setLiveBookings] = useState<{
+    pendingCount: number;
+    activeCount: number;
+    recent: DashboardBookingRow[];
+  } | null>(null);
+  const [liveError, setLiveError] = useState(false);
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/admin/bookings?view=summary", {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("unavailable");
+        const data = (await response.json()) as {
+          pendingCount?: number;
+          activeCount?: number;
+          recent?: Array<{
+            id: string;
+            reference: string;
+            customerName: string;
+            status: string;
+            loadSize: string;
+          }>;
+        };
+        if (cancelled) return;
+        setLiveBookings({
+          pendingCount: data.pendingCount ?? 0,
+          activeCount: data.activeCount ?? 0,
+          recent: (data.recent ?? []).map((row) => ({
+            id: row.id,
+            reference: row.reference,
+            customerName: row.customerName,
+            status: row.status,
+            subtitle: row.loadSize,
+          })),
+        });
+      } catch {
+        if (!cancelled) setLiveError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [demo]);
+
+  const demoBookings = empty ? [] : store.bookings;
+  const leads = demo ? (empty ? [] : store.leads) : [];
+  const bookingRows: DashboardBookingRow[] = demo
+    ? demoBookings.slice(0, 5).map((b) => ({
+        id: b.id,
+        reference: b.reference,
+        customerName: b.input.name,
+        status: b.status,
+        subtitle: b.input.items,
+      }))
+    : (liveBookings?.recent ?? []);
+  const pendingCount = demo
+    ? demoBookings.filter((b) => b.status === "pending").length
+    : liveBookings?.pendingCount;
+  const activeCount = demo
+    ? demoBookings.filter(
         (b) => !["pending", "completed", "cancelled"].includes(b.status),
-      ).length,
-      Clock,
-      "",
-    ],
+      ).length
+    : liveBookings?.activeCount;
+  const cards: Array<
+    [string, number | string, typeof CalendarDays, string]
+  > = [
+    ["Pending bookings", pendingCount ?? "—", CalendarDays, ""],
+    ["Active bookings", activeCount ?? "—", Clock, ""],
     [
       "New enquiries",
-      leads.filter(
-        (l) => ["general", "commercial"].includes(l.kind) && l.status === "new",
-      ).length,
+      demo
+        ? leads.filter(
+            (l) =>
+              ["general", "commercial"].includes(l.kind) && l.status === "new",
+          ).length
+        : "—",
       MessageSquare,
       "",
     ],
     [
       "Reviews awaiting approval",
-      leads.filter((l) => l.kind === "review" && l.status === "new").length,
+      demo
+        ? leads.filter((l) => l.kind === "review" && l.status === "new").length
+        : "—",
       CheckCircle2,
       "/admin/reviews",
     ],
-  ] as const;
+  ];
   return (
     <>
       <Heading title="Dashboard" />
+      {liveError && (
+        <Notice error>
+          Booking totals could not be loaded. Reload the page and try again.
+        </Notice>
+      )}
       <div className="metrics">
         {cards.map(([title, count, Icon, href]) =>
           href ? (
@@ -531,8 +612,8 @@ function Dashboard({
             <h2>Recent bookings</h2>
             <Link href="/admin/bookings">View All ↗</Link>
           </div>
-          {bookings.length ? (
-            bookings.slice(0, 5).map((b) => (
+          {bookingRows.length ? (
+            bookingRows.map((b) => (
               <Link
                 className="record-row"
                 key={b.id}
@@ -540,8 +621,8 @@ function Dashboard({
               >
                 <div>
                   <small>{b.reference}</small>
-                  <h3>{b.input.name}</h3>
-                  <p>{b.input.items}</p>
+                  <h3>{b.customerName}</h3>
+                  <p>{b.subtitle}</p>
                 </div>
                 <span className={`badge ${b.status}`}>
                   {statusLabel(b.status)}
@@ -577,9 +658,16 @@ function Dashboard({
                 <span className="badge">{statusLabel(l.status)}</span>
               </Link>
             ))}
-          {!leads.some((l) => ["general", "commercial"].includes(l.kind)) && (
+          {!demo ? (
+            // Honest state: enquiries are not connected in Sprint 2C, so sample
+            // records are never shown as if they were real.
+            <Empty
+              title="Enquiries are not connected yet."
+              body="Enquiry records remain sample data in this build."
+            />
+          ) : !leads.some((l) => ["general", "commercial"].includes(l.kind)) ? (
             <Empty title="No requests to show yet." />
-          )}
+          ) : null}
         </section>
       </div>
       <section className="section">

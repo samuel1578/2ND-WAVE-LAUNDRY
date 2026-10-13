@@ -45,6 +45,24 @@ function configurationError(): string {
     : supabaseConfigMessage(supabaseConfig.reason);
 }
 
+/**
+ * Server-side-only diagnostics for authentication failures.
+ *
+ * The interface deliberately returns one generic message (so an arbitrary email
+ * address cannot be probed), which leaves the server log as the only place the
+ * real reason may appear. We record only the provider's stable error code, HTTP
+ * status and error name — never a password, a token, a session or a payload.
+ */
+function logAuthFailure(operation: string, cause: unknown): void {
+  const error = cause as
+    | { code?: string; status?: number; name?: string }
+    | null
+    | undefined;
+  console.warn(
+    `[auth] ${operation} failed code=${error?.code ?? "unknown"} status=${error?.status ?? "n/a"} name=${error?.name ?? "unknown"}`,
+  );
+}
+
 async function currentAuthOrigin(): Promise<string | null> {
   const requestHeaders = await headers();
   return resolveAuthOrigin({
@@ -77,7 +95,10 @@ export async function signInAdmin(input: {
     email,
     password: input.password,
   });
-  if (error || !data.user) return { error: SIGN_IN_FAILED };
+  if (error || !data.user) {
+    logAuthFailure("sign_in", error);
+    return { error: SIGN_IN_FAILED };
+  }
 
   let admin = await getCurrentAdmin();
   if (!admin) {
@@ -95,6 +116,12 @@ export async function signInAdmin(input: {
 
   if (!admin) {
     // Disabled account, missing profile or unreadable profile: end the session.
+    // This is the case that looks like "wrong password" even though Supabase
+    // accepted the credentials, so it is logged distinctly (see the
+    // admin_profiles warning emitted by getCurrentAdmin above).
+    console.warn(
+      "[auth] sign_in accepted by Supabase but no active administrator profile resolved; the session was ended.",
+    );
     await supabase.auth.signOut();
     return { error: SIGN_IN_FAILED };
   }
@@ -126,10 +153,17 @@ export async function requestAdminPasswordReset(input: {
   if (!origin) return { error: ORIGIN_UNAVAILABLE };
 
   const supabase = await createSupabaseServerClient();
-  // Errors are intentionally not surfaced and never forwarded to the browser.
-  await supabase.auth
-    .resetPasswordForEmail(email, { redirectTo: `${origin}/admin/auth/callback` })
-    .catch(() => undefined);
+  // The browser always receives the same response (so an address cannot be
+  // enumerated), but the real outcome is recorded server-side. Otherwise a
+  // rate limit or a mailer failure would silently report success to the owner.
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${origin}/admin/auth/callback`,
+    });
+    if (error) logAuthFailure("password_reset_request", error);
+  } catch (cause) {
+    logAuthFailure("password_reset_request", cause);
+  }
 
   return { sent: true };
 }
@@ -155,15 +189,28 @@ export async function updateAdminPassword(input: {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { error: RESET_LINK_INVALID };
+  if (!user) {
+    console.warn(
+      "[auth] password_update rejected: no recovery session on this request.",
+    );
+    return { error: RESET_LINK_INVALID };
+  }
 
   // The account must already be an active administrator. Recovery never grants
   // access, and never creates a profile.
   const admin = await getCurrentAdmin();
-  if (!admin) return { error: RESET_LINK_INVALID };
+  if (!admin) {
+    console.warn(
+      "[auth] password_update rejected: the recovered session has no active administrator profile.",
+    );
+    return { error: RESET_LINK_INVALID };
+  }
 
   const { error } = await supabase.auth.updateUser({ password: input.password });
-  if (error) return { error: RESET_LINK_INVALID };
+  if (error) {
+    logAuthFailure("password_update", error);
+    return { error: RESET_LINK_INVALID };
+  }
 
   redirect("/admin?notice=password-updated");
 }

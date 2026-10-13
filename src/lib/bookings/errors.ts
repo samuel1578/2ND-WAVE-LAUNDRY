@@ -44,6 +44,7 @@ export type BookingErrorCode =
   | "invalid_fee"
   | "zero_fee_reason"
   | "invalid_note"
+  | "rate_limited"
   | "not_configured";
 
 export const BOOKING_ERROR_MESSAGES: Record<BookingErrorCode, string> = {
@@ -79,6 +80,7 @@ export const BOOKING_ERROR_MESSAGES: Record<BookingErrorCode, string> = {
   invalid_fee: "Enter a valid, non-negative fee.",
   zero_fee_reason: "Record the reason for a zero pickup fee.",
   invalid_note: "Enter a note between 1 and 4000 characters.",
+  rate_limited: "Too many booking changes in a short time. Please wait a moment and try again.",
   not_configured: "Booking operations are not configured for this environment.",
 };
 
@@ -107,6 +109,8 @@ export function bookingErrorStatus(code: BookingErrorCode): number {
       return 503;
     case "paused":
       return 503;
+    case "rate_limited":
+      return 429;
     case "invalid_request":
     case "invalid_scope":
     case "idempotency_required":
@@ -171,6 +175,7 @@ const DATABASE_MARKERS: ReadonlyArray<[string, BookingErrorCode]> = [
   ["BOOKING_FORBIDDEN", "permission_denied"],
   ["BOOKING_NOT_FOUND", "not_found"],
   ["BOOKING_CONFLICT", "conflict"],
+  ["BOOKING_RATE_LIMITED", "rate_limited"],
   ["BOOKING_PAUSED", "paused"],
   ["BOOKING_INVALID_SCOPE", "invalid_scope"],
 ];

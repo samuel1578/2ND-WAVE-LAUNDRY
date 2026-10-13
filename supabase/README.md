@@ -7,8 +7,9 @@ hosted project.
 
 ## Execution order
 
-Phase 1 migrations were applied manually to the hosted project. Apply the new
-Sprint 2A migrations after them, in filename order.
+Phase 1 migrations were applied manually to the hosted project. Apply the
+remaining migrations after them, in filename order, only when they have not
+already been applied to the target project.
 
 | # | File | Purpose |
 | --- | --- | --- |
@@ -23,10 +24,14 @@ Sprint 2A migrations after them, in filename order.
 | 9 | `migrations/20261011130200_booking_functions.sql` | **Sprint 2A** — trusted `booking_*` functions (service-role only) |
 | 10 | `migrations/20261011130300_booking_retention.sql` | **Sprint 2A** — retention job log and due-record helpers (no destructive cleanup) |
 | 11 | `migrations/20261011140000_booking_rate_limit.sql` | **Sprint 2B** — shared fixed-window rate limiter for public booking submissions (`public.booking_rate_limits` + `public.booking_rate_limit_consume`, service_role only) |
+| 12 | `migrations/20261013100000_booking_photos_storage.sql` | **Sprint 2C** — private `booking-photos` bucket (5 MB, JPEG/PNG/WebP); adds no `storage.objects` policies |
 
 Each new migration ends with read-only verification queries. Run the file and
-check the returned rows before moving to the next one. Migration 7 shows
-`rls_enabled = false` by design; re-run its verification query after migration 8.
+check the returned rows before moving to the next one. For migration 12,
+confirm the bucket is private with the expected limits and inspect the listed
+`storage.objects` policies to ensure none grants client access to this bucket.
+Migration 7 shows `rls_enabled = false` by design; re-run its verification
+query after migration 8.
 
 ## Other directories
 

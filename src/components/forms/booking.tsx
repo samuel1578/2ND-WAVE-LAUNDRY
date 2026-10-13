@@ -56,7 +56,11 @@ export function BookingForm({
     acknowledged: false,
     photoNames: [],
   });
-  const [photos, setPhotos] = useState<{ name: string; url: string }[]>([]);
+  const [photos, setPhotos] = useState<{
+    name: string;
+    url: string;
+    file: File;
+  }[]>([]);
   const photoRef = useRef(photos);
   useEffect(() => {
     photoRef.current = photos;
@@ -68,12 +72,21 @@ export function BookingForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState<{ reference: string }>();
+  const [saved, setSaved] = useState<{
+    reference: string;
+    photoUploadToken?: string;
+  }>();
   const key = useRef("");
   const submittedPayload = useRef("");
   const heading = useRef<HTMLHeadingElement>(null);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
   const [message, setMessage] = useState("");
   const [feedback, setFeedback] = useState("");
+  useEffect(() => {
+    if (!saved) return;
+    window.scrollTo(0, 0);
+    resultHeading.current?.focus({ preventScroll: true });
+  }, [saved]);
   function change<K extends keyof BookingInput>(
     name: K,
     value: BookingInput[K],
@@ -138,6 +151,7 @@ export function BookingForm({
     const loaded = incoming.map((file) => ({
       name: file.name,
       url: URL.createObjectURL(file),
+      file,
     }));
     setPhotos((p) => [...p, ...loaded]);
     change("photoNames", [...input.photoNames, ...incoming.map((f) => f.name)]);
@@ -151,7 +165,10 @@ export function BookingForm({
    * value and keeps the same idempotency key, so a retry cannot create a second
    * booking.
    */
-  async function submitToServer(idempotencyKey: string): Promise<string> {
+  async function submitToServer(idempotencyKey: string): Promise<{
+    reference: string;
+    photoUploadToken?: string;
+  }> {
     const response = await fetch("/api/bookings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -161,6 +178,7 @@ export function BookingForm({
       ok?: boolean;
       reference?: string;
       message?: string;
+      photoUploadToken?: string;
       fieldErrors?: Record<string, string>;
     } | null = null;
     try {
@@ -168,7 +186,8 @@ export function BookingForm({
     } catch {
       data = null;
     }
-    if (response.ok && data?.reference) return data.reference;
+    if (response.ok && data?.reference)
+      return { reference: data.reference, photoUploadToken: data.photoUploadToken };
     const fieldErrors = data?.fieldErrors;
     if (fieldErrors && Object.keys(fieldErrors).length) {
       setErrors((current) => ({ ...current, ...fieldErrors }));
@@ -199,6 +218,34 @@ export function BookingForm({
         "We couldn’t save your request. Your details are still here — please try again.",
     );
   }
+
+  /**
+   * Attaches the selected photos to the booking that was just committed.
+   *
+   * Runs after success and never blocks or reverses it: the booking reference
+   * is already on screen, so any failure here is reported as a recoverable
+   * notice rather than an error. The request carries the short-lived upload
+   * token minted by the submission response — a bare reference grants nothing.
+   */
+  async function uploadPhotos(uploadToken: string) {
+    const files = photoRef.current.map((p) => p.file);
+    if (!files.length) return;
+    try {
+      const body = new FormData();
+      body.append("token", uploadToken);
+      for (const file of files) body.append("photos", file, file.name);
+      const response = await fetch("/api/bookings/photo", {
+        method: "POST",
+        body,
+      });
+      if (!response.ok) throw new Error("upload refused");
+    } catch {
+      setError(
+        "Your request is saved, but the photos could not be attached. " +
+          "Please send them to the team directly if they are important.",
+      );
+    }
+  }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (step < 3) {
@@ -225,10 +272,18 @@ export function BookingForm({
       }
       // Demo mode stays entirely in memory; production must commit on the server
       // before any success is shown.
-      const reference = demoMode
-        ? (await repository.createBooking(input, key.current)).reference
+      const result = demoMode
+        ? {
+            reference: (await repository.createBooking(input, key.current))
+              .reference,
+          }
         : await submitToServer(key.current);
-      setSaved({ reference });
+      const { reference } = result;
+      setSaved({ reference, photoUploadToken: result.photoUploadToken });
+      // Photos attach after the booking is committed, never before: a failed or
+      // refused upload must not cost the customer their booking (SRS AT-14).
+      if (!demoMode && result.photoUploadToken && photoRef.current.length)
+        void uploadPhotos(result.photoUploadToken);
       setMessage(
         `Hello 2nd Wave team. I would like to discuss pickup request ${reference}.\nName: ${input.name}\nServices: ${input.services.map((slug) => services.find((s) => s.slug === slug)?.title).join(", ")}\nPreferred date: ${input.date}\nPreferred time: ${input.time || "As soon as possible"}\nPlease contact me to agree the fee and arrangements.`,
       );
@@ -272,7 +327,9 @@ export function BookingForm({
               />
               <Check className="success-symbol__fallback" aria-hidden="true" />
             </span>
-            <h1>{copy("06.05", "H1")}</h1>
+            <h1 ref={resultHeading} tabIndex={-1}>
+              {copy("06.05", "H1")}
+            </h1>
             <Notice success={!demoMode}>
               {demoMode
                 ? "Demo request only. The business has not received this request."
