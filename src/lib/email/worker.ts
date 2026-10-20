@@ -1,0 +1,345 @@
+/**
+ * Transactional outbox worker.
+ *
+ * Pure orchestration over injected repository/provider dependencies so the
+ * delivery policy can be tested without a database or a real provider.
+ *
+ * Guarantees:
+ *   * a bounded batch is claimed atomically by the database;
+ *   * a row is only processed while its lease is owned by this worker;
+ *   * retryable failures use bounded exponential backoff with jitter;
+ *   * permanent failures move to the dead-letter state immediately;
+ *   * the provider is never called when sending is disabled;
+ *   * a delivery failure never touches a booking and never throws out of the
+ *     post-commit dispatch path.
+ *
+ * Delivery is at-least-once, not mathematically exactly-once. A timeout after
+ * Brevo accepted a request is inherently ambiguous. The outbox UUID is sent as
+ * Brevo's 30-minute idempotency key, so retries within that window cannot create
+ * a duplicate; a retry after the window may. See the sprint report.
+ */
+
+import type { BrevoClient, BrevoSendResult } from "./brevo";
+import type { EmailOutboxRepository } from "./outbox-repository";
+import {
+  buildBrevoTemplateParams,
+  type EmailTemplate,
+} from "./templates";
+
+export const WORKER_BATCH_SIZE = 10;
+export const WORKER_LEASE_SECONDS = 300;
+export const WORKER_REAP_LIMIT = 50;
+const MAX_BATCH_SIZE = 25;
+const MAX_LEASE_SECONDS = 900;
+const RETRY_BASE_SECONDS = 60;
+const RETRY_CAP_SECONDS = 900;
+const RETRY_JITTER_SECONDS = 30;
+
+export type EmailWorkerDeps = {
+  enabled: boolean;
+  repository: EmailOutboxRepository;
+  provider: BrevoClient;
+  siteUrl: string;
+  templateIds: Record<EmailTemplate, number>;
+  batchSize?: number;
+  leaseSeconds?: number;
+  reapLimit?: number;
+  random?: () => number;
+  log?: (event: EmailWorkerLogEvent) => void;
+};
+
+export type EmailWorkerLogEvent = {
+  level: "warn" | "error";
+  event: "email_delivery_retry" | "email_delivery_dead" | "email_delivery_skipped";
+  outboxId: string;
+  template: string;
+  reason: string;
+};
+
+export type EmailWorkerSummary = {
+  ok: true;
+  enabled: boolean;
+  reaped: number;
+  claimed: number;
+  sent: number;
+  retried: number;
+  dead: number;
+  skipped: number;
+  failed: number;
+  durationMs: number;
+};
+
+export type EmailWorkerFailure = {
+  ok: false;
+  enabled: boolean;
+  error: "repository_unavailable" | "worker_unavailable";
+  durationMs: number;
+};
+
+export type EmailWorkerResult = EmailWorkerSummary | EmailWorkerFailure;
+
+/**
+ * Bounded exponential backoff with jitter. Attempt 1 is roughly one minute, and
+ * the ceiling is fifteen minutes. With the default five-attempt budget every
+ * retry falls inside Brevo's documented 30-minute idempotency window.
+ */
+export function retryDelaySeconds(
+  attemptCount: number,
+  random: () => number = Math.random,
+): number {
+  const attempt = Math.max(1, Math.min(20, Math.trunc(attemptCount)));
+  const exponential = Math.min(
+    RETRY_CAP_SECONDS,
+    RETRY_BASE_SECONDS * 2 ** (attempt - 1),
+  );
+  const jitter = Math.floor(RETRY_JITTER_SECONDS * random());
+  return Math.max(1, Math.min(RETRY_CAP_SECONDS, exponential + jitter));
+}
+
+const boundedBatch = (value: number | undefined): number => {
+  if (!Number.isInteger(value) || value === undefined) return WORKER_BATCH_SIZE;
+  return Math.max(1, Math.min(MAX_BATCH_SIZE, value));
+};
+
+const boundedLease = (value: number | undefined): number => {
+  if (!Number.isInteger(value) || value === undefined) return WORKER_LEASE_SECONDS;
+  return Math.max(30, Math.min(MAX_LEASE_SECONDS, value));
+};
+
+const asResult = (
+  providerResult: BrevoSendResult,
+): BrevoSendResult => providerResult;
+
+export async function runEmailWorker(
+  deps: EmailWorkerDeps,
+  options: { workerId: string },
+): Promise<EmailWorkerResult> {
+  const started = Date.now();
+
+  if (!deps.enabled) {
+    return {
+      ok: true,
+      enabled: false,
+      reaped: 0,
+      claimed: 0,
+      sent: 0,
+      retried: 0,
+      dead: 0,
+      skipped: 0,
+      failed: 0,
+      durationMs: Date.now() - started,
+    };
+  }
+
+  if (!options.workerId || !deps.provider) {
+    return {
+      ok: false,
+      enabled: true,
+      error: "worker_unavailable",
+      durationMs: Date.now() - started,
+    };
+  }
+
+  let reaped = 0;
+  let claimedRows;
+  try {
+    reaped = await deps.repository.reap(deps.reapLimit ?? WORKER_REAP_LIMIT);
+    claimedRows = await deps.repository.claim({
+      workerId: options.workerId,
+      limit: boundedBatch(deps.batchSize),
+      leaseSeconds: boundedLease(deps.leaseSeconds),
+    });
+  } catch {
+    return {
+      ok: false,
+      enabled: true,
+      error: "repository_unavailable",
+      durationMs: Date.now() - started,
+    };
+  }
+
+  let sent = 0;
+  let retried = 0;
+  let dead = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const row of claimedRows) {
+    if (!row.bookingId) {
+      try {
+        const marked = await deps.repository.markDead({
+          id: row.id,
+          workerId: options.workerId,
+          error: "email_booking_missing",
+        });
+        if (marked) dead += 1;
+        else skipped += 1;
+      } catch {
+        failed += 1;
+      }
+      continue;
+    }
+
+    let context;
+    try {
+      context = await deps.repository.loadBookingContext(row.bookingId);
+    } catch {
+      // Leave the row leased. The reaper will recover it after the lease
+      // expires; a transient database failure must not dead-letter a message.
+      failed += 1;
+      continue;
+    }
+
+    if (!context) {
+      try {
+        const marked = await deps.repository.markDead({
+          id: row.id,
+          workerId: options.workerId,
+          error: "email_booking_missing",
+        });
+        if (marked) dead += 1;
+        else skipped += 1;
+      } catch {
+        failed += 1;
+      }
+      continue;
+    }
+
+    let params: Record<string, string>;
+    try {
+      params = buildBrevoTemplateParams(row.template, context, {
+        siteUrl: deps.siteUrl,
+      });
+    } catch {
+      // Invalid persisted template parameters cannot be fixed by retrying.
+      try {
+        const marked = await deps.repository.markDead({
+          id: row.id,
+          workerId: options.workerId,
+          error: "email_template_params_failed",
+        });
+        if (marked) dead += 1;
+        else skipped += 1;
+      } catch {
+        failed += 1;
+      }
+      continue;
+    }
+
+    let providerResult: BrevoSendResult;
+    try {
+      providerResult = asResult(
+        await deps.provider.send({
+          to: row.recipientEmail,
+          templateId: deps.templateIds[row.template],
+          params,
+          idempotencyKey: row.id,
+          template: row.template,
+        }),
+      );
+    } catch {
+      // An unexpected provider exception is retryable, never a booking failure.
+      providerResult = {
+        ok: false,
+        classification: "retryable",
+        reason: "email_delivery_exception",
+      };
+    }
+
+    if (providerResult.ok) {
+      let marked: boolean;
+      try {
+        marked = await deps.repository.markSent({
+          id: row.id,
+          workerId: options.workerId,
+          providerMessageId: providerResult.providerMessageId,
+        });
+      } catch {
+        failed += 1;
+        continue;
+      }
+
+      if (marked) sent += 1;
+      else {
+        // The lease was lost (for example the row was reaped and reclaimed).
+        // Never claim a send that this worker can no longer record.
+        skipped += 1;
+        deps.log?.({
+          level: "warn",
+          event: "email_delivery_skipped",
+          outboxId: row.id,
+          template: row.template,
+          reason: "lease_not_owned",
+        });
+      }
+      continue;
+    }
+
+    if (providerResult.classification === "permanent") {
+      try {
+        const marked = await deps.repository.markDead({
+          id: row.id,
+          workerId: options.workerId,
+          error: providerResult.reason,
+        });
+        if (marked) dead += 1;
+        else skipped += 1;
+      } catch {
+        failed += 1;
+      }
+
+      deps.log?.({
+        level: "warn",
+        event: "email_delivery_dead",
+        outboxId: row.id,
+        template: row.template,
+        reason: providerResult.reason,
+      });
+      continue;
+    }
+
+    const backoff = retryDelaySeconds(row.attemptCount, deps.random);
+    const delay = Math.min(
+      RETRY_CAP_SECONDS,
+      Math.max(backoff, providerResult.retryAfterSeconds ?? 0),
+    );
+
+    let status: "retryable_failed" | "dead" | null;
+    try {
+      status = await deps.repository.markRetry({
+        id: row.id,
+        workerId: options.workerId,
+        error: providerResult.reason,
+        delaySeconds: delay,
+      });
+    } catch {
+      failed += 1;
+      continue;
+    }
+
+    if (status === "dead") dead += 1;
+    else if (status === "retryable_failed") retried += 1;
+    else skipped += 1;
+
+    deps.log?.({
+      level: "warn",
+      event: status === "dead" ? "email_delivery_dead" : "email_delivery_retry",
+      outboxId: row.id,
+      template: row.template,
+      reason: providerResult.reason,
+    });
+  }
+
+  return {
+    ok: true,
+    enabled: true,
+    reaped,
+    claimed: claimedRows.length,
+    sent,
+    retried,
+    dead,
+    skipped,
+    failed,
+    durationMs: Date.now() - started,
+  };
+}

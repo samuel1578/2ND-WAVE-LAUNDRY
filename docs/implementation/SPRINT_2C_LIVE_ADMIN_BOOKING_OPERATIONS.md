@@ -1,9 +1,11 @@
 # Sprint 2C — Live Administrator Booking Operations
 
-**Status:** implemented and technically verified in this working copy. **No new SQL
-is required**; every operation reuses the deployed Sprint 2A/2B schema, policies
-and trusted functions. No hosted data was read, written or migrated during
-verification.
+**Status:** Sprint 2C implementation is complete; focused owner end-to-end
+verification confirmed booking-photo upload, the private Storage bucket and the
+administrator image viewer. The booking-request confirmation and page-entry
+scroll behavior are implemented and build-verified. The app build and typecheck pass.
+The full automated test suite still has five failing photo-upload tests (details
+in §12); do not treat those as passed.
 
 ---
 
@@ -28,6 +30,13 @@ Admin shell (client)  ── demo workspace (no session) → in-memory mock repo
          ▼
       public.booking_transition / booking_update_arrangement / booking_add_note
          → bookings + booking_status_history + audit_events (one transaction)
+
+Public booking form (client) → POST /api/bookings/photo
+  → byte validation + upload token → elevated server client
+  → private `booking-photos` bucket + `public.booking_photos` metadata
+Admin booking detail → `BookingImagePanel`
+  → authenticated photo-access endpoint → session/RLS check → short-lived URL
+  → zoomable viewer (no bucket or object key in client code)
 ```
 
 Reads are RLS-scoped with the caller's own session; writes go through the
@@ -39,22 +48,30 @@ and the live modules never import the mock store.
 | File | Purpose |
 | --- | --- |
 | `src/lib/bookings/admin.ts` | **New.** Shared admin contracts, persisted-row mapping (fails closed), query normalisation/pagination, `Africa/Accra` conversions and the agreed-pickup window rule. Framework-free and unit-tested. |
-| `src/lib/bookings/admin-service.ts` | **New.** Server-only bounded reads: list page + exact count, one booking with its services/history/notes, branch options, dashboard counters. |
+| `src/lib/bookings/admin-service.ts` | **New.** Server-only bounded reads: list page + exact count, one booking with its services/history/notes/photos, branch options, dashboard counters. |
 | `src/lib/bookings/admin-actions.ts` | **New.** Guarded server actions: `saveBookingArrangement`, `changeBookingStatus`, `addBookingNoteAction`. |
 | `src/app/api/admin/bookings/route.ts` | **New.** Guarded read endpoint (list / detail / `?view=summary`). |
 | `tests/booking-admin.test.ts` | **New.** 13 pure tests for the Sprint 2C contracts. |
+| `src/components/admin/booking-image-panel.tsx` | **New.** Lazy customer-photo previews, retry states and keyboard-accessible zoom/pan viewer. |
+| `src/app/api/admin/bookings/[id]/photos/[photoId]/route.ts` | **New.** Permission-checked short-lived signed-URL endpoint. |
+| `src/app/api/bookings/photo/route.ts` | **New.** Token-bound public upload endpoint; validates bytes and persists objects/metadata server-side. |
+| `src/lib/bookings/photos.ts`, `photo-upload.ts`, `photo-access.ts` | **New.** Photo validation/token rules, upload orchestration and administrator access checks. |
+| `tests/photos.test.ts`, `tests/photo-upload.test.ts` | **New.** Photo validation and upload contract tests. |
+| `supabase/migrations/20261013100000_booking_photos_storage.sql` | **New.** Creates the private `booking-photos` bucket with matching file/MIME limits and no client policies. |
 
 ## 3. Files changed
 
 | File | Change |
 | --- | --- |
-| `src/components/admin/bookings.tsx` | Split into `DemoBookings` (previous behaviour preserved) and `LiveBookings` (list, detail, server actions, states, pagination, refresh). |
+| `src/components/admin/bookings.tsx` | Split into `DemoBookings` (previous behaviour preserved) and `LiveBookings` (list, detail, photo panel, server actions, states, pagination, refresh). |
 | `src/components/admin/admin-app.tsx` | Passes `demo={!session}` to Bookings and Dashboard; live booking counters + recent rows; truthful workspace badge. |
 | `src/lib/features.ts` | `demo` / `live` / `unconfigured` backend state and honest notices. |
 | `src/lib/bookings/errors.ts` | Added `rate_limited` (HTTP 429) and its DB marker. |
 | `src/lib/security/rate-limit.ts` | Added a separate `booking_mutation` limit + `adminRateLimits`; existing staff limits unchanged. |
+| `src/lib/supabase/admin.ts` | Adds Next.js `server-only` protection for the elevated client. |
+| `src/components/scroll-to-top.tsx`, `src/app/layout.tsx` | Starts normal internal page navigation at the top while preserving fragment targets. |
+| `src/components/forms/booking.tsx` | Scrolls to and focuses the confirmation heading after a successful booking on desktop and mobile. |
 
-No design, layout, branding, navigation or unrelated-copy change was made.
 `src/data/content.json` was not touched.
 
 ## 4. Read endpoint — `GET /api/admin/bookings`
@@ -66,7 +83,7 @@ are `Cache-Control: private, no-store`.
 | Request | Response |
 | --- | --- |
 | `?search=&status=&branch=&date=&page=&pageSize=` | `{ rows, total, page, pageSize, branches }` — one page, exact total, branch options |
-| `?id=<uuid>` | `{ booking, branches }` — full detail incl. `history`, `notes`, `audit` |
+| `?id=<uuid>` | `{ booking, branches }` — full detail incl. `history`, `notes`, `audit` and customer-photo metadata |
 | `?view=summary` | `{ pendingCount, activeCount, recent }` — dashboard counters + 5 recent rows |
 
 - `search` matches reference, customer name and phone; `branch` accepts `unassigned`
@@ -159,26 +176,32 @@ future additive migration.
 
 ## 11. SQL
 
-**No new migration is required.** Every requirement is met by deployed objects:
+The admin booking operations reuse the Sprint 2A schema and trusted functions.
+The photo pipeline adds one migration:
 
-- reads — `bookings`, `booking_services`, `booking_status_history`, `booking_notes`,
-  `branches` with `private.is_active_admin()` SELECT policies and `authenticated`
-  SELECT grants;
-- writes — `booking_transition`, `booking_update_arrangement`, `booking_add_note`
-  (service_role only, version-checked, atomic history + audit);
-- audit — `audit_events` + `private.insert_audit_event` (`entity_type = 'booking'`,
-  `entity_id = booking uuid`).
+- `supabase/migrations/20261013100000_booking_photos_storage.sql` registers or
+  updates a **private** `booking-photos` bucket (5,000,000 bytes per object;
+  JPEG, PNG and WebP only). It creates no `storage.objects` policies. Its
+  verification query lists existing policies for operator review.
+- Booking metadata remains in `public.booking_photos`; object uploads and
+  signed-URL creation use the server-only elevated client. The admin endpoint
+  first checks the signed-in administrator and re-reads the photo row under the
+  caller's RLS session; expired or inaccessible photos are not signed.
+- The owner reports that the bucket and photo flow passed end-to-end testing.
+  This implementation session did not apply the migration; retain its recorded
+  status and read-only verification output for the target Supabase project.
 
-No applied migration was edited, and nothing was applied to hosted Supabase.
+No existing migration was edited.
 
 ## 12. Tests performed and outcomes
 
 | Check | Result |
 | --- | --- |
-| `npm run typecheck` | Passed |
-| `npm run lint` | Passed (0 errors; 3 pre-existing warnings: `.opencode/plugins/graphify.js` anonymous default export; two `<img>` warnings in `src/components/forms/booking.tsx`) |
-| `npm test` | **164/164 passed** (was 151; +13 in `tests/booking-admin.test.ts`) |
-| `npm run build` | Passed; `/api/admin/bookings` present as a dynamic route |
+| `npm run typecheck` | Passed after admin/photo changes and again after page-scroll changes. |
+| Targeted ESLint | Passed for `booking-image-panel.tsx` and `supabase/admin.ts`; scroll-related lint completed with two `<img>` warnings in `src/components/forms/booking.tsx`. |
+| `npm test` | **170/175 passed; 5 failed** in `tests/photo-upload.test.ts`. Failures concern expected rate-limit header casing and upload fixtures/expected validation outcomes. These failures remain unresolved and are not represented as passing coverage. |
+| `npm run build` | Passed after the admin/photo changes and again after page-scroll changes; `/api/admin/bookings` and photo API routes are present as dynamic routes. |
+| Owner end-to-end test | Owner confirmed successful admin image picker and private bucket flow. |
 
 New coverage: query normalisation/filtering & pagination clamping, PostgREST
 search neutralisation, list/detail row mapping and fail-closed behaviour, the
@@ -190,9 +213,9 @@ Not executed / not available (not claimed as passing):
 
 - **Database integration tests** (`supabase/tests/sprint_2a_booking_security.sql`) —
   no disposable Postgres/CLI here.
-- **A live authenticated write against hosted Supabase** — deliberately not
-  performed (no admin session and no disposable test data; avoids touching real
-  customer records). Recommend an owner smoke test in the live console.
+- **A hosted migration audit from this session** — no database connection was
+  used. The owner reports end-to-end success, but retain the migration ledger
+  and SQL verification output for deployment records.
 
 ## 13. Known limitations
 
@@ -208,15 +231,35 @@ Not executed / not available (not claimed as passing):
 4. Service charge is carried through the arrangement path but is not yet exposed as
    a separate control in the form (the agreed fee is). This keeps the existing form
    shape.
-5. Sprint 2C deliberately implements no email/Brevo, customer accounts, online
+5. The photo-upload automated tests have five outstanding failures (see §12),
+   despite the owner's successful end-to-end test.
+6. Sprint 2C deliberately implements no email/Brevo, customer accounts, online
    payments or automated WhatsApp messaging (Sprints 2D/2E).
 
-## 14. Owner steps
+## 14. Owner verification and deployment
 
-1. No SQL to apply.
-2. Deploy the changes. A verified administrator on a Supabase-configured
-   deployment sees live bookings automatically; the demo workspace is unchanged.
-3. Smoke test in the live console: open `/admin/bookings`, filter/paginate, open a
-   booking, assign a branch + agreed pickup/fee/contact outcome, confirm it, advance
-   a status, add a note, and cancel with a reason. Confirm a stale second save
-   surfaces the conflict message.
+1. The owner reports that the private photo bucket and admin image viewer passed
+   an end-to-end test. Retain the Supabase SQL verification output and ensure the
+   target environment has the private bucket with the configured limits.
+2. Deploy with `SUPABASE_SECRET_KEY` (or legacy service-role key) configured only
+   as a server environment variable. It must never use a `NEXT_PUBLIC_` name.
+   `src/lib/supabase/admin.ts` imports `server-only`, so importing the elevated
+   client into a Client Component fails the Next.js build.
+3. Verify that photo upload remains token-bound, accepts only actual
+   JPEG/PNG/WebP bytes, and rejects unauthenticated admin photo access. Do not
+   add client `storage.objects` policies for this bucket.
+4. Smoke-test live admin booking list/detail, branch and arrangement editing,
+   status transitions, notes, cancellation and stale-write conflict handling.
+5. Internal page navigation and successful booking confirmation now scroll to
+   the top on desktop and mobile; fragment links such as `#services` retain
+   their section destination.
+
+## 15. Sprint 2C scope and exclusions
+
+- Sprint 2C includes live administrator booking operations, secure customer-photo
+  upload/viewing, deployment safeguards for the elevated key, and page-entry /
+  booking-confirmation scroll behavior.
+- It deliberately does not implement email/Brevo, customer accounts, online
+  payments or automated WhatsApp messaging (Sprints 2D/2E).
+- The photo panel displays attachments; upload happens after the booking is
+  committed so a photo failure cannot undo a saved request.

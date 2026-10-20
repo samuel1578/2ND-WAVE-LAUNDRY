@@ -37,6 +37,7 @@ export const staffRateLimits = {
  */
 export const bookingRateLimits = {
   booking_mutation: { limit: 120, windowMs: 15 * 60 * 1000 },
+  email_retry: { limit: 10, windowMs: 15 * 60 * 1000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Every administrative limit the limiter knows about. */

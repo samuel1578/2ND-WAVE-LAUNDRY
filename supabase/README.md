@@ -25,13 +25,19 @@ already been applied to the target project.
 | 10 | `migrations/20261011130300_booking_retention.sql` | **Sprint 2A** — retention job log and due-record helpers (no destructive cleanup) |
 | 11 | `migrations/20261011140000_booking_rate_limit.sql` | **Sprint 2B** — shared fixed-window rate limiter for public booking submissions (`public.booking_rate_limits` + `public.booking_rate_limit_consume`, service_role only) |
 | 12 | `migrations/20261013100000_booking_photos_storage.sql` | **Sprint 2C** — private `booking-photos` bucket (5 MB, JPEG/PNG/WebP); adds no `storage.objects` policies |
+| 13 | `migrations/20261019120000_email_outbox.sql` | **Sprint 2D.1** — `public.email_outbox`, six typed booking notification templates, transactional enqueue triggers on `public.bookings`, RLS with no client access. No email is sent. |
+| 14 | `migrations/20261019130000_email_delivery.sql` | **Sprint 2D.2** — outbox claim/reap/retry/dead-letter functions, per-provider-message delivery events, RLS with no client access. Requires migration 13. No email is sent by the migration. |
+| 15 | `migrations/20261019140000_email_monitoring.sql` | **Sprint 2D.3** — audited, active-Full-Admin-only retry of one dead outbox row. Requires migrations 13–14. No email is sent by the migration. |
 
 Each new migration ends with read-only verification queries. Run the file and
 check the returned rows before moving to the next one. For migration 12,
 confirm the bucket is private with the expected limits and inspect the listed
 `storage.objects` policies to ensure none grants client access to this bucket.
 Migration 7 shows `rls_enabled = false` by design; re-run its verification
-query after migration 8.
+query after migration 8. Migration 14 must be applied only after migration 13;
+its verification queries should show `email_delivery_events` with RLS enabled,
+zero policies, no `anon`/`authenticated` privilege and `service_role` access
+only through the narrow grants.
 
 ## Other directories
 
@@ -44,12 +50,45 @@ query after migration 8.
   - `004_change_admin_role.sql` — the only supported role change, with an
     explicit confirmation flag.
 - `tests/` — database-level privilege and policy checks to run against a local or
-  branch database. **Not executed yet**: no local Postgres or Supabase CLI was
-  available, and the migrations have not been applied to the hosted project.
+  branch database. Check the target project's migration history before applying
+  any migration; hosted migration state is not inferred from this repository.
   - `admin_profiles_rls.sql`, `sprint_1c_staff_security.sql` — Phase 1 checks.
   - `sprint_2a_booking_security.sql` — Sprint 2A booking security, scheduling,
     idempotency and lifecycle checks. It runs in a transaction and rolls back.
     **Never run it against the hosted project.**
+  - `sprint_2d1_email_outbox.sql` — Sprint 2D.1 outbox creation, lifecycle
+    mapping, duplicate/forged rejection, atomic rollback, RLS and grant checks.
+    It runs in a transaction and rolls back. **Never run it against the hosted
+    project.** It was executed through a one-off PGlite runner with every
+    migration applied and passed; it has not been run against a full Supabase
+    instance. The same migration is also executed automatically by the Node tests
+    below against PGlite.
+
+## Automated database tests
+
+`npm test` includes three PGlite/WASM PostgreSQL test files that need no server
+and never touch the hosted project:
+
+- `tests/email-outbox-db.test.ts` — applies the Sprint 2D.1 migration to a focused
+  booking harness and exercises creation, optional email, replay, uniqueness,
+  lifecycle mapping, rollback, forged data, lease invariants, RLS and grants.
+- `tests/email-outbox-integration-db.test.ts` — applies **every** migration in
+  filename order, then drives the real `booking_submit`,
+  `booking_update_arrangement` and `booking_transition` functions to verify that
+  enqueueing is atomic and idempotent.
+- `tests/email-delivery-db.test.ts` — applies every migration, then exercises the
+  Sprint 2D.2 claim/reap/retry/dead-letter functions, delivery-event constraints,
+  cascade deletion and the RLS/grant boundary.
+
+PGlite is a real PostgreSQL engine but not the full Supabase stack: `auth.users`,
+`auth.uid()` and `storage.buckets` are minimal stubs. The SQL scripts in
+`supabase/tests/` remain the full-role equivalent for an operator with a
+disposable local Supabase instance.
+
+The owner reports that the Sprint 2C private booking-photo bucket and admin
+image-viewing flow passed an end-to-end test. The migration's verification query
+reports bucket limits and lists all `storage.objects` policies for review; confirm
+the output and migration history separately for each deployment environment.
 
 ## Security notes
 
@@ -66,6 +105,17 @@ query after migration 8.
   callable by `service_role` only. The application must establish the caller's real
   permissions on the server before invoking them, and each administrative function
   re-validates the acting administrator in the database.
+- `public.email_outbox` has RLS enabled and **no policies**. `anon` and
+  `authenticated` have no table privilege at all. Rows are inserted by private
+  triggers in the same transaction as the booking change; only the elevated
+  server role may read or update them. No email is sent by the migrations.
+- `public.email_delivery_events` also has RLS enabled with **no policies**, and
+  `anon`/`authenticated` have no privilege. It stores only the outbox id,
+  normalised delivery event, replay digest, a bounded reason and event time — no
+  recipient address, subject or body. The worker functions are `SECURITY DEFINER`,
+  search-path-pinned and executable by `service_role` only. See
+  `docs/implementation/SPRINT_2D_EMAIL_IMPLEMENTATION.md` for activation and the
+  scheduler prerequisite.
 
 See `docs/implementation/SPRINT_1A_SUPABASE_AUTH.md`,
 `docs/implementation/SPRINT_1C_SECURITY_STAFF_AUDIT.md` and

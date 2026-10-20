@@ -191,7 +191,6 @@ export function validatePublicBookingRequest(
       requestedDate,
       requestedTime,
       expressRequested,
-      noticeVersion: asTrimmed(raw.noticeVersion).slice(0, BOOKING_LIMITS.noticeVersion.max),
       services,
     },
   };
@@ -202,9 +201,14 @@ export function validatePublicBookingRequest(
  *
  * The keys are the snake_case names the trusted function reads. Nothing outside
  * this contract is forwarded, so a browser cannot inject extra fields.
+ *
+ * `noticeVersion` is deliberately a separate argument: it is the server-approved
+ * notice version (`src/lib/bookings/notice.ts`), never a value read from the
+ * request body. Any `noticeVersion` a browser sends is ignored.
  */
 export function toBookingSubmitPayload(
   request: NormalisedBookingRequest,
+  noticeVersion: string | null,
 ): BookingSubmitPayload {
   return {
     customer_name: request.customerName,
@@ -223,7 +227,7 @@ export function toBookingSubmitPayload(
     requested_date: request.requestedDate,
     requested_time: request.requestedTime,
     express_requested: request.expressRequested,
-    notice_version: request.noticeVersion,
+    notice_version: noticeVersion,
   };
 }
 

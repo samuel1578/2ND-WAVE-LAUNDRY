@@ -78,7 +78,6 @@ function input(overrides: Record<string, unknown> = {}) {
     whatsapp: "",
     contactMethod: "Phone call",
     acknowledged: true,
-    noticeVersion: "test",
     ...overrides,
   };
 }
@@ -212,11 +211,30 @@ test("valid public input normalises into the database payload", () => {
   assert.equal(result.value.customerEmail, null);
   assert.equal(result.value.contactMethod, "phone");
   assert.equal(result.value.transportPreference, "no_preference");
-  const payload = toBookingSubmitPayload(result.value);
+  const payload = toBookingSubmitPayload(result.value, "2026-10-01");
   assert.equal(payload.customer_phone, "+233595224280");
   assert.equal(payload.customer_email, null);
   assert.equal(payload.requested_date, "2099-01-01");
   assert.equal(payload.express_requested, false);
+  assert.equal(payload.notice_version, "2026-10-01");
+});
+
+test("a browser-supplied notice version is ignored; the server value is persisted", () => {
+  const result = validatePublicBookingRequest(
+    input({ noticeVersion: "forged-client-version" }),
+    { services: catalogue, now: SUNDAY_0800 },
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  // The normalised request carries no notice version at all.
+  assert.equal("noticeVersion" in result.value, false);
+
+  const withApproved = toBookingSubmitPayload(result.value, "2026-10-01");
+  assert.equal(withApproved.notice_version, "2026-10-01");
+
+  const withoutApproved = toBookingSubmitPayload(result.value, null);
+  assert.equal(withoutApproved.notice_version, null);
 });
 
 test("a missing customer phone is rejected; an optional email is accepted", () => {

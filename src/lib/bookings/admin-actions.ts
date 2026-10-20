@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
 import { AdminAuthorisationError, type AdminIdentity } from "@/lib/auth/roles";
@@ -20,6 +21,7 @@ import {
 } from "./lifecycle";
 import { BOOKING_LIMITS, type BookingStatus } from "./types";
 import { agreedPickupAtWindowError, isBookingStatus, isUuid } from "./admin";
+import { dispatchPendingEmails } from "@/lib/email/dispatch";
 
 /**
  * Privileged administrative booking actions (Sprint 2C).
@@ -209,6 +211,10 @@ export async function changeBookingStatus(input: {
     correlationId: crypto.randomUUID(),
   });
   if (!result.ok) return failure(result.code);
+
+  // The status/history/outbox transaction has committed. Attempt delivery after
+  // the action response; a failure here can never roll back the booking.
+  after(() => dispatchPendingEmails("admin_booking_status"));
 
   revalidateBooking(input.bookingId);
   return {

@@ -118,6 +118,31 @@ test("submission is disabled until explicitly activated", async () => {
   assert.equal(calls.length, 0);
 });
 
+test("the trusted server supplies the notice version, never the request body", async () => {
+  let payload: Record<string, unknown> | undefined;
+  const { deps } = makeDeps({ noticeVersion: "2026-10-01" }, async (call) => {
+    payload = call.payload;
+    return {
+      ok: true,
+      data: {
+        bookingId: "11111111-1111-1111-1111-111111111111",
+        reference: "2W-7K3M9PQRST",
+        status: "pending",
+        version: 1,
+        replayed: false,
+      },
+    };
+  });
+
+  const res = await handleBookingSubmission(
+    input({ body: body({ noticeVersion: "forged-client-version" }) }),
+    deps,
+  );
+
+  assert.equal(res.status, 201);
+  assert.equal(payload?.notice_version, "2026-10-01");
+});
+
 test("an unconfigured deployment fails closed", async () => {
   for (const overrides of [{ configured: false }, { catalogue: null }] as const) {
     const { deps, calls } = makeDeps(overrides);

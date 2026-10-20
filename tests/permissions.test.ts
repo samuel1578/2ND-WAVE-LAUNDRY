@@ -139,6 +139,10 @@ test("operational admin reaches bookings and reviews, and nothing else", () => {
     resolveAdminRouteAccess(OPERATIONAL, "/admin/reviews").kind,
     "allowed",
   );
+  assert.equal(
+    resolveAdminRouteAccess(OPERATIONAL, "/admin/email-delivery").kind,
+    "forbidden",
+  );
   for (const path of [
     "/admin/settings",
     "/admin/content",
@@ -203,6 +207,7 @@ test("navigation is filtered from the permission registry", () => {
       "Settings",
       // Sprint 1C — Full Admin only.
       "Staff Management",
+      "Email Delivery",
     ],
   );
   const operational = adminNavigationFor(OPERATIONAL);
@@ -233,6 +238,7 @@ test("navigation is filtered from the permission registry", () => {
       "/admin/media",
       "/admin/settings",
       "/admin/staff",
+      "/admin/email-delivery",
     ],
   );
   assert.deepEqual(

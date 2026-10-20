@@ -151,7 +151,6 @@ export type NormalisedBookingRequest = {
   /** Optional preferred clock time, `HH:MM`. */
   requestedTime: string | null;
   expressRequested: boolean;
-  noticeVersion: string;
   services: string[];
 };
 

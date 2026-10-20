@@ -81,6 +81,11 @@ export type BookingSubmissionDeps = {
    * booking itself (SRS AT-14: an unpictured booking is still valid).
    */
   photoTokenSecret?: string | null;
+  /**
+   * Server-approved privacy-notice version stored with the booking. Supplied by
+   * the route from trusted configuration, never from request JSON.
+   */
+  noticeVersion?: string | null;
   now?: () => Date;
   log?: (event: BookingLogEvent) => void;
 };
@@ -220,7 +225,7 @@ export async function handleBookingSubmission(
 
   // 7. Trusted submission.
   const submission = await deps.submit({
-    payload: toBookingSubmitPayload(validation.value),
+    payload: toBookingSubmitPayload(validation.value, deps.noticeVersion ?? null),
     services: selectedServiceSlugs(validation.value),
     idempotencyKey: input.idempotencyKey,
     correlationId: input.correlationId,

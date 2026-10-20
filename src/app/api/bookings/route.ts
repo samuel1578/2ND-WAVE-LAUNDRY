@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { handleBookingSubmission } from "@/lib/bookings/submission";
 import { bookingSubmissionsEnabled } from "@/lib/bookings/config";
+import { privacyNoticeVersion } from "@/lib/bookings/notice";
 import { loadBookingCatalogue } from "@/lib/bookings/catalogue";
 import { submitPublicBooking } from "@/lib/bookings/repository";
 import { isElevatedConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { dispatchPendingEmails } from "@/lib/email/dispatch";
 import { resolveBookingRateLimiter } from "@/lib/security/booking-rate-limit";
 import { checkRequestOrigin } from "@/lib/security/request-origin";
 
@@ -112,6 +114,8 @@ export async function POST(request: NextRequest) {
           process.env.SUPABASE_SERVICE_ROLE_KEY ??
           null
         : null,
+      // Server-approved notice version. The request body cannot supply it.
+      noticeVersion: privacyNoticeVersion,
       log: (event) => {
         // Operational diagnosis only: status, stable code and correlation id.
         // Never a name, phone number, email address or pickup address.
@@ -122,6 +126,13 @@ export async function POST(request: NextRequest) {
       },
     },
   );
+
+  // Best-effort post-commit delivery. The outbox row is already committed; the
+  // provider call happens after the response and can never fail this request.
+  // A scheduled worker remains the recovery mechanism if this kick is lost.
+  if (response.body.ok === true) {
+    after(() => dispatchPendingEmails("public_booking_submit"));
+  }
 
   return NextResponse.json(response.body, {
     status: response.status,

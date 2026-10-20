@@ -29,6 +29,7 @@ import {
 } from "@/lib/bookings/admin-actions";
 import { Empty, Heading, Skeleton } from "@/components/ui";
 import { BookingImagePanel } from "@/components/admin/booking-image-panel";
+import { BookingEmailStatus } from "@/components/admin/email-delivery";
 import { Dialog } from "@/components/dialog";
 import {
   DemoFailure,
@@ -54,12 +55,18 @@ export function Bookings({
   id,
   state,
   demo,
+  emailMonitoring = false,
 }: {
   id?: string;
   state?: string;
   demo: boolean;
+  emailMonitoring?: boolean;
 }) {
-  return demo ? <DemoBookings id={id} state={state} /> : <LiveBookings id={id} />;
+  return demo ? (
+    <DemoBookings id={id} state={state} />
+  ) : (
+    <LiveBookings id={id} emailMonitoring={emailMonitoring} />
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -675,8 +682,18 @@ type BookingListPayload = {
   branches: BranchOption[];
 };
 
-function LiveBookings({ id }: { id?: string }) {
-  return id ? <LiveBookingDetail id={id} /> : <LiveBookingList />;
+function LiveBookings({
+  id,
+  emailMonitoring,
+}: {
+  id?: string;
+  emailMonitoring: boolean;
+}) {
+  return id ? (
+    <LiveBookingDetail id={id} emailMonitoring={emailMonitoring} />
+  ) : (
+    <LiveBookingList />
+  );
 }
 
 function LiveBookingList() {
@@ -949,7 +966,13 @@ function arrangementFrom(detail: AdminBookingDetail): ArrangementForm {
   };
 }
 
-function LiveBookingDetail({ id }: { id: string }) {
+function LiveBookingDetail({
+  id,
+  emailMonitoring,
+}: {
+  id: string;
+  emailMonitoring: boolean;
+}) {
   const [detail, setDetail] = useState<AdminBookingDetail | null>(null);
   const [branchesLoaded, setBranchesLoaded] = useState<BranchOption[]>([]);
   const [form, setForm] = useState<ArrangementForm | null>(null);
@@ -1231,6 +1254,7 @@ function LiveBookingDetail({ id }: { id: string }) {
               </div>
             </dl>
           </section>
+          {emailMonitoring && <BookingEmailStatus bookingId={detail.id} />}
           <section className="panel">
             <h2>Laundry details</h2>
             <p>

@@ -7,8 +7,12 @@ const IDENTITY = "photo-test-hashed-identity";
 const CORRELATION = "photo-corr-1";
 
 function incomingPhoto(bytes: number): IncomingPhoto {
-  const buf = new Uint8Array(Math.max(1, bytes));
+  const buf = new Uint8Array(Math.max(3, bytes));
+  // Minimal JPEG signature; validation sniffs magic numbers, not the declared
+  // MIME type, so a one-byte fixture would be correctly rejected.
   buf[0] = 0xff;
+  buf[1] = 0xd8;
+  buf[2] = 0xff;
   return { bytes: buf, declaredType: "image/jpeg", name: "photo.jpg" };
 }
 
@@ -47,11 +51,18 @@ function assertPhoto(
   actual: { status: number; body: Record<string, unknown> },
   wantStatus: number,
   wantOk: boolean,
-  wantCode: "invalid_upload_token" | "upload_failed" | "too_many_photos" | "not_configured",
+  wantCode?:
+    | "invalid_upload_token"
+    | "upload_failed"
+    | "too_many_photos"
+    | "photo_too_large"
+    | "not_configured",
 ) {
   assert.equal(actual.status, wantStatus);
   assert.equal(actual.body.ok, wantOk);
-  assert.equal(actual.body.code, wantCode);
+  // A successful response carries no error code at all.
+  if (wantCode) assert.equal(actual.body.code, wantCode);
+  else assert.equal(actual.body.code, undefined);
 }
 
 test("a cross-origin request is rejected before anything else", async () => {
@@ -101,7 +112,9 @@ test("a rate-limited caller receives 429", async () => {
   assert.equal(res.body.ok, false);
   assert.equal(res.body.code, "rate_limited");
   const headers = (res.headers as Record<string, string>) ?? {};
-  assert.equal(headers["retry-after"], "12");
+  // The pure handler returns a plain object; Next.js headers are
+  // case-insensitive at the HTTP boundary, but this object is not.
+  assert.equal(headers["Retry-After"], "12");
 });
 
 test("a stale or wrong token is rejected", async () => {
@@ -122,14 +135,17 @@ test("an upload attempts the store step", async () => {
     }),
     deps,
   );
-  assertPhoto(res, 201, true, "upload_failed");
+  assertPhoto(res, 201, true);
+  assert.equal(res.body.stored, 1);
   assert.equal(storeCalls.length, 1, "store was called once");
   assert.equal(storeCalls[0].bookingId, "26b0d82c-e2c5-4f8b-9a0e-1e2cdf1e6f18");
   assert.equal(storeCalls[0].photoCount, 1);
 });
 
 test("a store failure is reported as the upload-failed message", async () => {
-  const { deps } = makeDeps();
+  const { deps } = makeDeps({
+    store: async () => ({ ok: false, code: "upload_failed" }),
+  });
   const res = await handlePhotoUpload(
     makeInput({
       token: makeUploadToken("d49e3b19-1b11-41c6-8e7a-d2f42c9a5c10", deps.tokenSecret!),
@@ -140,7 +156,7 @@ test("a store failure is reported as the upload-failed message", async () => {
   assertPhoto(res, 422, false, "upload_failed");
 });
 
-test("a store failure surfaces a generic message without byte counts", async () => {
+test("an oversized photo is rejected without echoing byte counts", async () => {
   const { deps } = makeDeps();
   const res = await handlePhotoUpload(
     makeInput({
@@ -149,7 +165,7 @@ test("a store failure surfaces a generic message without byte counts", async () 
     }),
     deps,
   );
-  assertPhoto(res, 422, false, "upload_failed");
+  assertPhoto(res, 422, false, "photo_too_large");
   assert.ok(
     !JSON.stringify(res.body).includes("5000001"),
     "the response must not echo byte sizes",
@@ -165,7 +181,8 @@ test("a batch with three bytes-limited files reaches the store step", async () =
     }),
     deps,
   );
-  assertPhoto(res, 201, true, "upload_failed");
+  assertPhoto(res, 201, true);
+  assert.equal(res.body.stored, 3);
   assert.equal(storeCalls[0].photoCount, 3);
 });
 

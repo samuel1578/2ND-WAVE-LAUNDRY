@@ -21,6 +21,7 @@ import {
   adminNavigationFor,
   defaultLandingFor,
   resolveAdminRoute,
+  hasPermission,
   type AdminRouteDefinition,
 } from "@/lib/auth/permissions";
 import { roleLabel, type AdminIdentity } from "@/lib/auth/roles";
@@ -39,6 +40,7 @@ import { ReviewsAdmin } from "./reviews";
 import { MediaAdmin } from "./media-admin";
 import { SettingsAdmin } from "./settings";
 import { StaffAdmin } from "./staff-manager";
+import { EmailDelivery } from "./email-delivery";
 
 const AUTH_ROUTES = ["login", "reset-password", "set-password"];
 
@@ -159,12 +161,18 @@ export function AdminApp({
       "media",
       "settings",
       "staff",
+      "email-delivery",
     ];
     content =
       route === "bookings" ? (
         // `demo` is true only for the isolated in-memory workspace (no verified
         // session). A real session always uses the persisted booking path.
-        <Bookings id={segments[1]} state={state} demo={!session} />
+        <Bookings
+          id={segments[1]}
+          state={state}
+          demo={!session}
+          emailMonitoring={hasPermission(session?.role, "email.manage")}
+        />
       ) : route === "enquiries" ? (
         <Enquiries id={segments[1]} state={state} />
       ) : route === "reviews" ? (
@@ -182,6 +190,15 @@ export function AdminApp({
         // `resolveAdminRouteAccess` (staff.manage), so an Operational Admin never
         // receives this branch: they get the forbidden state instead.
         <StaffAdmin viewerId={session?.userId} />
+      ) : route === "email-delivery" ? (
+        session ? (
+          <EmailDelivery />
+        ) : (
+          <Empty
+            title="Email monitoring is unavailable in demo mode."
+            body="Demo bookings never create or send customer emails."
+          />
+        )
       ) : route === "" ? (
         <Dashboard
           empty={state === "empty"}
