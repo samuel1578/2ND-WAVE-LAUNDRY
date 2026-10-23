@@ -5,14 +5,12 @@
 
 import { hasPermission } from "../auth/permissions";
 import type { AdminRole } from "../auth/roles";
+import { emailTemplates, staffOrderTemplates } from "./templates";
 
+/** Both audiences share one outbox, so the monitor must recognise both. */
 export const EMAIL_TEMPLATES = [
-  "booking_created",
-  "booking_confirmed",
-  "booking_processing_started",
-  "booking_ready",
-  "booking_completed",
-  "booking_cancelled",
+  ...emailTemplates,
+  ...staffOrderTemplates,
 ] as const;
 
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
@@ -155,6 +153,11 @@ export function emailTemplateLabel(template: EmailTemplate): string {
     booking_ready: "Laundry ready",
     booking_completed: "Booking completed",
     booking_cancelled: "Booking cancelled",
+    staff_order_pending: "Staff alert — order pending",
+    staff_order_processing: "Staff alert — processing",
+    staff_order_ready: "Staff alert — ready",
+    staff_order_completed: "Staff alert — completed",
+    staff_order_cancelled: "Staff alert — cancelled",
   };
   return labels[template];
 }

@@ -10,7 +10,13 @@
  * Import it only from server code.
  */
 
-import { emailTemplates, type EmailTemplate } from "./templates";
+import {
+  emailTemplates,
+  staffOrderTemplates,
+  type EmailTemplate,
+  type NotificationTemplate,
+  type StaffOrderTemplate,
+} from "./templates";
 
 export const TRANSACTIONAL_EMAILS_ENABLED_VAR = "TRANSACTIONAL_EMAILS_ENABLED";
 export const BREVO_API_KEY_VAR = "BREVO_API_KEY";
@@ -27,6 +33,19 @@ export const BREVO_TEMPLATE_ID_VARS: Record<EmailTemplate, string> = {
   booking_ready: "BREVO_TEMPLATE_LAUNDRY_READY_ID",
   booking_completed: "BREVO_TEMPLATE_BOOKING_COMPLETED_ID",
   booking_cancelled: "BREVO_TEMPLATE_BOOKING_CANCELLED_ID",
+};
+
+/**
+ * Staff alert template IDs are read separately from the six customer IDs. A
+ * deployment that has not saved the staff templates in Brevo must not stop the
+ * customer notifications that Phase 2D already delivers.
+ */
+export const BREVO_STAFF_TEMPLATE_ID_VARS: Record<StaffOrderTemplate, string> = {
+  staff_order_pending: "BREVO_TEMPLATE_STAFF_ORDER_PENDING_ID",
+  staff_order_processing: "BREVO_TEMPLATE_STAFF_ORDER_PROCESSING_ID",
+  staff_order_ready: "BREVO_TEMPLATE_STAFF_ORDER_READY_ID",
+  staff_order_completed: "BREVO_TEMPLATE_STAFF_ORDER_COMPLETED_ID",
+  staff_order_cancelled: "BREVO_TEMPLATE_STAFF_ORDER_CANCELLED_ID",
 };
 
 export const MIN_WORKER_SECRET_LENGTH = 32;
@@ -203,6 +222,49 @@ export function readTransactionalEmailConfig(
   };
 }
 
+export type StaffTemplateIdsResult =
+  | { ok: true; templateIds: Record<StaffOrderTemplate, number> }
+  | {
+      ok: false;
+      reason: "missing-template-id" | "invalid-template-id";
+      templateVariable: string;
+    };
+
+/**
+ * Reads the five optional staff alert template IDs. Missing values do not
+ * disable customer sending: the worker retries a staff row whose template is not
+ * configured yet, leaving customer delivery untouched.
+ */
+export function readStaffEmailTemplateIds(
+  env: Record<string, string | undefined> = process.env,
+): StaffTemplateIdsResult {
+  const templateIds = {} as Record<StaffOrderTemplate, number>;
+  const configuredIds = new Set<number>();
+
+  for (const template of staffOrderTemplates) {
+    const variable = BREVO_STAFF_TEMPLATE_ID_VARS[template];
+    const raw = (env[variable] ?? "").trim();
+    if (!raw)
+      return { ok: false, reason: "missing-template-id", templateVariable: variable };
+    if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw)))
+      return {
+        ok: false,
+        reason: "invalid-template-id",
+        templateVariable: variable,
+      };
+    templateIds[template] = Number(raw);
+    if (configuredIds.has(templateIds[template]))
+      return {
+        ok: false,
+        reason: "invalid-template-id",
+        templateVariable: variable,
+      };
+    configuredIds.add(templateIds[template]);
+  }
+
+  return { ok: true, templateIds };
+}
+
 /** Safe operator-facing explanation. Never includes a secret value. */
 export function emailConfigMessage(
   reason: EmailConfigReason,
@@ -231,6 +293,50 @@ export function emailConfigMessage(
         ? `Transactional email is not configured: set the server-only ${templateVariable} to the numeric saved-template ID from Brevo.`
         : "Transactional email is not configured: set all six server-only BREVO_TEMPLATE_*_ID variables to numeric saved-template IDs from Brevo.";
   }
+}
+
+/**
+ * The template ids every delivery path must use.
+ *
+ * The post-commit dispatch and the protected worker endpoint (the scheduler's
+ * path) both need the same set: the six required customer ids plus the staff ids
+ * once they are configured. Reading them in one place stops the two paths from
+ * drifting, which would otherwise leave staff alerts permanently retrying on the
+ * scheduled drain while the post-commit kick could send them.
+ *
+ * Staff ids are all-or-nothing: one missing or malformed id means no staff ids
+ * are returned, so a partially configured account cannot produce an inconsistent
+ * subset of alerts. Customer ids are always included when they are valid.
+ */
+export function readDeliveryTemplateIds(
+  env: Record<string, string | undefined> = process.env,
+): {
+  templateIds: Partial<Record<NotificationTemplate, number>>;
+  staffConfigured: boolean;
+  /** The first unconfigured staff variable, for operator-facing messaging. */
+  staffTemplateVariable: string | null;
+} {
+  const customer = readTransactionalEmailConfig(env);
+  const staff = readStaffEmailTemplateIds(env);
+
+  return {
+    templateIds: {
+      ...(customer.ok ? customer.config.templateIds : {}),
+      ...(staff.ok ? staff.templateIds : {}),
+    },
+    staffConfigured: staff.ok,
+    staffTemplateVariable: staff.ok ? null : staff.templateVariable,
+  };
+}
+
+/** Safe operator-facing explanation for a staff alert template id. */
+export function staffTemplateIdMessage(
+  reason: "missing-template-id" | "invalid-template-id",
+  templateVariable: string,
+): string {
+  return reason === "missing-template-id"
+    ? `Staff order alerts are not configured: set the server-only ${templateVariable} to the numeric saved-template ID from Brevo.`
+    : `Staff order alerts are not configured: ${templateVariable} must be a unique, positive integer saved-template ID.`;
 }
 
 export type WebhookConfig =

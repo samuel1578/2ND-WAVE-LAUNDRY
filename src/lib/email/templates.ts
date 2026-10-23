@@ -1,11 +1,16 @@
 /**
- * Typed data contract for the six saved Brevo transactional templates.
+ * Typed data contract for the saved Brevo transactional templates.
+ *
+ * Phase 2D defined the six customer notifications. Phase 2E.1 adds the five
+ * staff/admin order alerts; both audiences share the same outbox, worker and
+ * Brevo parameter conventions.
  *
  * The Brevo account's template bodies are intentionally not managed here.
  * Configure them to use these New Template Language `params.*` names; the
  * worker sends only `templateId` plus this dynamic parameter object.
  */
 
+import type { BookingStatus } from "@/lib/bookings/types";
 export const emailTemplates = [
   "booking_created",
   "booking_confirmed",
@@ -16,6 +21,47 @@ export const emailTemplates = [
 ] as const;
 
 export type EmailTemplate = (typeof emailTemplates)[number];
+
+/**
+ * Staff/admin order alerts. One template per required order event; there is
+ * deliberately no staff alert for `confirmed`, `scheduled`, `picked_up` or
+ * `out_for_delivery`.
+ */
+export const staffOrderTemplates = [
+  "staff_order_pending",
+  "staff_order_processing",
+  "staff_order_ready",
+  "staff_order_completed",
+  "staff_order_cancelled",
+] as const;
+
+export type StaffOrderTemplate = (typeof staffOrderTemplates)[number];
+
+export type NotificationTemplate = EmailTemplate | StaffOrderTemplate;
+
+/**
+ * The authoritative order status each staff alert describes, mapped from the
+ * existing `public.booking_status` lifecycle. Statuses without an entry produce
+ * no alert.
+ */
+export const staffOrderTemplateByStatus: Partial<
+  Record<BookingStatus, StaffOrderTemplate>
+> = {
+  pending: "staff_order_pending",
+  processing: "staff_order_processing",
+  ready: "staff_order_ready",
+  completed: "staff_order_completed",
+  cancelled: "staff_order_cancelled",
+};
+
+export function isStaffOrderTemplate(
+  value: unknown,
+): value is StaffOrderTemplate {
+  return (
+    typeof value === "string" &&
+    (staffOrderTemplates as readonly string[]).includes(value)
+  );
+}
 
 export type BookingEmailBranch = {
   title: string;
@@ -79,10 +125,7 @@ export function formatFee(amount: number | null, currency: string): string | nul
   return `${code} ${number}`;
 }
 
-export function formatAgreedPickup(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+function formatAccraDateTime(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "long",
     day: "numeric",
@@ -94,6 +137,21 @@ export function formatAgreedPickup(value: string | null): string | null {
     timeZone: "Africa/Accra",
     timeZoneName: "short",
   }).format(date);
+}
+
+export function formatAgreedPickup(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return formatAccraDateTime(date);
+}
+
+/** Formats the enqueue timestamp recorded for a staff order alert. */
+export function formatEventTimestamp(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return formatAccraDateTime(date);
 }
 
 /** Formats a requested (not confirmed) date without timezone date-shifting. */
@@ -174,6 +232,150 @@ export function buildBrevoTemplateParams(
   ) {
     if (context.branch?.title)
       params.branchName = collapse(context.branch.title);
+  }
+
+  return params;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Staff/admin order alerts (Phase 2E.1)                                      */
+/* -------------------------------------------------------------------------- */
+
+/** Checked-in admin order-alert header assets; no new image URL is invented. */
+export const STAFF_HEADER_ASSETS: Record<StaffOrderTemplate, string> = {
+  staff_order_pending: "admin-order-pending.jpeg",
+  staff_order_processing: "admin-order-processing.jpeg",
+  staff_order_ready: "admin-order-ready.jpeg",
+  staff_order_completed: "admin-order-completed.jpeg",
+  staff_order_cancelled: "admin-order-cancelled.jpeg",
+};
+
+const STAFF_HEADER_ALT: Record<StaffOrderTemplate, string> = {
+  staff_order_pending: "2nd Wave Laundry staff alert: new order pending",
+  staff_order_processing: "2nd Wave Laundry staff alert: order in processing",
+  staff_order_ready: "2nd Wave Laundry staff alert: order ready",
+  staff_order_completed: "2nd Wave Laundry staff alert: order completed",
+  staff_order_cancelled: "2nd Wave Laundry staff alert: order cancelled",
+};
+
+export type StaffActorType = "customer" | "admin" | "system";
+
+/**
+ * Trusted event metadata captured when the alert is enqueued. Every field is
+ * derived on the server from the committed booking and its status history; no
+ * value here may come from an editable client request.
+ */
+export type StaffNotificationContext = {
+  previousStatus: BookingStatus | null;
+  actorType: StaffActorType;
+  actorName: string | null;
+  actorRole: string | null;
+  occurredAt: string | null;
+  cancellationReason: string | null;
+};
+
+const STAFF_ORDER_STATUS: Record<StaffOrderTemplate, BookingStatus> = {
+  staff_order_pending: "pending",
+  staff_order_processing: "processing",
+  staff_order_ready: "ready",
+  staff_order_completed: "completed",
+  staff_order_cancelled: "cancelled",
+};
+
+/** Operational status labels, kept distinct from the customer-facing wording. */
+const STAFF_STATUS_LABEL: Record<BookingStatus, string> = {
+  pending: "Pending",
+  confirmed: "Confirmed",
+  scheduled: "Scheduled",
+  picked_up: "Picked up",
+  processing: "Processing",
+  ready: "Ready",
+  out_for_delivery: "Out for delivery",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+const STAFF_ACTOR_TYPE_LABEL: Record<StaffActorType, string> = {
+  customer: "Customer",
+  admin: "Administrator",
+  system: "System",
+};
+
+const STAFF_ACTOR_ROLE_LABEL: Record<string, string> = {
+  full_admin: "Full administrator",
+  operational_admin: "Operational administrator",
+};
+
+export function formatStaffStatus(status: BookingStatus | null): string | null {
+  if (!status) return null;
+  return STAFF_STATUS_LABEL[status] ?? null;
+}
+
+/**
+ * Builds the staff alert parameter contract. Optional metadata is omitted rather
+ * than fabricated: an unknown actor, an absent previous status or a missing
+ * branch simply does not appear in the message.
+ */
+export function buildStaffOrderTemplateParams(
+  template: StaffOrderTemplate,
+  context: BookingEmailContext,
+  staff: StaffNotificationContext,
+  options: RenderEmailOptions,
+): BrevoBookingTemplateParams {
+  if (!isStaffOrderTemplate(template))
+    throw new Error("Unknown staff alert template.");
+
+  const siteUrl = options.siteUrl.replace(/\/+$/, "");
+  const params: BrevoBookingTemplateParams = {
+    customerName: collapse(context.customerName),
+    bookingReference: collapse(context.reference),
+    bookingStatus: STAFF_STATUS_LABEL[STAFF_ORDER_STATUS[template]],
+    actorType: STAFF_ACTOR_TYPE_LABEL[staff.actorType] ?? "System",
+    websiteUrl: siteUrl,
+    contactUrl: `${siteUrl}/contact`,
+    privacyUrl: `${siteUrl}/privacy`,
+    headerImageUrl: `${siteUrl}/headers/${STAFF_HEADER_ASSETS[template]}`,
+    headerImageAlt: STAFF_HEADER_ALT[template],
+  };
+
+  const serviceSummary = context.serviceTitles
+    .map(collapse)
+    .filter(Boolean)
+    .join(", ");
+  if (serviceSummary) params.serviceSummary = serviceSummary;
+
+  const requestedPickup = formatRequestedPickup(
+    context.requestedDate,
+    context.requestedTime,
+  );
+  if (requestedPickup) params.requestedPickup = requestedPickup;
+
+  if (context.branch?.title) {
+    const branchName = collapse(context.branch.title);
+    if (branchName) params.branchName = branchName;
+  }
+
+  // A pending order has no previous lifecycle status.
+  const previousStatus =
+    template === "staff_order_pending"
+      ? null
+      : formatStaffStatus(staff.previousStatus);
+  if (previousStatus) params.previousStatus = previousStatus;
+
+  const eventAt = formatEventTimestamp(staff.occurredAt);
+  if (eventAt) params.eventAt = eventAt;
+
+  const actorName = collapse(staff.actorName ?? "");
+  if (actorName) params.actorName = actorName;
+
+  const actorRole = staff.actorRole
+    ? STAFF_ACTOR_ROLE_LABEL[staff.actorRole]
+    : null;
+  if (actorRole) params.actorRole = actorRole;
+
+  if (template === "staff_order_cancelled") {
+    const reason = collapse(staff.cancellationReason ?? "").slice(0, 500);
+    if (reason) params.cancellationReason = reason;
   }
 
   return params;

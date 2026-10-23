@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createBrevoClient } from "@/lib/email/brevo";
-import { readTransactionalEmailConfig, readWorkerSecret } from "@/lib/email/config";
+import {
+  readDeliveryTemplateIds,
+  readTransactionalEmailConfig,
+  readWorkerSecret,
+} from "@/lib/email/config";
 import { createEmailOutboxRepository } from "@/lib/email/outbox-repository";
 import { bearerMatches } from "@/lib/email/webhook";
 import { runEmailWorker } from "@/lib/email/worker";
@@ -48,6 +52,11 @@ async function handle(request: NextRequest) {
     );
   }
 
+  // The same template ids the post-commit dispatch uses: customer ids plus any
+  // configured staff ids. Without the staff ids a scheduled drain could never
+  // deliver a staff alert, even with the templates saved in Brevo.
+  const { templateIds } = readDeliveryTemplateIds();
+
   const repository = createEmailOutboxRepository();
   const provider = createBrevoClient({
     apiKey: config.config.apiKey,
@@ -61,7 +70,7 @@ async function handle(request: NextRequest) {
       repository,
       provider,
       siteUrl: config.config.siteUrl,
-      templateIds: config.config.templateIds,
+      templateIds,
     },
     { workerId: `api-${randomUUID()}` },
   );

@@ -23,7 +23,10 @@ import type { BrevoClient, BrevoSendResult } from "./brevo";
 import type { EmailOutboxRepository } from "./outbox-repository";
 import {
   buildBrevoTemplateParams,
-  type EmailTemplate,
+  buildStaffOrderTemplateParams,
+  emailTemplates,
+  isStaffOrderTemplate,
+  type NotificationTemplate,
 } from "./templates";
 
 export const WORKER_BATCH_SIZE = 10;
@@ -40,7 +43,11 @@ export type EmailWorkerDeps = {
   repository: EmailOutboxRepository;
   provider: BrevoClient;
   siteUrl: string;
-  templateIds: Record<EmailTemplate, number>;
+  /**
+   * Customer template IDs are always present. A staff template ID is absent until
+   * the owner saves that template in Brevo; absence is retried, never fabricated.
+   */
+  templateIds: Partial<Record<NotificationTemplate, number>>;
   batchSize?: number;
   leaseSeconds?: number;
   reapLimit?: number;
@@ -205,11 +212,64 @@ export async function runEmailWorker(
       continue;
     }
 
+    // An unknown template can never be fixed by retrying.
+    if (
+      !(emailTemplates as readonly string[]).includes(row.template) &&
+      !isStaffOrderTemplate(row.template)
+    ) {
+      try {
+        const marked = await deps.repository.markDead({
+          id: row.id,
+          workerId: options.workerId,
+          error: "email_template_params_failed",
+        });
+        if (marked) dead += 1;
+        else skipped += 1;
+      } catch {
+        failed += 1;
+      }
+      continue;
+    }
+
+    const templateId = deps.templateIds[row.template];
+    if (
+      typeof templateId !== "number" ||
+      !Number.isSafeInteger(templateId) ||
+      templateId < 1
+    ) {
+      // A staff template that has not been saved in Brevo yet is a deployment
+      // gap, not a permanent failure: keep the row and retry after configuration.
+      try {
+        const status = await deps.repository.markRetry({
+          id: row.id,
+          workerId: options.workerId,
+          error: "email_template_not_configured",
+          delaySeconds: RETRY_CAP_SECONDS,
+        });
+        if (status === "dead") dead += 1;
+        else if (status === "retryable_failed") retried += 1;
+        else skipped += 1;
+      } catch {
+        failed += 1;
+      }
+      continue;
+    }
+
     let params: Record<string, string>;
     try {
-      params = buildBrevoTemplateParams(row.template, context, {
-        siteUrl: deps.siteUrl,
-      });
+      if (isStaffOrderTemplate(row.template)) {
+        if (!row.staff) throw new Error("Staff alert metadata is missing.");
+        params = buildStaffOrderTemplateParams(
+          row.template,
+          context,
+          row.staff,
+          { siteUrl: deps.siteUrl },
+        );
+      } else {
+        params = buildBrevoTemplateParams(row.template, context, {
+          siteUrl: deps.siteUrl,
+        });
+      }
     } catch {
       // Invalid persisted template parameters cannot be fixed by retrying.
       try {
@@ -231,7 +291,7 @@ export async function runEmailWorker(
       providerResult = asResult(
         await deps.provider.send({
           to: row.recipientEmail,
-          templateId: deps.templateIds[row.template],
+          templateId,
           params,
           idempotencyKey: row.id,
           template: row.template,

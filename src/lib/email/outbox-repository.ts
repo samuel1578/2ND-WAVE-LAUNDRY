@@ -13,18 +13,26 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { BookingEmailContext } from "./templates";
-import type { EmailTemplate } from "./templates";
+import { bookingStatuses, type BookingStatus } from "@/lib/bookings/types";
+import {
+  isStaffOrderTemplate,
+  type BookingEmailContext,
+  type NotificationTemplate,
+  type StaffActorType,
+  type StaffNotificationContext,
+} from "./templates";
 
 export type ClaimedOutboxEmail = {
   id: string;
   bookingId: string | null;
-  template: EmailTemplate;
+  template: NotificationTemplate;
   recipientEmail: string;
   payload: {
     booking_reference: string;
     status: string;
   };
+  /** Present only for staff_order_* rows; never for a customer template. */
+  staff?: StaffNotificationContext;
   attemptCount: number;
   maxAttempts: number;
 };
@@ -74,6 +82,9 @@ type OutboxRow = {
   max_attempts: number;
 };
 
+const bookingStatusSet = new Set<string>(bookingStatuses);
+const actorTypeSet = new Set<StaffActorType>(["customer", "admin", "system"]);
+
 type BookingRow = {
   id: string;
   reference: string;
@@ -94,16 +105,34 @@ type BranchRow = {
   title: string;
 };
 
-const TEMPLATE_SET = new Set<EmailTemplate>([
+const TEMPLATE_SET = new Set<NotificationTemplate>([
   "booking_created",
   "booking_confirmed",
   "booking_processing_started",
   "booking_ready",
   "booking_completed",
   "booking_cancelled",
+  "staff_order_pending",
+  "staff_order_processing",
+  "staff_order_ready",
+  "staff_order_completed",
+  "staff_order_cancelled",
 ]);
 
-function asPayload(value: unknown): ClaimedOutboxEmail["payload"] {
+const asBookingStatus = (value: unknown): BookingStatus | null =>
+  typeof value === "string" && bookingStatusSet.has(value)
+    ? (value as BookingStatus)
+    : null;
+
+/**
+ * Parses the minimal render payload. Customer rows carry exactly two keys; staff
+ * rows additionally carry the trusted event metadata written by the enqueue
+ * trigger. A malformed payload is a repository error, never a fabricated value.
+ */
+function asPayload(
+  value: unknown,
+  template: NotificationTemplate,
+): { payload: ClaimedOutboxEmail["payload"]; staff?: StaffNotificationContext } {
   if (typeof value !== "object" || value === null)
     throw new EmailRepositoryError();
   const record = value as Record<string, unknown>;
@@ -112,22 +141,64 @@ function asPayload(value: unknown): ClaimedOutboxEmail["payload"] {
     typeof record.status !== "string"
   )
     throw new EmailRepositoryError();
-  return {
+
+  const payload = {
     booking_reference: record.booking_reference,
     status: record.status,
+  };
+
+  if (!isStaffOrderTemplate(template)) return { payload };
+
+  const actorType = record.actor_kind;
+  if (typeof actorType !== "string" || !actorTypeSet.has(actorType as StaffActorType))
+    throw new EmailRepositoryError();
+  if (
+    typeof record.previous_status !== "string" ||
+    typeof record.actor_name !== "string" ||
+    typeof record.actor_role !== "string" ||
+    typeof record.occurred_at !== "string" ||
+    typeof record.cancellation_reason !== "string"
+  )
+    throw new EmailRepositoryError();
+
+  const previousStatus =
+    record.previous_status === ""
+      ? null
+      : asBookingStatus(record.previous_status);
+  if (record.previous_status !== "" && !previousStatus)
+    throw new EmailRepositoryError();
+
+  const occurredAt = record.occurred_at;
+  if (!occurredAt || Number.isNaN(Date.parse(occurredAt)))
+    throw new EmailRepositoryError();
+
+  return {
+    payload,
+    staff: {
+      previousStatus,
+      actorType: actorType as StaffActorType,
+      actorName: record.actor_name || null,
+      actorRole: record.actor_role || null,
+      occurredAt,
+      cancellationReason: record.cancellation_reason || null,
+    },
   };
 }
 
 function mapClaimed(row: OutboxRow): ClaimedOutboxEmail {
-  if (!TEMPLATE_SET.has(row.template as EmailTemplate))
+  if (!TEMPLATE_SET.has(row.template as NotificationTemplate))
     throw new EmailRepositoryError();
+
+  const template = row.template as NotificationTemplate;
+  const parsed = asPayload(row.payload, template);
 
   return {
     id: row.id,
     bookingId: row.booking_id,
-    template: row.template as EmailTemplate,
+    template,
     recipientEmail: row.recipient_email,
-    payload: asPayload(row.payload),
+    payload: parsed.payload,
+    ...(parsed.staff ? { staff: parsed.staff } : {}),
     attemptCount: Number(row.attempt_count),
     maxAttempts: Number(row.max_attempts),
   };

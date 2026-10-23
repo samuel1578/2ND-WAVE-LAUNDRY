@@ -184,7 +184,9 @@ export function AdminApp({
       ) : route === "media" ? (
         <MediaAdmin id={segments[1]} state={state} />
       ) : route === "settings" ? (
-        <SettingsAdmin />
+        // The recipient panel needs a verified session: demo mode shows an honest
+        // unavailable state instead of a form that cannot persist.
+        <SettingsAdmin live={Boolean(session)} />
       ) : route === "staff" ? (
         // Sprint 1C. The server has already authorised this route through
         // `resolveAdminRouteAccess` (staff.manage), so an Operational Admin never

@@ -21,7 +21,6 @@
 -- an operator with a disposable Postgres instance.
 --
 -- Nothing here sends email and nothing is applied to a hosted project.
-TT
 BEGIN;
 
 -- -------------------------------------------------------------------------

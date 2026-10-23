@@ -11,7 +11,9 @@ import {
   TextField,
 } from "@/components/forms/controls";
 import { UnsavedGuard } from "./unsaved";
-export function SettingsAdmin() {
+import { BookingAlertRecipients } from "./booking-alert-recipients";
+
+export function SettingsAdmin({ live = false }: { live?: boolean }) {
   const store = useDemoStore();
   const [form, setForm] = useState({ ...store.settings });
   const [baseline, setBaseline] = useState(JSON.stringify(form));
@@ -203,6 +205,7 @@ export function SettingsAdmin() {
         </div>
         <DemoFailure />
       </form>
+      <BookingAlertRecipients live={live} />
       <Dialog
         open={pause}
         onClose={() => setPause(false)}

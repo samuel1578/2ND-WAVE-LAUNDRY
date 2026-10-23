@@ -1,0 +1,56 @@
+<!--
+Brevo template draft: Booking cancelled
+Suggested subject: Booking cancelled — {{ params.bookingReference }} | 2nd Wave Laundry
+Suggested preview: Booking {{ params.bookingReference }} has been cancelled.
+Required parameters: customerName, bookingReference, bookingStatus, websiteUrl,
+  contactUrl, privacyUrl, headerImageUrl, headerImageAlt
+Optional parameters: serviceSummary, requestedPickup
+The subject and preview belong in the Brevo template settings, not the HTML body.
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap" rel="stylesheet">
+    <title>Booking cancelled | 2nd Wave Laundry Services</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#FAFBFC;color:#091D2D;font-family:'Lato',Arial,Helvetica,sans-serif;">
+    <div style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all;">Booking {{ params.bookingReference }} has been cancelled. Contact our team if you need assistance. &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#FAFBFC;">
+      <tr><td align="center" style="padding:28px 12px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#FFFFFF;border:1px solid #D9E7EF;border-radius:16px;overflow:hidden;">
+          <tr><td style="padding:0;"><img src="https://2ndwave.vercel.app/headers/general-booking.png" width="600" alt="2nd Wave Laundry booking cancelled" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;"></td></tr>
+          <tr><td style="padding:32px 28px 12px;">
+            <p style="margin:0 0 10px;color:#00609A;font-size:12px;font-weight:700;letter-spacing:1.6px;line-height:1.4;text-transform:uppercase;">Booking update</p>
+            <h1 style="margin:0 0 18px;color:#102B51;font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:400;letter-spacing:-0.6px;line-height:1.2;">Your booking has been cancelled.</h1>
+            <p style="margin:0 0 18px;color:#091D2D;font-size:16px;line-height:1.6;">Hello{% if params.customerName %} {{ params.customerName }}{% endif %},</p>
+            <p style="margin:0 0 22px;color:#526477;font-size:15px;line-height:1.65;">The status of your booking is now cancelled. If you have questions or need help, please contact our team.</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#EDF4FF;border:1px solid #D9E7EF;border-radius:12px;"><tr><td style="padding:20px;">
+              <p style="margin:0 0 14px;color:#102B51;font-family:Georgia,'Times New Roman',serif;font-size:19px;font-weight:400;line-height:1.4;">Booking summary</p>
+              <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong style="color:#102B51;">Reference:</strong> {{ params.bookingReference }}</p>
+              {% if params.serviceSummary %}
+              <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong style="color:#102B51;">Services:</strong> {{ params.serviceSummary }}</p>
+              {% endif %}
+              <p style="margin:14px 0 0;padding:12px 14px;background-color:#FFFFFF;border-left:4px solid #0B80CA;border-radius:8px;color:#102B51;font-size:13px;line-height:1.6;"><strong>Status: {{ params.bookingStatus }}.</strong></p>
+            </td></tr></table>
+            <p style="margin:22px 0;color:#526477;font-size:15px;line-height:1.65;">This notice does not make any statement about payments or refunds. Please contact our team if you need clarification.</p>
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px;"><tr><td align="center" bgcolor="#0B80CA" style="border-radius:8px;"><a href="{{ params.contactUrl }}" style="display:inline-block;padding:14px 22px;border:1px solid #0B80CA;border-radius:8px;color:#FFFFFF;font-size:14px;font-weight:700;line-height:1.4;text-decoration:none;">Contact our team</a></td></tr></table>
+            <p style="margin:22px 0 0;color:#102B51;font-size:15px;line-height:1.65;">Thank you,<br><strong>2nd Wave Laundry Services</strong></p>
+          </td></tr>
+          <tr><td align="center" bgcolor="#EDF4FF" style="padding:22px 24px;background:#EDF4FF;background-color:#EDF4FF;border-top:1px solid #D9E7EF;">
+            <a href="https://2ndwave.vercel.app/" style="display:inline-block;text-decoration:none;"><img src="https://2ndwave.vercel.app/images/logo.png" width="76" height="76" alt="2nd Wave Laundry Services" style="display:block;width:76px;height:76px;border:0;outline:none;text-decoration:none;"></a>
+            <p style="margin:12px 0 4px;color:#102B51;font-size:14px;font-weight:700;line-height:1.5;">2nd Wave Laundry Services</p>
+            <p style="margin:0 0 8px;color:#526477;font-size:13px;line-height:1.6;"><a href="tel:+233595224280" style="color:#00609A;text-decoration:underline;">059 522 4280</a></p>
+            <p style="margin:0;color:#526477;font-size:12px;line-height:1.7;">This is an automated booking update. Please contact our team if you need assistance.</p>
+            <p style="margin:10px 0 0;font-size:12px;line-height:1.6;"><a href="{{ params.websiteUrl }}" style="color:#00609A;text-decoration:underline;">Visit our website</a> &nbsp;|&nbsp; <a href="{{ params.privacyUrl }}" style="color:#00609A;text-decoration:underline;">Privacy policy</a></p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>

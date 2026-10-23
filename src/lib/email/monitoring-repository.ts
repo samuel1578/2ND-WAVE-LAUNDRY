@@ -63,6 +63,11 @@ const validTemplates = new Set([
   "booking_ready",
   "booking_completed",
   "booking_cancelled",
+  "staff_order_pending",
+  "staff_order_processing",
+  "staff_order_ready",
+  "staff_order_completed",
+  "staff_order_cancelled",
 ]);
 const validStatuses = new Set([
   "pending",

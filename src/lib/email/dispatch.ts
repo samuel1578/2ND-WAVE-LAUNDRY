@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { createBrevoClient } from "./brevo";
 import {
   emailConfigMessage,
+  readDeliveryTemplateIds,
   readTransactionalEmailConfig,
 } from "./config";
 import { createEmailOutboxRepository } from "./outbox-repository";
@@ -31,6 +32,10 @@ export async function dispatchPendingEmails(source: string): Promise<void> {
       return;
     }
 
+    // Staff template IDs are optional for this dispatch. When one is not saved in
+    // Brevo yet, its outbox rows stay retryable and customer sending continues.
+    const { templateIds } = readDeliveryTemplateIds();
+
     const repository = createEmailOutboxRepository();
     const provider = createBrevoClient({
       apiKey: config.config.apiKey,
@@ -44,7 +49,7 @@ export async function dispatchPendingEmails(source: string): Promise<void> {
         repository,
         provider,
         siteUrl: config.config.siteUrl,
-        templateIds: config.config.templateIds,
+        templateIds,
         // Keep the post-response task short on serverless hosts. The protected
         // endpoint remains able to drain a larger batch.
         batchSize: 3,
