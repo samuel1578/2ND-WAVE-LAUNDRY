@@ -1149,6 +1149,9 @@ strong {
   color: var(--muted);
   padding: 6px 0;
 }
+.footer-grid > div > a:not(.logo):hover {
+  color: var(--primary);
+}
 .footer-grid .logo img {
   width: 95px;
   height: 95px;
@@ -1508,6 +1511,49 @@ tbody tr:hover .cell-select.branch {
 }
 .contact-branches {
   margin-top: 35px;
+}
+.contact-emails {
+  display: grid;
+  gap: 18px;
+  margin-top: 34px;
+}
+.contact-email {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+.contact-email__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--primary);
+}
+.contact-email h3 {
+  margin: 0 0 3px;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+.contact-email p {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.contact-email .contact-email__address {
+  display: inline-block;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.contact-email .contact-email__address:hover {
+  color: var(--ink);
 }
 .contact-branches > div {
   padding-block: 18px;
@@ -2174,6 +2220,25 @@ input[type="file"]::file-selector-button {
   padding-top: 30px;
   color: var(--muted);
   font-size: 13px;
+}
+.booking-email-contact {
+  margin: 24px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.booking-email-contact a {
+  display: inline-block;
+  color: var(--primary);
+  overflow-wrap: anywhere;
+}
+.commercial-email-contact {
+  margin: 18px 0 0;
+  font-size: 14px;
+}
+.commercial-email-contact a {
+  color: var(--primary);
+  font-weight: 650;
 }
 .stepper {
   display: grid;

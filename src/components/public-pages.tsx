@@ -10,6 +10,7 @@ import {
   Info,
   Layers,
   ListChecks,
+  Mail,
   MapPin,
   Package,
   Phone,
@@ -53,7 +54,7 @@ import {
 } from "./ui";
 import { Reveal } from "./motion";
 import { SwipeTrack } from "./swipe-track";
-import { BrandText } from "./brand-text";
+import { BrandText, Glow } from "./brand-text";
 import { DottedGlowBackground } from "./dotted-glow-background";
 import { PublicForm } from "./forms/public-form";
 import { Gallery } from "./gallery";
@@ -461,6 +462,34 @@ export function AboutPage() {
   );
 }
 export function ContactPage() {
+  const emailContacts = [
+    {
+      label: "Orders & scheduling",
+      purpose: "Pickup and drop-off scheduling, booking confirmations, and order updates.",
+      email: contact.emails.orders,
+    },
+    {
+      label: "Customer support",
+      purpose: "Questions about orders, services, pricing, or garment care.",
+      email: contact.emails.support,
+    },
+    {
+      label: "Business & partnerships",
+      purpose: "Commercial laundry enquiries, partnerships, and business opportunities.",
+      email: contact.emails.info,
+    },
+    {
+      label: "Billing",
+      purpose: "Invoices, payment confirmations, business billing, and receipts.",
+      email: contact.emails.billing,
+    },
+    {
+      label: "Careers",
+      purpose: "Management, job opportunities, and payroll enquiries.",
+      email: contact.emails.manager,
+    },
+  ];
+
   return (
     <>
       <section className="page-hero">
@@ -487,6 +516,25 @@ export function ContactPage() {
                 View Locations
               </Action>
             </div>
+            <section
+              className="contact-emails"
+              aria-label="Email contacts by purpose"
+            >
+              {emailContacts.map(({ label, purpose, email }) => (
+                <div className="contact-email" key={email}>
+                  <span className="contact-email__icon" aria-hidden="true">
+                    <Mail size={18} />
+                  </span>
+                  <div>
+                    <h3>{label}</h3>
+                    <p>{purpose}</p>
+                    <a className="contact-email__address" href={`mailto:${email}`}>
+                      <Glow>{email}</Glow>
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </section>
             <div className="contact-branches">
               {branches.map((b) => (
                 <div key={b.slug}>
@@ -524,6 +572,12 @@ export function CommercialPage() {
               Contact the Team
             </Action>
           </div>
+          <p className="commercial-email-contact">
+            Commercial enquiries?{" "}
+            <a href={`mailto:${contact.emails.info}`}>
+              <Glow>{contact.emails.info}</Glow>
+            </a>
+          </p>
         </div>
         <Picture photo={commercial.image} priority />
       </div>
@@ -653,4 +707,3 @@ export function ReviewsPage({ form = false }: { form?: boolean }) {
   );
 }
 export { PolicyPage } from "./policy-page";
-

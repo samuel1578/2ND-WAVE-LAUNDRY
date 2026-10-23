@@ -18,6 +18,7 @@ import {
 import type { BookingInput } from "@/lib/contracts";
 import { createIdempotencyKey } from "@/lib/bookings/reference";
 import { DemoFailure, Field, Notice, Submit, TextField } from "./controls";
+import { Glow } from "../brand-text";
 import { DottedGlowBackground } from "../dotted-glow-background";
 const labels = [
   "Your laundry",
@@ -427,6 +428,14 @@ export function BookingForm({
         <Link className="text-link" href="/locations">
           View Locations ↗
         </Link>
+        <p className="booking-email-contact">
+          Booking and pickup questions?{" "}
+          <a href={`mailto:${contact.emails.orders}`}>
+            <strong>
+              <Glow>{contact.emails.orders}</Glow>
+            </strong>
+          </a>
+        </p>
         <div className="booking-note">
           The fee and timing are agreed with the team. No payment is taken on
           this website.

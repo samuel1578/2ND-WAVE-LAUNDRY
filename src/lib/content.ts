@@ -28,6 +28,13 @@ export const contact = {
   whatsapp: "https://wa.me/233595224280",
   instagram: "https://www.instagram.com/2ndwave_laundry/",
   tiktok: "https://www.tiktok.com/@2ndwave.com",
+  emails: {
+    orders: "orders@2ndwavelaundry.com",
+    support: "support@2ndwavelaundry.com",
+    info: "info@2ndwavelaundry.com",
+    billing: "billing@2ndwavelaundry.com",
+    manager: "manager@2ndwavelaundry.com",
+  },
 };
 export const foldedLinen: Photo = {
   src: "/images/commercial-linen-stacks.jpg",

@@ -28,7 +28,7 @@ import { signOutAdmin } from "@/lib/auth/actions";
 import { isFrameworkNavigation } from "@/lib/auth/client-navigation";
 import { adminNavigationFor } from "@/lib/auth/permissions";
 import { isAdminRole, type AdminRole } from "@/lib/auth/roles";
-import { BrandText } from "./brand-text";
+import { BrandText, Glow } from "./brand-text";
 import { Dialog } from "./dialog";
 
 /**
@@ -411,6 +411,9 @@ export function Footer() {
           ))}
           <Link href="/reviews">Customer Reviews</Link>
           <a href={contact.whatsapp}>Chat on WhatsApp</a>
+          <a href={`mailto:${contact.emails.support}`}>
+            Customer support: <Glow>{contact.emails.support}</Glow>
+          </a>
         </div>
         <div>
           <h3>Follow along</h3>
