@@ -525,8 +525,9 @@ project.
 request has been made. No hosted migration has been applied.**
 
 Transactional sending is **disabled by default** and remains disabled until an
-operator verifies a Brevo sender, supplies server-only credentials and all six
-actual saved-template IDs, applies the three email migrations and explicitly sets
+operator configures and verifies each Brevo template sender, supplies server-only
+credentials and all six actual saved-template IDs, applies the three email
+migrations and explicitly sets
 `TRANSACTIONAL_EMAILS_ENABLED=true`.
 The endpoint and worker are implemented; a scheduler is **not** deployed by this
 repository, so automatic retry after a restart or provider outage is not claimed.
@@ -809,7 +810,7 @@ database delay ceiling, so the schedule can be longer than the table above.
 | 201 with `messageId` / `messageIds` | success | `mark_sent` with provider id |
 | 400 `duplicate_parameter` / `duplicate_request` | accepted previously | `mark_sent`, duplicate flag, no provider id |
 | 429, 408, 425, 5xx, network error, timeout | retryable | `mark_retry` with backoff |
-| other 4xx (401, 403, 422, invalid sender/key, …) | permanent | `mark_dead` immediately |
+| other 4xx (401, 403, 422, invalid template sender/key, …) | permanent | `mark_dead` immediately |
 | invalid outbox UUID | permanent | `mark_dead` before any network call |
 | render failure | permanent | `mark_dead` before any network call |
 | booking missing | permanent | `mark_dead` |
@@ -822,7 +823,7 @@ never retried automatically and never marks the booking as failed.
 
 The enqueue triggers write only the outbox row. `after()` runs after the response
 has been produced. The worker is a separate request path. An outage, timeout,
-invalid key or missing sender can therefore delay or dead-letter an email, but
+invalid key or invalid template sender can therefore delay or dead-letter an email, but
 cannot roll back or block booking creation, confirmation or a status change.
 
 ---
@@ -906,8 +907,6 @@ All are server-only. Never use a `NEXT_PUBLIC_*` name.
 | --- | --- | --- |
 | `TRANSACTIONAL_EMAILS_ENABLED` | always | `true` enables; unset/anything else disables |
 | `BREVO_API_KEY` | enabled | 20–512 characters, no whitespace; Brevo `xkeysib-…` key |
-| `BREVO_SENDER_EMAIL` | enabled | syntactically valid address; must be verified in Brevo |
-| `BREVO_SENDER_NAME` | enabled | 1–70 characters, no CR/LF |
 | `BREVO_TEMPLATE_BOOKING_RECEIVED_ID` | enabled | Positive numeric ID of the Booking received template in this Brevo account |
 | `BREVO_TEMPLATE_BOOKING_CONFIRMED_ID` | enabled | Positive numeric ID of the Booking confirmed template in this Brevo account |
 | `BREVO_TEMPLATE_PROCESSING_STARTED_ID` | enabled | Positive numeric ID of the Processing started template in this Brevo account |
@@ -924,7 +923,9 @@ All are server-only. Never use a `NEXT_PUBLIC_*` name.
 or hardcoded. The REST endpoint uses a Brevo API key (`BREVO_API_KEY`), not an
 SMTP key. No credential is committed.
 
-If the sender is not verified or the key is invalid, the worker fails closed and
+Each template must have a valid, verified sender configured in Brevo. The send
+request omits a sender override so Brevo uses the selected template's sender. If
+the key or other required configuration is invalid, the worker fails closed and
 returns `not_configured`; it does not send a test email to a real customer.
 
 ---
@@ -1041,7 +1042,7 @@ All commands were run on the repository after the final edits.
 Coverage includes:
 
 - successful provider acceptance with `messageId` / `messageIds`;
-- disabled-by-default behaviour and missing/invalid sender, key, site URL and
+- disabled-by-default behaviour and missing/invalid key, site URL and
   secrets;
 - provider rejection, timeout, 429 with `Retry-After`, 5xx and permanent 4xx;
 - backoff bounds, jitter and dead-letter at the attempt limit;
@@ -1080,9 +1081,9 @@ that the owner authorises.
    `20261019130000_email_delivery.sql`, then
    `20261019140000_email_monitoring.sql`. Run their verification queries and
    confirm the migration history.
-2. **Create/verify a Brevo sender.** In Brevo, authenticate the sending domain and
-   add the sender address that will be used. A key alone is not enough; Brevo
-   rejects unverified senders.
+2. **Configure/verify template senders.** In Brevo, authenticate the sending
+   domain and ensure each saved template has its intended verified sender.
+   Template sends use that configured sender; the application does not override it.
 3. **Review the six existing saved Brevo templates** in the Brevo account. Confirm
    each uses the exact `params.*` names in the Sprint 2D.2 addendum below, has
    correct booking-state wording, accessible HTML and descriptive image alt text,
@@ -1093,8 +1094,8 @@ that the owner authorises.
    matching `BREVO_TEMPLATE_*_ID` variables. Confirm each ID points to the
    intended, distinct saved template. Never use IDs from another account.
 5. **Set server-only environment variables** in the deployment: the API key
-   `BREVO_API_KEY` (not an SMTP key), sender email/name, all six saved-template
-   IDs, `SITE_URL`, `EMAIL_WORKER_SECRET`, and `BREVO_WEBHOOK_SECRET`. Keep
+   `BREVO_API_KEY` (not an SMTP key), all six saved-template IDs, `SITE_URL`,
+   `EMAIL_WORKER_SECRET`, and `BREVO_WEBHOOK_SECRET`. Keep
    `TRANSACTIONAL_EMAILS_ENABLED=false` until steps 6–8 are ready.
 6. **Verify header URLs** from the deployed public HTTPS site. Open the four
    customer assets (`general-booking.png`, `booking-confirmed.png`,
@@ -1140,8 +1141,8 @@ pending and no booking is affected.
 2. **No scheduler configured.** Post-commit attempts are timely in normal
    operation; automatic recovery after a restart or outage needs an approved
    scheduler. Vercel Pro cron is a paid dependency; Hobby cron is daily only.
-3. **No live Brevo verification.** No sender, API key, webhook or email exists in
-   this environment. Sender/domain verification is a Brevo-dashboard prerequisite.
+3. **No live Brevo verification.** No API key, webhook or email exists in this
+   environment. Template sender/domain verification is a Brevo-dashboard prerequisite.
 4. **No approved privacy-notice version.** `BOOKING_PRIVACY_NOTICE_VERSION`
    remains unset; no value was invented. This is inherited from Sprint 2D.1.
 5. **At-least-once delivery.** Brevo idempotency covers a 30-minute window. A
@@ -1370,8 +1371,6 @@ feature will return unavailable until all required migrations are applied.
 Required server-only configuration remains:
 
 - `BREVO_API_KEY`
-- `BREVO_SENDER_EMAIL`
-- `BREVO_SENDER_NAME`
 - `BREVO_TEMPLATE_BOOKING_RECEIVED_ID`
 - `BREVO_TEMPLATE_BOOKING_CONFIRMED_ID`
 - `BREVO_TEMPLATE_PROCESSING_STARTED_ID`
@@ -1383,7 +1382,7 @@ Required server-only configuration remains:
 - `EMAIL_WORKER_SECRET`
 - `BREVO_WEBHOOK_SECRET`
 
-Verify the sender/domain in Brevo first. Keep sending disabled until an owner
+Verify each template's sender/domain in Brevo first. Keep sending disabled until an owner
 approves a controlled test. Never put credentials in `NEXT_PUBLIC_*` values.
 The handler uses Brevo's configured bearer-token webhook protection; create the
 webhook and configure the matching secret before expecting delivered/bounced
@@ -1409,8 +1408,8 @@ tester. Do not edit, cancel, or otherwise mutate an existing customer's booking.
 Do not activate production sending as part of this checklist.
 
 1. Apply and verify the three migrations in the disposable database.
-2. Verify the Brevo sender identity. In the actual Brevo account, confirm that
-   the six saved templates use the documented exact `params.*` contract,
+2. Verify each template's Brevo sender identity. In the actual Brevo account,
+   confirm that the six saved templates use the documented exact `params.*` contract,
    appropriate event-specific body/subject copy, mobile-friendly accessible
    HTML, image alt text, and readable essential copy with images blocked. Verify
    the plain-text alternative in the Brevo editor where available.
@@ -1437,10 +1436,10 @@ Do not activate production sending as part of this checklist.
    provider acceptance is not called delivered until a valid webhook confirms
    it, and inspect event/error details without raw payload leakage.
 10. In disposable staging only, cause a controlled provider rejection for a
-   test row (for example, temporarily use a deliberately unverified test sender
+   test row (for example, use a deliberately invalid test API key in staging
    after confirming the provider will reject it). Verify the booking remains
    unchanged, the delivery failure appears, and retry/backoff is safe. Restore
-   the verified sender before retrying the row.
+   the valid staging configuration before retrying the row.
 11. Queue one manual retry from the Full Admin monitor. Verify the same outbox
    row/idempotency identity is reused, the audit event is recorded, and no
    second booking event is created. Verify Operational Admin and anonymous

@@ -40,7 +40,7 @@ Additional confirmed findings:
 5. **Worker:** `dispatchPendingEmails` reads server environment configuration, creates the Supabase admin outbox repository and Brevo client, and runs `runEmailWorker`. Independently, `src/app/api/internal/email/worker/route.ts` exposes bounded authenticated GET/POST execution for a scheduler or manual operator. No scheduler file is present in the repository; the worker route alone does not schedule itself.
 6. **Claim and current booking data:** `src/lib/email/worker.ts` calls repository `reap` and `claim`, then `loadBookingContext`. `src/lib/email/outbox-repository.ts` obtains booking name/reference/requested/agreed data, service titles and assigned branch using the server-only Supabase admin client.
 7. **Template selection and params:** `src/lib/email/config.ts` maps each typed outbox event to one required environment variable and parses its numeric ID. The worker selects `templateIds[row.template]` and calls `buildBrevoTemplateParams(row.template, context, { siteUrl })`.
-8. **Provider request:** `src/lib/email/brevo.ts` calls `POST https://api.brevo.com/v3/smtp/email`, authenticating with the server-only `api-key` header. Its JSON contains `sender`, `to`, `templateId`, `params`, custom headers and tags. It does **not** contain `subject`, `htmlContent` or `textContent`.
+8. **Provider request:** `src/lib/email/brevo.ts` calls `POST https://api.brevo.com/v3/smtp/email`, authenticating with the server-only `api-key` header. Its JSON contains `to`, `templateId`, `params`, custom headers and tags; it omits `sender` so the selected Brevo template controls the sender. It does **not** contain `subject`, `htmlContent` or `textContent`.
 
 ### Sources of truth
 
@@ -50,7 +50,7 @@ Additional confirmed findings:
 | Event-to-template environment mapping | `src/lib/email/config.ts`, `BREVO_TEMPLATE_ID_VARS` |
 | Runtime numeric IDs | The six server environment variables; actual production values are **not verified in this report** |
 | Recipient | `public.bookings.customer_email` copied by the SQL trigger to `public.email_outbox.recipient_email` |
-| Sender email/name | Server environment `BREVO_SENDER_EMAIL` / `BREVO_SENDER_NAME`, copied into the Brevo request |
+| Sender email/name | Configured on each saved Brevo template; the application does not override it |
 | Subject, preview text, HTML and any saved plain-text version | Saved Brevo template for the selected ID; not present in the request or repository |
 | Booking lifecycle and event enqueue | Booking database functions/triggers plus `src/lib/bookings/lifecycle.ts` |
 | Header URL and alt text | `HEADER_ASSETS` and `HEADER_ALT` in `src/lib/email/templates.ts`, joined to validated `SITE_URL` |
@@ -103,7 +103,7 @@ The common keys above are sent for **each** event. Optional common fields remain
 | `booking_completed` | Successful committed transition to `completed`; permitted from `ready` or `out_for_delivery` | `BREVO_TEMPLATE_BOOKING_COMPLETED_ID` | None. No completion date, payment or refund field is sent. |
 | `booking_cancelled` | Successful committed transition to `cancelled` from a permitted nonterminal state; database requires a reason but does not pass it to the email builder | `BREVO_TEMPLATE_BOOKING_CANCELLED_ID` | None. Cancellation reason/private administrator notes are deliberately excluded. |
 
-In all six rows, the code passes only strings in `params`; it does not supply booleans, numbers, structured date objects or separate date/time objects. The `recipient_email` is passed separately as Brevo `to`, and sender values are passed separately as `sender`.
+In all six rows, the code passes only strings in `params`; it does not supply booleans, numbers, structured date objects or separate date/time objects. The `recipient_email` is passed separately as Brevo `to`. The template's sender is used because the request omits a `sender` override.
 
 ### Per-event detailed evidence
 
@@ -419,7 +419,7 @@ No test or live send was run during this audit. Existing `tests/email-delivery.t
 4. **Delivery outcome per message:** accepted by the API is not the same as mailbox delivery. A matching Brevo event/log or authenticated delivery webhook is needed to establish later state. The repository’s webhook code exists, but live webhook setup was not independently inspected.
 5. **Automatic retry trigger:** no scheduler is configured in the repository. Hosting scheduler configuration and successful recurring invocation must be verified before calling recovery automatic.
 6. **Provider idempotency claim:** the source sends `headers.idempotencyKey` and assumes Brevo duplicate codes/window; the official API page used here documents `templateId`, `params`, sender/to and `messageId`, but does not verify that idempotency behavior. Confirm that claim with current authoritative Brevo documentation/support before treating it as guaranteed.
-7. **Public footer support email:** the application email contract does not contain one. The configured sender address visible in owner-provided evidence is not proof that it is the approved support contact.
+7. **Public footer support email:** the application email contract does not contain one. A template-configured sender address is not proof that it is the approved support contact.
 8. **Per-booking fulfilment arrangement:** no collection/delivery mode is read into the email context, so event-specific delivery instructions cannot be verified or safely stated.
 9. **Spam placement:** the supplied screenshot shows SPF/DKIM/DMARC pass for one message; the cause of another message’s spam placement is not established by source or this audit.
 
@@ -452,4 +452,3 @@ No test or live send was run during this audit. Existing `tests/email-delivery.t
 ### Brevo documentation checked
 
 - [Send a transactional email](https://developers.brevo.com/docs/send-a-transactional-email) — confirms the transactional send endpoint contract supports saved `templateId` and dynamic `params`, and describes a `messageId` response. This audit did not use it to claim unverified saved-template HTML, subject, conditional syntax, auto-escaping or idempotency behavior.
-

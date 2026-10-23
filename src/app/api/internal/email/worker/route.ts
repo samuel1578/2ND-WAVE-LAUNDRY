@@ -60,8 +60,6 @@ async function handle(request: NextRequest) {
   const repository = createEmailOutboxRepository();
   const provider = createBrevoClient({
     apiKey: config.config.apiKey,
-    senderEmail: config.config.senderEmail,
-    senderName: config.config.senderName,
   });
 
   const summary = await runEmailWorker(

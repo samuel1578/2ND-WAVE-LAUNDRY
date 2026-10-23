@@ -3,8 +3,9 @@
  *
  * Transactional sending is OFF unless an operator explicitly sets
  * `TRANSACTIONAL_EMAILS_ENABLED=true`. Even then, every required value must be
- * present and well formed: a missing API key, unverified sender address, absent
- * site URL, missing saved-template ID or weak worker secret fails closed.
+ * present and well formed: a missing API key, absent site URL, missing
+ * saved-template ID or weak worker secret fails closed. Brevo uses the sender
+ * configured on each saved template.
  *
  * This module never reads a `NEXT_PUBLIC_*` secret and never logs a value.
  * Import it only from server code.
@@ -20,8 +21,6 @@ import {
 
 export const TRANSACTIONAL_EMAILS_ENABLED_VAR = "TRANSACTIONAL_EMAILS_ENABLED";
 export const BREVO_API_KEY_VAR = "BREVO_API_KEY";
-export const BREVO_SENDER_EMAIL_VAR = "BREVO_SENDER_EMAIL";
-export const BREVO_SENDER_NAME_VAR = "BREVO_SENDER_NAME";
 export const EMAIL_WORKER_SECRET_VAR = "EMAIL_WORKER_SECRET";
 export const BREVO_WEBHOOK_SECRET_VAR = "BREVO_WEBHOOK_SECRET";
 export const SITE_URL_VAR = "SITE_URL";
@@ -50,15 +49,11 @@ export const BREVO_STAFF_TEMPLATE_ID_VARS: Record<StaffOrderTemplate, string> = 
 
 export const MIN_WORKER_SECRET_LENGTH = 32;
 export const MIN_WEBHOOK_SECRET_LENGTH = 32;
-export const MAX_SENDER_NAME_LENGTH = 70;
 
 export type EmailConfigReason =
   | "disabled"
   | "missing-api-key"
   | "invalid-api-key"
-  | "missing-sender-email"
-  | "invalid-sender-email"
-  | "invalid-sender-name"
   | "missing-site-url"
   | "invalid-site-url"
   | "missing-worker-secret"
@@ -68,8 +63,6 @@ export type EmailConfigReason =
 
 export type TransactionalEmailConfig = {
   apiKey: string;
-  senderEmail: string;
-  senderName: string;
   /** Public site origin without a trailing slash. */
   siteUrl: string;
   workerSecret: string;
@@ -87,15 +80,6 @@ export type TransactionalEmailConfigResult =
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
-
-/** A conservative address shape; Brevo remains the final authority. */
-export function isValidSenderEmail(value: string): boolean {
-  return (
-    value.length >= 3 &&
-    value.length <= 254 &&
-    /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)
-  );
-}
 
 /**
  * Validates the public site origin used in email links. Production must use
@@ -148,20 +132,6 @@ export function readTransactionalEmailConfig(
   if (apiKey.length < 20 || apiKey.length > 512 || /\s/.test(apiKey))
     return { ok: false, enabled: false, reason: "invalid-api-key" };
 
-  const senderEmail = (env[BREVO_SENDER_EMAIL_VAR] ?? "").trim().toLowerCase();
-  if (!senderEmail)
-    return { ok: false, enabled: false, reason: "missing-sender-email" };
-  if (!isValidSenderEmail(senderEmail))
-    return { ok: false, enabled: false, reason: "invalid-sender-email" };
-
-  const senderName = (env[BREVO_SENDER_NAME_VAR] ?? "").trim();
-  if (
-    senderName.length < 1 ||
-    senderName.length > MAX_SENDER_NAME_LENGTH ||
-    /[\r\n]/.test(senderName)
-  )
-    return { ok: false, enabled: false, reason: "invalid-sender-name" };
-
   const siteUrl = readSiteUrl(env[SITE_URL_VAR]);
   if (!siteUrl)
     return {
@@ -213,8 +183,6 @@ export function readTransactionalEmailConfig(
     enabled: true,
     config: {
       apiKey,
-      senderEmail,
-      senderName,
       siteUrl,
       workerSecret,
       templateIds,
@@ -272,15 +240,10 @@ export function emailConfigMessage(
 ): string {
   switch (reason) {
     case "disabled":
-      return "Transactional email is disabled. Set TRANSACTIONAL_EMAILS_ENABLED=true only after the Brevo sender is verified.";
+      return "Transactional email is disabled. Set TRANSACTIONAL_EMAILS_ENABLED=true only after the Brevo template senders are configured and verified.";
     case "missing-api-key":
     case "invalid-api-key":
       return `Transactional email is not configured: set the server-only ${BREVO_API_KEY_VAR} to a Brevo API key.`;
-    case "missing-sender-email":
-    case "invalid-sender-email":
-      return `Transactional email is not configured: set ${BREVO_SENDER_EMAIL_VAR} to a verified Brevo sender address.`;
-    case "invalid-sender-name":
-      return `Transactional email is not configured: set ${BREVO_SENDER_NAME_VAR} to a display name of at most ${MAX_SENDER_NAME_LENGTH} characters.`;
     case "missing-site-url":
     case "invalid-site-url":
       return `Transactional email is not configured: set ${SITE_URL_VAR} to the verified public https origin.`;

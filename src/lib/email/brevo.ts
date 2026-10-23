@@ -54,8 +54,6 @@ export type BrevoClient = {
 
 export type BrevoClientConfig = {
   apiKey: string;
-  senderEmail: string;
-  senderName: string;
 };
 
 export type BrevoClientDeps = {
@@ -116,8 +114,9 @@ function networkFailure(error: unknown): BrevoSendResult {
 }
 
 /**
- * Creates a client bound to one verified sender. A caller supplies the API key
- * from server-only configuration; nothing in this module reads `process.env`.
+ * A caller supplies the API key from server-only configuration; nothing in
+ * this module reads `process.env`. Template sends use the sender configured on
+ * the selected Brevo template.
  */
 export function createBrevoClient(
   config: BrevoClientConfig,
@@ -153,10 +152,6 @@ export function createBrevoClient(
             "api-key": config.apiKey,
           },
           body: JSON.stringify({
-            sender: {
-              email: config.senderEmail,
-              name: config.senderName,
-            },
             to: [{ email: input.to }],
             templateId: input.templateId,
             params: input.params,

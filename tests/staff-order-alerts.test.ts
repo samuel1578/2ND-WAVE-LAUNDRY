@@ -73,8 +73,6 @@ const BASE_KEYS = [
 const VALID_CUSTOMER_ENV = {
   TRANSACTIONAL_EMAILS_ENABLED: "true",
   BREVO_API_KEY: `xkeysib-${"a".repeat(40)}`,
-  BREVO_SENDER_EMAIL: "bookings@2ndwave.example",
-  BREVO_SENDER_NAME: "2nd Wave Laundry Services",
   SITE_URL: "https://2ndwave.example",
   EMAIL_WORKER_SECRET: `worker-${"w".repeat(40)}`,
   BREVO_TEMPLATE_BOOKING_RECEIVED_ID: "101",

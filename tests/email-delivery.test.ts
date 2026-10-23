@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
   BREVO_API_KEY_VAR,
-  BREVO_SENDER_EMAIL_VAR,
-  BREVO_SENDER_NAME_VAR,
   BREVO_TEMPLATE_ID_VARS,
   BREVO_WEBHOOK_SECRET_VAR,
   EMAIL_WORKER_SECRET_VAR,
@@ -42,8 +40,6 @@ import type {
 const VALID_ENV = {
   [TRANSACTIONAL_EMAILS_ENABLED_VAR]: "true",
   [BREVO_API_KEY_VAR]: `xkeysib-${"a".repeat(40)}`,
-  [BREVO_SENDER_EMAIL_VAR]: "bookings@2ndwave.example",
-  [BREVO_SENDER_NAME_VAR]: "2nd Wave Laundry Services",
   [SITE_URL_VAR]: "https://2ndwave.example",
   [EMAIL_WORKER_SECRET_VAR]: `worker-${"w".repeat(40)}`,
   [BREVO_WEBHOOK_SECRET_VAR]: `webhook-${"h".repeat(40)}`,
@@ -99,9 +95,6 @@ test("enabled configuration fails closed on each missing or invalid value", () =
   const cases: Array<[string, string, string]> = [
     [BREVO_API_KEY_VAR, "", "missing-api-key"],
     [BREVO_API_KEY_VAR, "short", "invalid-api-key"],
-    [BREVO_SENDER_EMAIL_VAR, "", "missing-sender-email"],
-    [BREVO_SENDER_EMAIL_VAR, "not-an-address", "invalid-sender-email"],
-    [BREVO_SENDER_NAME_VAR, "", "invalid-sender-name"],
     [SITE_URL_VAR, "", "missing-site-url"],
     [SITE_URL_VAR, "http://example.com", "invalid-site-url"],
     [EMAIL_WORKER_SECRET_VAR, "", "missing-worker-secret"],
@@ -149,11 +142,12 @@ test("enabled configuration fails closed on each missing or invalid value", () =
   }
 });
 
-test("a complete enabled configuration is accepted", () => {
+test("enabled configuration is accepted without sender environment variables", () => {
+  assert.equal(Object.hasOwn(VALID_ENV, "BREVO_SENDER_EMAIL"), false);
+  assert.equal(Object.hasOwn(VALID_ENV, "BREVO_SENDER_NAME"), false);
   const result = readTransactionalEmailConfig(VALID_ENV);
   assert.equal(result.ok, true);
   if (!result.ok) return;
-  assert.equal(result.config.senderEmail, "bookings@2ndwave.example");
   assert.equal(result.config.siteUrl, "https://2ndwave.example");
   assert.equal(result.config.apiKey, VALID_ENV[BREVO_API_KEY_VAR]);
   assert.deepEqual(result.config.templateIds, {
@@ -337,8 +331,6 @@ test("a successful Brevo acceptance returns the provider message id", async () =
   const client = createBrevoClient(
     {
       apiKey: "xkeysib-test",
-      senderEmail: "bookings@example.test",
-      senderName: "2nd Wave",
     },
     { fetchImpl: brevoFetch({ messageId: "<provider-1@relay>" }, 201, {}, calls) },
   );
@@ -359,6 +351,7 @@ test("a successful Brevo acceptance returns the provider message id", async () =
   assert.equal(body.to[0].email, "customer@example.test");
   assert.equal(body.templateId, SEND_INPUT.templateId);
   assert.deepEqual(body.params, SEND_INPUT.params);
+  assert.equal("sender" in body, false);
   assert.equal("subject" in body, false);
   assert.equal("htmlContent" in body, false);
   assert.equal("textContent" in body, false);
@@ -379,8 +372,6 @@ test("Brevo duplicate idempotency responses are treated as accepted", async () =
   const client = createBrevoClient(
     {
       apiKey: "xkeysib-test",
-      senderEmail: "bookings@example.test",
-      senderName: "2nd Wave",
     },
     {
       fetchImpl: brevoFetch({ code: "duplicate_parameter" }, 400),
@@ -399,8 +390,6 @@ test("Brevo failures are classified without returning raw provider text", async 
     createBrevoClient(
       {
         apiKey: "xkeysib-test",
-        senderEmail: "bookings@example.test",
-        senderName: "2nd Wave",
       },
       { fetchImpl: brevoFetch(body, status, headers) },
     );
@@ -427,8 +416,6 @@ test("a timeout is retryable and an invalid idempotency key is permanent", async
   const client = createBrevoClient(
     {
       apiKey: "xkeysib-test",
-      senderEmail: "bookings@example.test",
-      senderName: "2nd Wave",
     },
     {
       fetchImpl: async () => {
@@ -448,8 +435,6 @@ test("a timeout is retryable and an invalid idempotency key is permanent", async
   const invalid = createBrevoClient(
     {
       apiKey: "xkeysib-test",
-      senderEmail: "bookings@example.test",
-      senderName: "2nd Wave",
     },
     {
       fetchImpl: async () => {
@@ -472,8 +457,6 @@ test("an invalid saved-template ID is rejected without calling Brevo", async () 
   const client = createBrevoClient(
     {
       apiKey: "xkeysib-test",
-      senderEmail: "bookings@example.test",
-      senderName: "2nd Wave",
     },
     {
       fetchImpl: async () => {
