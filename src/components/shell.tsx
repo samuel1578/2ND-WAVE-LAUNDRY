@@ -78,6 +78,7 @@ const adminIcons: Record<string, typeof LayoutDashboard> = {
   media: Images,
   settings: Settings,
   staff: Users,
+  emailCompose: Mail,
   emailDelivery: Mail,
 };
 const headerNavLabels = [

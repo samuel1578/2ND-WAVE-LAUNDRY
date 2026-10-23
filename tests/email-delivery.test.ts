@@ -8,6 +8,7 @@ import {
   EMAIL_WORKER_SECRET_VAR,
   SITE_URL_VAR,
   TRANSACTIONAL_EMAILS_ENABLED_VAR,
+  readBrevoApiKey,
   readBrevoWebhookConfig,
   readSiteUrl,
   readTransactionalEmailConfig,
@@ -88,6 +89,27 @@ test("transactional email is disabled by default and never sends", () => {
       [TRANSACTIONAL_EMAILS_ENABLED_VAR]: "false",
     }).ok,
     false,
+  );
+});
+
+test("manual Brevo sends require only the global enable flag and API key", () => {
+  assert.deepEqual(readBrevoApiKey({}), {
+    ok: false,
+    reason: "disabled",
+  });
+  assert.deepEqual(
+    readBrevoApiKey({
+      [TRANSACTIONAL_EMAILS_ENABLED_VAR]: "true",
+      [BREVO_API_KEY_VAR]: "short",
+    }),
+    { ok: false, reason: "invalid-api-key" },
+  );
+  assert.deepEqual(
+    readBrevoApiKey({
+      [TRANSACTIONAL_EMAILS_ENABLED_VAR]: "true",
+      [BREVO_API_KEY_VAR]: `xkeysib-${"a".repeat(40)}`,
+    }),
+    { ok: true, apiKey: `xkeysib-${"a".repeat(40)}` },
   );
 });
 
@@ -349,6 +371,7 @@ test("a successful Brevo acceptance returns the provider message id", async () =
     "xkeysib-test",
   );
   assert.equal(body.to[0].email, "customer@example.test");
+  assert.equal("replyTo" in body, false);
   assert.equal(body.templateId, SEND_INPUT.templateId);
   assert.deepEqual(body.params, SEND_INPUT.params);
   assert.equal("sender" in body, false);
@@ -619,10 +642,10 @@ test("worker sends only the event's saved template ID and dynamic params", async
   let sentInput:
     | {
         templateId: number;
-        params: Record<string, string>;
-        to: string;
-        idempotencyKey: string;
-      }
+      params: Record<string, string>;
+      to: string;
+      idempotencyKey: string;
+    }
     | undefined;
   const result = await runEmailWorker(
     deps(repository, undefined, {

@@ -923,10 +923,25 @@ All are server-only. Never use a `NEXT_PUBLIC_*` name.
 or hardcoded. The REST endpoint uses a Brevo API key (`BREVO_API_KEY`), not an
 SMTP key. No credential is committed.
 
-Each template must have a valid, verified sender configured in Brevo. The send
-request omits a sender override so Brevo uses the selected template's sender. If
-the key or other required configuration is invalid, the worker fails closed and
-returns `not_configured`; it does not send a test email to a real customer.
+Each template's sender and Reply-To must be configured in Brevo. The application
+does not override either header in the API request. If the key or other required
+configuration is invalid, the worker fails closed and returns
+`not_configured`; it does not send a test email to a real customer.
+
+Receiving replies still depends on creating the mailbox or forwarding rule at
+the mail provider and routing the custom domain's MX records there. Brevo's
+outgoing message headers do not create an inbox or receive mail.
+
+The Full Admin console also has a **Compose Email** page at
+`/admin/email-compose`. It requests the account's active senders from Brevo's
+`GET /v3/senders` endpoint and lets the administrator choose one for a single
+recipient message. Sender identities are not hardcoded in the app; add and
+verify them in Brevo to make them available in the dropdown. Manual sends use
+the selected Brevo sender ID and require `TRANSACTIONAL_EMAILS_ENABLED=true`
+plus `BREVO_API_KEY`, but do not require the six booking template IDs.
+The composer includes rich-text formatting and links; message HTML is
+server-sanitized to allow safe text formatting and `http`, `https` or `mailto`
+links only. Sender choices display the sender name and address separately.
 
 ---
 

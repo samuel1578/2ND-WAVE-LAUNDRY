@@ -457,6 +457,7 @@ test("the worker sends a staff alert with the staff template id and contract", a
   const payload = sent[0];
   assert.equal(payload.templateId, 202);
   assert.equal(payload.to, "ops@2ndwave.example");
+  assert.equal("replyToEmail" in payload, false);
   assert.equal(payload.params.actorType, "Administrator");
   assert.equal(payload.params.actorName, "Kofi Operator");
   assert.equal(payload.params.previousStatus, "Processing");

@@ -61,6 +61,28 @@ export type EmailConfigReason =
   | "missing-template-id"
   | "invalid-template-id";
 
+export type BrevoApiKeyResult =
+  | { ok: true; apiKey: string }
+  | {
+      ok: false;
+      reason: "disabled" | "missing-api-key" | "invalid-api-key";
+    };
+
+/** Validates the Brevo credentials used by both template and manual sends. */
+export function readBrevoApiKey(
+  env: Record<string, string | undefined> = process.env,
+): BrevoApiKeyResult {
+  const enabled =
+    (env[TRANSACTIONAL_EMAILS_ENABLED_VAR] ?? "").trim().toLowerCase() === "true";
+  if (!enabled) return { ok: false, reason: "disabled" };
+
+  const apiKey = (env[BREVO_API_KEY_VAR] ?? "").trim();
+  if (!apiKey) return { ok: false, reason: "missing-api-key" };
+  if (apiKey.length < 20 || apiKey.length > 512 || /\s/.test(apiKey))
+    return { ok: false, reason: "invalid-api-key" };
+  return { ok: true, apiKey };
+}
+
 export type TransactionalEmailConfig = {
   apiKey: string;
   /** Public site origin without a trailing slash. */
@@ -122,15 +144,10 @@ function isStrongSecret(value: string, minimum: number): boolean {
 export function readTransactionalEmailConfig(
   env: Record<string, string | undefined> = process.env,
 ): TransactionalEmailConfigResult {
-  const enabled =
-    (env[TRANSACTIONAL_EMAILS_ENABLED_VAR] ?? "").trim().toLowerCase() === "true";
-
-  if (!enabled) return { ok: false, enabled: false, reason: "disabled" };
-
-  const apiKey = (env[BREVO_API_KEY_VAR] ?? "").trim();
-  if (!apiKey) return { ok: false, enabled: false, reason: "missing-api-key" };
-  if (apiKey.length < 20 || apiKey.length > 512 || /\s/.test(apiKey))
-    return { ok: false, enabled: false, reason: "invalid-api-key" };
+  const credentials = readBrevoApiKey(env);
+  if (!credentials.ok)
+    return { ok: false, enabled: false, reason: credentials.reason };
+  const { apiKey } = credentials;
 
   const siteUrl = readSiteUrl(env[SITE_URL_VAR]);
   if (!siteUrl)

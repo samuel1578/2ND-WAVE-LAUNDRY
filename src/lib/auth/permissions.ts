@@ -89,6 +89,7 @@ export type AdminRouteKey =
   | "media"
   | "settings"
   | "staff"
+  | "emailCompose"
   | "emailDelivery";
 
 export type AdminRouteDefinition = {
@@ -159,6 +160,12 @@ export const adminRoutes: readonly AdminRouteDefinition[] = [
     label: "Staff Management",
     href: "/admin/staff",
     permission: "staff.manage",
+  },
+  {
+    key: "emailCompose",
+    label: "Compose Email",
+    href: "/admin/email-compose",
+    permission: "email.manage",
   },
   {
     key: "emailDelivery",
