@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-// Intentionally fail closed. Implement authenticated, validated adapters here in the backend phase.
+// This catch-all route exists only for API paths that are not implemented yet.
+// Review submissions now use /api/reviews, so this route is deliberately inert.
 export async function POST() {
   return NextResponse.json(
     {
-      code: "BACKEND_NOT_CONFIGURED",
-      message: "Online submissions are not active. Contact the team directly.",
+      code: "method_not_allowed",
+      message: "This endpoint does not accept submissions.",
     },
-    { status: 503, headers: { "Cache-Control": "no-store" } },
+    { status: 405, headers: { "Cache-Control": "no-store", Allow: "POST" } },
   );
 }

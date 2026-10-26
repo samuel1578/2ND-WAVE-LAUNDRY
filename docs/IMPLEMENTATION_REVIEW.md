@@ -1,6 +1,6 @@
 # Implementation and review record
 
-Date: 5 October 2026. Updated: 8 October 2026.
+Date: 5 October 2026. Updated: 26 October 2026.
 
 ## Source hierarchy and assumptions
 
@@ -201,6 +201,26 @@ No claim is made that real backend persistence, authentication, permissions, upl
 5. Enquiries/quotes, review moderation, consented interest and withdrawal.
 6. Retention jobs, deletion/restore handling, redacted logs, alerts and backup verification.
 7. Approved domain/policies/assets, production SEO, accessibility/device review, measured performance and authorised release.
+
+## Updates since the review (26 October 2026) — Sprint 3A started
+
+1. Began the review persistence/public submission sprint in `docs/implementation/PHASE_3_TO_5_IMPLEMENTATION.md` §4.1. Added forward-only review table/function migrations, a server-only submission repository and API adapter, pure validation/spam checks, shared rate limiting, consent-version gating, and public-form wiring that preserves demo mode.
+2. Public access uses a security-invoker `published_reviews` view over a narrowly column-granted table with RLS for approved + consented + published rows. `review_submit` is service-role-only; anonymous table writes remain denied. Submission audits contain only the pending state, not customer text or IP hashes.
+3. Added PGlite and pure submission tests plus the operator SQL security script. Verification is still in progress; hosted migrations and operator SQL are intentionally not run by the sprint.
+
+## Updates since the review (26 October 2026) — Sprint 3B code complete
+
+1. Delivered the Phase 3-5 plan's §4.2 moderation console in `docs/implementation/SPRINT_3B_REVIEW_MODERATION_AUDIT.md`. Added forward-only moderation/publication/re-open/override functions that re-validate the administrator, enforce the state machine and optimistic version, and write their audit events in the same transaction. Browser roles receive no direct write privilege and no execute privilege on those functions.
+2. The administrator console now has a filterable queue including decided reviews and a `/admin/reviews/<id>` detail view with the original text read-only, a separate publication editor, decisions with mandatory rejection reasons, Full Admin re-open and danger-styled overrides behind confirmation, conflict reload, and an audit history panel. `/api/admin/reviews` gates queue, detail and dashboard counters on `reviews.read` and serves nothing cacheable.
+3. `audit_events` gained one narrow policy so Operational Admins can read review-entity history; other audit entities remain Full Admin only. Review audit payloads carry state identifiers, reasons and actor ids, never customer text, notes or source IP hashes.
+4. Verification: typecheck, lint, 359 tests and the production build pass. PGlite covers the migration, state transitions, version conflicts, role denials, publication/versioning and original-text immutability, and executes the local operator SQL script. Hosted migrations, the operator SQL script against a real instance, manual demo/production QA, narrow-viewport checks and the Phase 3 acceptance matrix remain open; replies/public display stay in Sprint 3C.
+
+## Updates since the review (26 October 2026) — Sprint 3C code complete
+
+1. Completed the Phase 3 review workflow in `docs/implementation/SPRINT_3C_REVIEW_REPLIES_PUBLIC_DISPLAY.md` and wrote the gate evidence in `docs/implementation/PHASE_3_ACCEPTANCE.md`. Added database-enforced reply drafting and publication (`review_draft_reply`, `review_reply_publish`), with prior published reply text retained in the append-only `review_reply_revisions` table because the audit rule forbids bodies in audit payloads. Reply events record the transitions only.
+2. The public read path now uses `/api/reviews/public`, reading the `security_invoker` view with the publishable-key client and projecting rows through a strict `PublicReview` whitelist. Only approved, consented, published text and published replies can be returned; pending/rejected rows, originals, moderation notes, IP hashes, idempotency metadata and reply drafts are never selected or projected. Failures return an empty list with `no-store`; the demo store is unchanged.
+3. Forward-only refinement: while a replacement reply is drafted over a published reply, the approved review remains publicly visible and only the draft reply is withheld.
+4. Verification: typecheck, lint, 371 tests and the production build pass; PGlite drives submit → approve → publish → reply → replace and executes the 3A-3C operator scripts locally. Built-server smoke returned the empty public list with `no-store`, 405 for POST, and no private markers on `/reviews`. Hosted migrations, operator SQL against a real PostgreSQL instance, manual accessibility/viewport QA and owner sign-off remain open; Phase 4 is untouched.
 
 ## Current technical references consulted
 

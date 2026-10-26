@@ -77,7 +77,13 @@ const definitions: Record<Kind, Definition[]> = {
     { name: "email", label: "Email address", required: true, type: "email" },
   ],
 };
-export function PublicForm({ kind }: { kind: Kind }) {
+export function PublicForm({
+  kind,
+  reviewSubmissionsEnabled = false,
+}: {
+  kind: Kind;
+  reviewSubmissionsEnabled?: boolean;
+}) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -139,16 +145,43 @@ export function PublicForm({ kind }: { kind: Kind }) {
     setError("");
     try {
       key.current ||= crypto.randomUUID();
-      await repository.createLead(
-        kind,
-        {
-          ...values,
-          ...(kind === "review" || kind === "newsletter"
-            ? { consent: "yes" }
-            : {}),
-        },
-        key.current,
-      );
+      if (kind === "review" && !demoMode) {
+        const response = await fetch("/api/reviews", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": key.current,
+          },
+          body: JSON.stringify({
+            name: values.name,
+            body: values.review,
+            rating: values.rating ? Number(values.rating) : null,
+            branch: values.branch || null,
+            consent,
+            website: values.website || "",
+          }),
+        });
+        const result = (await response.json()) as {
+          ok?: boolean;
+          message?: string;
+          fieldErrors?: Record<string, string>;
+        };
+        if (!response.ok || result.ok !== true) {
+          if (result.fieldErrors) setErrors((current) => ({ ...current, ...result.fieldErrors }));
+          throw new Error(result.message || "We couldn’t save your review. Please try again.");
+        }
+      } else {
+        await repository.createLead(
+          kind,
+          {
+            ...values,
+            ...(kind === "review" || kind === "newsletter"
+              ? { consent: "yes" }
+              : {}),
+          },
+          key.current,
+        );
+      }
       setSaved(true);
     } catch (e) {
       setError(
@@ -171,12 +204,14 @@ export function PublicForm({ kind }: { kind: Kind }) {
         <Link className="button secondary" href="/">
           Return Home
         </Link>
-        <p className="demo-caption">
-          Preview result only. Nothing has been sent to the business.
-        </p>
+        {demoMode && (
+          <p className="demo-caption">
+            Preview result only. Nothing has been sent to the business.
+          </p>
+        )}
       </div>
     );
-  if (!demoMode)
+  if (!demoMode && kind !== "review")
     return (
       <Notice>
         Online submissions are not active yet. Please contact our team.
@@ -187,6 +222,18 @@ export function PublicForm({ kind }: { kind: Kind }) {
       <p className="muted">Fields marked * are required.</p>
       {error && <Notice error>{error}</Notice>}
       <div className={kind === "newsletter" ? "" : "form-grid"}>
+        {kind === "review" && (
+          <input
+            type="text"
+            name="website"
+            value={values.website || ""}
+            onChange={(event) => change("website", event.target.value)}
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            style={{ position: "absolute", left: "-10000px", width: 1, height: 1, overflow: "hidden" }}
+          />
+        )}
         {definitions[kind].map((field) => {
           const label = field.label + (field.required ? " *" : " (optional)");
           const value = values[field.name] || "";

@@ -339,6 +339,21 @@ test("staff management is a Full Admin capability", () => {
   );
 });
 
+test("review detail routes inherit the reviews.read capability", () => {
+  // Sprint 3B adds `/admin/reviews/<id>` without a new registry entry: the
+  // existing prefix match resolves it to the Reviews route, so Operational Admins
+  // can open the console they moderate while anonymous callers stay denied.
+  const detail = "/admin/reviews/11111111-1111-1111-1111-111111111111";
+  assert.equal(resolveAdminRoute(detail).kind, "known");
+  for (const role of [FULL, OPERATIONAL] as const)
+    assert.equal(resolveAdminRouteAccess(role, detail).kind, "allowed");
+  assert.equal(resolveAdminRouteAccess(ANONYMOUS, detail).kind, "forbidden");
+  assert.equal(
+    resolveLoginDestination(OPERATIONAL, detail),
+    detail,
+  );
+});
+
 test("role changes take effect on the next server verification", () => {
   const changed = resolveAdminIdentity(
     { id: "11111111-1111-1111-1111-111111111111", email: "staff@example.test" },

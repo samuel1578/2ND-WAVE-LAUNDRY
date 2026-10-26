@@ -178,7 +178,17 @@ export function AdminApp({
       ) : route === "enquiries" ? (
         <Enquiries id={segments[1]} state={state} />
       ) : route === "reviews" ? (
-        <ReviewsAdmin state={state} />
+        // Sprint 3B. The route already inherits `reviews.read` via the prefix
+        // match, so the detail view needs no extra registry entry. Override
+        // controls are shown only for the `reviews.override` capability.
+        <ReviewsAdmin
+          id={segments[1]}
+          state={state}
+          demo={!session}
+          canOverride={
+            !session || hasPermission(session.role, "reviews.override")
+          }
+        />
       ) : route === "newsletter" ? (
         <NewsletterAdmin state={state} />
       ) : route === "content" ? (
@@ -522,6 +532,10 @@ function Dashboard({
     recent: DashboardBookingRow[];
   } | null>(null);
   const [liveError, setLiveError] = useState(false);
+  // Sprint 3B: the review queue shortcut uses the real pending count.
+  const [livePendingReviews, setLivePendingReviews] = useState<number | null>(
+    null,
+  );
   useEffect(() => {
     if (demo) return;
     let cancelled = false;
@@ -556,6 +570,19 @@ function Dashboard({
         });
       } catch {
         if (!cancelled) setLiveError(true);
+      }
+
+      // A review-count failure leaves the shortcut honest ("—") rather than
+      // reporting zero pending reviews.
+      try {
+        const response = await fetch("/api/admin/reviews?view=summary", {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = (await response.json()) as { pendingCount?: number };
+        if (!cancelled) setLivePendingReviews(data.pendingCount ?? 0);
+      } catch {
+        // Leave the count unavailable; no sample value is substituted.
       }
     })();
     return () => {
@@ -602,7 +629,7 @@ function Dashboard({
       "Reviews awaiting approval",
       demo
         ? leads.filter((l) => l.kind === "review" && l.status === "new").length
-        : "—",
+        : (livePendingReviews ?? "—"),
       CheckCircle2,
       "/admin/reviews",
     ],

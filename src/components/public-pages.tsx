@@ -57,6 +57,8 @@ import { SwipeTrack } from "./swipe-track";
 import { BrandText, Glow } from "./brand-text";
 import { DottedGlowBackground } from "./dotted-glow-background";
 import { PublicForm } from "./forms/public-form";
+import { isElevatedConfigured } from "@/lib/supabase/admin";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Gallery } from "./gallery";
 import {
   PublishedBlog,
@@ -695,7 +697,10 @@ export function ReviewsPage({ form = false }: { form?: boolean }) {
       />
       {form ? (
         <div className="panel">
-          <PublicForm kind="review" />
+          <PublicForm
+            kind="review"
+            reviewSubmissionsEnabled={isSupabaseConfigured && isElevatedConfigured}
+          />
         </div>
       ) : (
         <>

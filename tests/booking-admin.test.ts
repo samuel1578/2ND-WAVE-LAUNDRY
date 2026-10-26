@@ -412,9 +412,10 @@ test("demo mode shows no backend banner while other states stay honest", () => {
   // modules are called out — bookings are not sample data.
   const live = dataBackendNotice("live");
   assert.ok(live);
-  // Bookings are stated as persisted; only the remaining modules are sample data.
-  assert.match(live, /^Bookings are stored in the live database\./);
-  assert.match(live, /Enquiries, reviews, website content, media and settings are still sample data/);
+  // Bookings and (since Sprint 3B) reviews are stated as persisted; only the
+  // remaining modules are sample data.
+  assert.match(live, /^Bookings and reviews are stored in the live database\./);
+  assert.match(live, /Enquiries, website content, media and settings are still sample data/);
   const unconfigured = dataBackendNotice("unconfigured");
   assert.ok(unconfigured);
   assert.match(unconfigured, /not connected/);

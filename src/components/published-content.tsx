@@ -1,10 +1,15 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { copy, demoMode, bookingHref } from "@/lib/content";
 import { useDemoStore } from "@/lib/mock-store";
 import { promoActive } from "@/lib/rules";
-import { Action, Empty, Picture, Section } from "./ui";
+import {
+  demoPublicReviews,
+  projectPublicReviews,
+  type PublicReview,
+} from "@/lib/reviews/public";
+import { Action, Empty, Picture, Section, Skeleton } from "./ui";
 import { BrandText } from "./brand-text";
 import { PublicForm } from "./forms/public-form";
 import { Dialog } from "./dialog";
@@ -84,22 +89,26 @@ export function PublishedArticle({ slug }: { slug: string }) {
     </article>
   );
 }
-export function PublishedReviews() {
-  const store = useDemoStore();
-  const reviews = store.leads.filter(
-    (l) =>
-      l.kind === "review" &&
-      l.status === "approved" &&
-      l.fields.consent === "yes",
-  );
+function ReviewCards({ reviews }: { reviews: PublicReview[] }) {
   return reviews.length ? (
     <div className="review-cards">
       {reviews.map((r) => (
         <blockquote key={r.id}>
-          <p>{r.fields.review}</p>
+          {/* Plain text only: React escapes customer and administrative text.
+              Never render review content through dangerouslySetInnerHTML. */}
+          <p>{r.body}</p>
+          {r.reply && (
+            <div>
+              <small className="muted">
+                Response from 2nd Wave Laundry Services
+              </small>
+              <p>{r.reply}</p>
+            </div>
+          )}
           <footer>
-            {r.fields.name}
-            {r.fields.rating && ` · ${r.fields.rating}/5`}
+            {r.name}
+            {r.rating ? ` · ${r.rating}/5` : ""}
+            {r.branch ? ` · ${r.branch}` : ""}
           </footer>
         </blockquote>
       ))}
@@ -107,6 +116,49 @@ export function PublishedReviews() {
   ) : (
     <Empty title={copy("15", "Empty")} />
   );
+}
+
+/** Demo workspace: the isolated in-memory reviews, using the same rendering. */
+function DemoPublishedReviews() {
+  const store = useDemoStore();
+  return <ReviewCards reviews={demoPublicReviews(store.leads)} />;
+}
+
+/**
+ * Live public reviews. The endpoint already applies the published/consented
+ * predicate under RLS; the response is projected again here so the client can
+ * never render a field the whitelist does not allow.
+ */
+function LivePublishedReviews() {
+  const [reviews, setReviews] = useState<PublicReview[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/reviews/public", {
+          cache: "no-store",
+        });
+        const data = response.ok
+          ? ((await response.json()) as { reviews?: unknown })
+          : {};
+        if (!cancelled)
+          setReviews(projectPublicReviews(data.reviews ?? []));
+      } catch {
+        // Fail closed to the honest empty state; no sample reviews appear.
+        if (!cancelled) setReviews([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (reviews === null) return <Skeleton count={2} />;
+  return <ReviewCards reviews={reviews} />;
+}
+
+export function PublishedReviews() {
+  return demoMode ? <DemoPublishedReviews /> : <LivePublishedReviews />;
 }
 export function Newsletter() {
   const store = useDemoStore();
