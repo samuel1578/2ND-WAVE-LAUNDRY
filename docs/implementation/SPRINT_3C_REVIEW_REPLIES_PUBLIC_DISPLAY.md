@@ -50,13 +50,13 @@ Phase 4 is untouched.
   append-only `review_reply_revisions`, `review_draft_reply`, `review_reply_publish`, immutable
   triggers, RLS and service-role-only grants.
 - `src/lib/reviews/public.ts`: public whitelist projection, published/draft reply rules, demo
-  predicate and the bounded list.
+  predicate, bounded list, and validation of the projected public API payload.
 - `src/lib/reviews/public-service.ts`: server-only reader with an injectable row source (used by
   the leak tests) and fail-closed results.
 - `src/app/api/reviews/public/route.ts`: public GET (empty list on failure, `no-store`), POST 405.
 - `src/components/published-content.tsx`: `PublishedReviews` now uses the live endpoint outside
-  demo mode, renders `body_published` and published replies as text, and keeps the demo store in
-  demo mode.
+  demo mode, validates the endpoint's camelCase public payload before rendering review bodies
+  and published replies as text, and keeps the demo store in demo mode.
 - Reply workflow: `src/lib/reviews/moderation.ts` (reply validation), `src/lib/reviews/errors.ts`
   (`invalid_reply`), `src/lib/reviews/admin.ts` (reply fields), `src/lib/reviews/admin-service.ts`
   (reply RPCs, detail columns), `src/lib/reviews/actions.ts` (`draftReplyAction`,

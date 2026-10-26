@@ -217,6 +217,23 @@ a:hover {
     0 0 8px var(--tint),
     0 0 3px var(--tint);
 }
+.logo-video {
+  display: flex;
+  justify-content: center;
+  margin-bottom: clamp(24px, 3.5vw, 44px);
+}
+.logo-video__slot,
+.logo-video__media {
+  display: block;
+  width: min(100%, 1100px, calc(min(54vh, 540px) * 16 / 9));
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 18px;
+}
+.logo-video__media {
+  object-fit: contain;
+  background: transparent;
+}
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.13em;
@@ -3117,6 +3134,14 @@ tbody tr:hover {
   }
   .page-hero .page-heading {
     margin-bottom: 20px;
+  }
+  .logo-video {
+    margin-bottom: 20px;
+  }
+  .logo-video__slot,
+  .logo-video__media {
+    width: min(100%, calc(clamp(170px, 46vw, 230px) * 16 / 9));
+    border-radius: 12px;
   }
   .scrolly-hero .hero-stage {
     padding-top: 50px;

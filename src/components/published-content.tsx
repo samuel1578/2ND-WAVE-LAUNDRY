@@ -6,7 +6,7 @@ import { useDemoStore } from "@/lib/mock-store";
 import { promoActive } from "@/lib/rules";
 import {
   demoPublicReviews,
-  projectPublicReviews,
+  projectPublicReviewPayloads,
   type PublicReview,
 } from "@/lib/reviews/public";
 import { Action, Empty, Picture, Section, Skeleton } from "./ui";
@@ -142,7 +142,7 @@ function LivePublishedReviews() {
           ? ((await response.json()) as { reviews?: unknown })
           : {};
         if (!cancelled)
-          setReviews(projectPublicReviews(data.reviews ?? []));
+          setReviews(projectPublicReviewPayloads(data.reviews ?? []));
       } catch {
         // Fail closed to the honest empty state; no sample reviews appear.
         if (!cancelled) setReviews([]);

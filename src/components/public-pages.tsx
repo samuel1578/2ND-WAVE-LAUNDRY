@@ -56,6 +56,7 @@ import { Reveal } from "./motion";
 import { SwipeTrack } from "./swipe-track";
 import { BrandText, Glow } from "./brand-text";
 import { DottedGlowBackground } from "./dotted-glow-background";
+import { LogoVideoHero } from "./logo-video-hero";
 import { PublicForm } from "./forms/public-form";
 import { isElevatedConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -690,25 +691,34 @@ export function ArticlePage({ slug }: { slug: string }) {
 }
 export function ReviewsPage({ form = false }: { form?: boolean }) {
   return (
-    <div className="narrow">
-      <Heading
-        title={form ? copy("15", "Form H1") : copy("15", "H1")}
-        description={form ? undefined : copy("15", "Intro")}
-      />
-      {form ? (
-        <div className="panel">
-          <PublicForm
-            kind="review"
-            reviewSubmissionsEnabled={isSupabaseConfigured && isElevatedConfigured}
+    <>
+      <section className="page-hero page-hero--video">
+        <div className="page-hero__inner">
+          <div className="logo-video">
+            <LogoVideoHero />
+          </div>
+          <Heading
+            title={form ? copy("15", "Form H1") : copy("15", "H1")}
+            description={form ? undefined : copy("15", "Intro")}
           />
         </div>
-      ) : (
-        <>
-          <PublishedReviews />
-          <Action href="/reviews/share">Share Your Experience</Action>
-        </>
-      )}
-    </div>
+      </section>
+      <div className="container narrow">
+        {form ? (
+          <div className="panel">
+            <PublicForm
+              kind="review"
+              reviewSubmissionsEnabled={isSupabaseConfigured && isElevatedConfigured}
+            />
+          </div>
+        ) : (
+          <>
+            <PublishedReviews />
+            <Action href="/reviews/share">Share Your Experience</Action>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 export { PolicyPage } from "./policy-page";

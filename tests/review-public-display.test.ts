@@ -6,6 +6,7 @@ import {
     PUBLIC_REVIEW_LIMIT,
     demoPublicReviews,
     mapPublicReviewRow,
+    projectPublicReviewPayloads,
     projectPublicReviews,
 } from "../src/lib/reviews/public";
 import {
@@ -162,6 +163,31 @@ test("the public list is bounded and tolerates malformed input", () => {
     assert.equal(projectPublicReviews(many).length, PUBLIC_REVIEW_LIMIT);
 });
 
+test("the client accepts the projected public API response shape", () => {
+    const response = {
+        reviews: [
+            {
+                id: APPROVED_ID,
+                name: "Software Developer",
+                rating: 5,
+                branch: "Katamanso No. 1",
+                body: "THEY DID A GOOD JOB",
+                publishedAt: "2026-10-26T20:29:44.230705+00:00",
+                publishedVersion: 1,
+                reply: null,
+                replyPublishedAt: null,
+            },
+        ],
+    };
+
+    assert.deepEqual(projectPublicReviewPayloads(response.reviews), response.reviews);
+    assert.deepEqual(projectPublicReviewPayloads(null), []);
+    assert.deepEqual(
+        projectPublicReviewPayloads([{ ...response.reviews[0], body: " " }]),
+        [],
+    );
+});
+
 test("customer and reply text is rendered as React text, never as HTML", () => {
     const source = readFileSync("src/components/published-content.tsx", "utf8");
     // The comment above the render explicitly forbids the HTML path; match the
@@ -169,6 +195,7 @@ test("customer and reply text is rendered as React text, never as HTML", () => {
     assert.equal(source.includes("dangerouslySetInnerHTML="), false);
     assert.ok(source.includes("{r.body}"));
     assert.ok(source.includes("{r.reply}"));
+    assert.ok(source.includes("projectPublicReviewPayloads(data.reviews ?? [])"));
     assert.equal(source.includes("body_original"), false);
     assert.equal(source.includes("source_ip_hash"), false);
 

@@ -66,6 +66,8 @@ const fullBleed = new Set([
   "privacy",
   "terms",
   "laundry-care-terms",
+  "reviews",
+  "reviews/share",
   "preview",
 ]);
 export default async function Page({

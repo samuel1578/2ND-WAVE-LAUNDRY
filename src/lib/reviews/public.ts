@@ -109,12 +109,73 @@ export function mapPublicReviewRow(row: unknown): PublicReview | null {
     };
 }
 
+/** Validates the already-projected shape returned by `/api/reviews/public`. */
+export function mapPublicReviewPayload(value: unknown): PublicReview | null {
+    if (!isRecord(value)) return null;
+    if (typeof value.id !== "string" || !UUID.test(value.id)) return null;
+    if (typeof value.name !== "string") return null;
+    if (typeof value.body !== "string" || !value.body.trim()) return null;
+    if (
+        value.rating !== null &&
+        (typeof value.rating !== "number" ||
+            !Number.isInteger(value.rating) ||
+            value.rating < 1 ||
+            value.rating > 5)
+    )
+        return null;
+    if (value.branch !== null && typeof value.branch !== "string") return null;
+    if (
+        value.publishedAt !== null &&
+        (typeof value.publishedAt !== "string" ||
+            Number.isNaN(Date.parse(value.publishedAt)))
+    )
+        return null;
+    if (
+        value.publishedVersion !== null &&
+        (typeof value.publishedVersion !== "number" ||
+            !Number.isInteger(value.publishedVersion) ||
+            value.publishedVersion < 1)
+    )
+        return null;
+    if (value.reply !== null && typeof value.reply !== "string") return null;
+    if (
+        value.replyPublishedAt !== null &&
+        (typeof value.replyPublishedAt !== "string" ||
+            Number.isNaN(Date.parse(value.replyPublishedAt)))
+    )
+        return null;
+
+    return {
+        id: value.id,
+        name: value.name.trim(),
+        rating: value.rating,
+        branch: nullableText(value.branch),
+        body: value.body.trim(),
+        publishedAt: value.publishedAt,
+        publishedVersion: value.publishedVersion,
+        reply: nullableText(value.reply),
+        replyPublishedAt: value.replyPublishedAt,
+    };
+}
+
 /** Bounds the list and drops every row that is not publishable. */
 export function projectPublicReviews(rows: unknown): PublicReview[] {
+    return projectReviewList(rows, mapPublicReviewRow);
+}
+
+/** Bounds and validates the public API's camelCase review payloads. */
+export function projectPublicReviewPayloads(payload: unknown): PublicReview[] {
+    return projectReviewList(payload, mapPublicReviewPayload);
+}
+
+function projectReviewList(
+    rows: unknown,
+    mapReview: (value: unknown) => PublicReview | null,
+): PublicReview[] {
     if (!Array.isArray(rows)) return [];
     const reviews: PublicReview[] = [];
     for (const row of rows) {
-        const mapped = mapPublicReviewRow(row);
+        const mapped = mapReview(row);
         if (mapped) reviews.push(mapped);
         if (reviews.length >= PUBLIC_REVIEW_LIMIT) break;
     }
