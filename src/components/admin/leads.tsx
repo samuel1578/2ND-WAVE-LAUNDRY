@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { updateLead, useDemoStore } from "@/lib/mock-store";
 import type { Lead } from "@/lib/contracts";
 import { Empty, Heading } from "@/components/ui";
@@ -151,13 +151,103 @@ export function Enquiries({ id, state }: { id?: string; state?: string }) {
     </>
   );
 }
-export function NewsletterAdmin({ state }: { state?: string }) {
+type NewsletterInterestRecord = {
+  id: string;
+  email: string;
+  consentVersion: string;
+  source: string;
+  createdAt: string;
+};
+
+export function NewsletterAdmin({
+  state,
+  demo = false,
+}: {
+  state?: string;
+  demo?: boolean;
+}) {
   const store = useDemoStore();
-  const leads =
-    state === "empty" ? [] : store.leads.filter((l) => l.kind === "newsletter");
+  const demoLeads = demo
+    ? state === "empty"
+      ? []
+      : store.leads.filter((l) => l.kind === "newsletter")
+    : [];
+  const [records, setRecords] = useState<NewsletterInterestRecord[] | null>(
+    demo ? [] : null,
+  );
+  const [loading, setLoading] = useState(!demo);
+  const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState<Lead>();
+  const [selectedRecord, setSelectedRecord] = useState<NewsletterInterestRecord>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/admin/newsletter", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          if (!cancelled) {
+            setLoadError(
+              response.status === 401
+                ? "Sign in with an administrator account."
+                : response.status === 403
+                  ? "Your administrator role does not include newsletter interest."
+                  : "Newsletter interest could not be loaded. Reload the page and try again.",
+            );
+            setRecords(null);
+          }
+          return;
+        }
+        const payload = (await response.json()) as {
+          records?: NewsletterInterestRecord[];
+        };
+        if (!cancelled) {
+          setRecords(payload.records ?? []);
+          setLoadError("");
+        }
+      } catch {
+        if (!cancelled) {
+          setLoadError(
+            "Newsletter interest could not be loaded. Reload the page and try again.",
+          );
+          setRecords(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [demo]);
+
+  const rows = demo
+    ? demoLeads.map((lead) => ({
+        key: lead.id,
+        email: lead.fields.email,
+        consent: lead.fields.consent === "yes" ? "Yes" : "No",
+        date: new Date(lead.createdAt).toLocaleDateString("en-GB"),
+        status: lead.status === "withdrawn" ? "Withdrawn" : "Interest recorded",
+        lead,
+        record: undefined,
+      }))
+    : (records ?? []).map((record) => ({
+        key: record.id,
+        email: record.email,
+        consent: record.consentVersion,
+        date: record.createdAt
+          ? new Date(record.createdAt).toLocaleDateString("en-GB")
+          : "—",
+        status: "Interest recorded",
+        lead: undefined,
+        record,
+      }));
+
   return (
     <>
       <Heading
@@ -165,33 +255,36 @@ export function NewsletterAdmin({ state }: { state?: string }) {
         description="Email campaigns and provider integration are not enabled."
       />
       {error && <Notice error>{error}</Notice>}
-      {leads.length ? (
+      {loadError && <Notice error>{loadError}</Notice>}
+      {loading ? (
+        <p role="status">Loading newsletter interest…</p>
+      ) : rows.length ? (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Email address</th>
-                <th>Consent recorded</th>
+                <th>Consent</th>
                 <th>Recorded date</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {leads.map((l) => (
-                <tr key={l.id}>
-                  <td>{l.fields.email}</td>
-                  <td>{l.fields.consent === "yes" ? "Yes" : "No"}</td>
-                  <td>{new Date(l.createdAt).toLocaleDateString("en-GB")}</td>
-                  <td>
-                    {l.status === "withdrawn"
-                      ? "Withdrawn"
-                      : "Interest recorded"}
-                  </td>
+              {rows.map((row) => (
+                <tr key={row.key}>
+                  <td>{row.email}</td>
+                  <td>{row.consent}</td>
+                  <td>{row.date}</td>
+                  <td>{row.status}</td>
                   <td>
                     <button
                       className="text-link"
-                      onClick={() => setSelected(l)}
+                      onClick={() =>
+                        row.lead
+                          ? setSelected(row.lead)
+                          : setSelectedRecord(row.record)
+                      }
                     >
                       View Details
                     </button>
@@ -234,6 +327,28 @@ export function NewsletterAdmin({ state }: { state?: string }) {
             >
               Record Withdrawal
             </button>
+          </>
+        )}
+      </Dialog>
+      <Dialog
+        open={!!selectedRecord}
+        onClose={() => setSelectedRecord(undefined)}
+        title="Newsletter interest details"
+      >
+        {selectedRecord && (
+          <>
+            <p>{selectedRecord.email}</p>
+            <p>Consent notice: {selectedRecord.consentVersion}</p>
+            <p>
+              Recorded:{" "}
+              {selectedRecord.createdAt
+                ? new Date(selectedRecord.createdAt).toLocaleString("en-GB")
+                : "—"}
+            </p>
+            <p>Source: {selectedRecord.source}</p>
+            <p className="demo-caption">
+              Withdrawal and campaign controls are not part of this phase.
+            </p>
           </>
         )}
       </Dialog>

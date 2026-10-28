@@ -41,7 +41,6 @@ import { MediaAdmin } from "./media-admin";
 import { SettingsAdmin } from "./settings";
 import { StaffAdmin } from "./staff-manager";
 import { EmailDelivery } from "./email-delivery";
-import { EmailCompose } from "./email-compose";
 
 const AUTH_ROUTES = ["login", "reset-password", "set-password"];
 
@@ -162,7 +161,6 @@ export function AdminApp({
       "media",
       "settings",
       "staff",
-      "email-compose",
       "email-delivery",
     ];
     content =
@@ -190,7 +188,9 @@ export function AdminApp({
           }
         />
       ) : route === "newsletter" ? (
-        <NewsletterAdmin state={state} />
+        // The interest list needs a verified session: demo mode keeps the
+        // in-memory preview, a real session reads the persisted records.
+        <NewsletterAdmin state={state} demo={!session} />
       ) : route === "content" ? (
         <ContentAdmin segments={segments.slice(1)} state={state} />
       ) : route === "media" ? (
@@ -211,15 +211,6 @@ export function AdminApp({
           <Empty
             title="Email monitoring is unavailable in demo mode."
             body="Demo bookings never create or send customer emails."
-          />
-        )
-      ) : route === "email-compose" ? (
-        session ? (
-          <EmailCompose />
-        ) : (
-          <Empty
-            title="Email sending is unavailable in demo mode."
-            body="Sign in as an administrator to send an email."
           />
         )
       ) : route === "" ? (

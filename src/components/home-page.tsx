@@ -15,10 +15,12 @@ import { SwipeTrack } from "./swipe-track";
 import { CascadeSlider } from "./cascade-slider";
 import { Promotion, Newsletter } from "./published-content";
 import { HomeHero } from "./home-hero";
+import { readNewsletterInterestConfig } from "@/lib/newsletter/config";
 
 const galleryTiles = photos.batch_14_gallery ?? [];
 
 export function HomePage() {
+  const newsletterInterestEnabled = readNewsletterInterestConfig().enabled;
   return (
     <>
       <HomeHero />
@@ -111,7 +113,7 @@ export function HomePage() {
           </div>
         </Section>
         <Closing />
-        <Newsletter />
+        <Newsletter interestEnabled={newsletterInterestEnabled} />
       </div>
     </>
   );

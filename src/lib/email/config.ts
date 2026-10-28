@@ -13,8 +13,10 @@
 
 import {
   emailTemplates,
+  newsletterInterestTemplates,
   staffOrderTemplates,
   type EmailTemplate,
+  type NewsletterInterestTemplate,
   type NotificationTemplate,
   type StaffOrderTemplate,
 } from "./templates";
@@ -22,8 +24,22 @@ import {
 export const TRANSACTIONAL_EMAILS_ENABLED_VAR = "TRANSACTIONAL_EMAILS_ENABLED";
 export const BREVO_API_KEY_VAR = "BREVO_API_KEY";
 export const EMAIL_WORKER_SECRET_VAR = "EMAIL_WORKER_SECRET";
+export const VERCEL_CRON_SECRET_VAR = "CRON_SECRET";
 export const BREVO_WEBHOOK_SECRET_VAR = "BREVO_WEBHOOK_SECRET";
+export const EMAIL_TEST_RECIPIENT_VAR = "EMAIL_TEST_RECIPIENT";
 export const SITE_URL_VAR = "SITE_URL";
+
+export function readEmailTestRecipient(
+  env: Record<string, string | undefined> = process.env,
+): { ok: true; email: string } | { ok: false; reason: "missing" | "invalid" } {
+  const email = (env[EMAIL_TEST_RECIPIENT_VAR] ?? "").trim().toLowerCase();
+  if (!email) return { ok: false, reason: "missing" };
+  if (
+    email.length > 254 ||
+    !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+  ) return { ok: false, reason: "invalid" };
+  return { ok: true, email };
+}
 
 export const BREVO_TEMPLATE_ID_VARS: Record<EmailTemplate, string> = {
   booking_created: "BREVO_TEMPLATE_BOOKING_RECEIVED_ID",
@@ -47,6 +63,18 @@ export const BREVO_STAFF_TEMPLATE_ID_VARS: Record<StaffOrderTemplate, string> = 
   staff_order_cancelled: "BREVO_TEMPLATE_STAFF_ORDER_CANCELLED_ID",
 };
 
+/**
+ * The internal manager alert template ID (Phase 5 MVP) is optional exactly like
+ * the staff IDs: a deployment that has not saved it in Brevo keeps customer and
+ * staff delivery untouched while the newsletter alert rows stay retryable.
+ */
+export const BREVO_NEWSLETTER_TEMPLATE_ID_VARS: Record<
+  NewsletterInterestTemplate,
+  string
+> = {
+  newsletter_interest_received: "BREVO_TEMPLATE_NEWSLETTER_INTEREST_ID",
+};
+
 export const MIN_WORKER_SECRET_LENGTH = 32;
 export const MIN_WEBHOOK_SECRET_LENGTH = 32;
 
@@ -68,7 +96,7 @@ export type BrevoApiKeyResult =
       reason: "disabled" | "missing-api-key" | "invalid-api-key";
     };
 
-/** Validates the Brevo credentials used by both template and manual sends. */
+/** Validates the Brevo credentials used by saved-template delivery. */
 export function readBrevoApiKey(
   env: Record<string, string | undefined> = process.env,
 ): BrevoApiKeyResult {
@@ -207,6 +235,73 @@ export function readTransactionalEmailConfig(
   };
 }
 
+export type EmailTemplateConfiguration = {
+  template: NotificationTemplate;
+  variable: string;
+  status: "configured" | "missing" | "invalid";
+};
+
+/** Returns safe configuration states only; no configured ID values are exposed. */
+export function readEmailTemplateConfiguration(
+  env: Record<string, string | undefined> = process.env,
+): EmailTemplateConfiguration[] {
+  const entries: EmailTemplateConfiguration[] = [];
+  const groups: Array<{
+    templates: readonly NotificationTemplate[];
+    variables: Record<string, string>;
+  }  > = [
+    { templates: emailTemplates, variables: BREVO_TEMPLATE_ID_VARS },
+    { templates: staffOrderTemplates, variables: BREVO_STAFF_TEMPLATE_ID_VARS },
+    { templates: newsletterInterestTemplates, variables: BREVO_NEWSLETTER_TEMPLATE_ID_VARS },
+  ];
+
+  for (const { templates, variables } of groups) {
+    const seen = new Set<number>();
+    for (const template of templates) {
+      const variable = variables[template];
+      const raw = (env[variable] ?? "").trim();
+      if (!raw) {
+        entries.push({ template, variable, status: "missing" });
+      } else if (!/^[1-9]\d*$/.test(raw) ||
+        !Number.isSafeInteger(Number(raw)) ||
+        seen.has(Number(raw))
+      ) {
+        entries.push({ template, variable, status: "invalid" });
+      } else {
+        seen.add(Number(raw));
+        entries.push({ template, variable, status: "configured" });
+      }
+    }
+  }
+  return entries;
+}
+
+export function readVercelCronSecret(
+  env: Record<string, string | undefined> = process.env,
+): { ok: true; secret: string } | { ok: false; reason: "missing" | "invalid" } {
+  const secret = (env[VERCEL_CRON_SECRET_VAR] ?? "").trim();
+  if (!secret) return { ok: false, reason: "missing" };
+  if (!isStrongSecret(secret, MIN_WORKER_SECRET_LENGTH))
+    return { ok: false, reason: "invalid" };
+  return { ok: true, secret };
+}
+
+export function readEmailOperationalConfiguration(
+  env: Record<string, string | undefined> = process.env,
+) {
+  return {
+    transactionalEnabled:
+      (env[TRANSACTIONAL_EMAILS_ENABLED_VAR] ?? "").trim().toLowerCase() === "true",
+    apiKeyConfigured: Boolean((env[BREVO_API_KEY_VAR] ?? "").trim()),
+    siteUrlConfigured: Boolean(readSiteUrl(env[SITE_URL_VAR])),
+    workerSecretConfigured: readWorkerSecret(env).ok,
+    cronSecretConfigured: readVercelCronSecret(env).ok,
+    webhookSecretConfigured: readBrevoWebhookConfig(env).ok,
+    testRecipientConfigured: readEmailTestRecipient(env).ok,
+    templates: readEmailTemplateConfiguration(env),
+  };
+}
+
 export type StaffTemplateIdsResult =
   | { ok: true; templateIds: Record<StaffOrderTemplate, number> }
   | {
@@ -215,19 +310,23 @@ export type StaffTemplateIdsResult =
       templateVariable: string;
     };
 
-/**
- * Reads the five optional staff alert template IDs. Missing values do not
- * disable customer sending: the worker retries a staff row whose template is not
- * configured yet, leaving customer delivery untouched.
- */
-export function readStaffEmailTemplateIds(
-  env: Record<string, string | undefined> = process.env,
-): StaffTemplateIdsResult {
-  const templateIds = {} as Record<StaffOrderTemplate, number>;
+/** Shared optional-ID reader for the non-customer template groups. */
+function readOptionalTemplateIds<T extends string>(
+  env: Record<string, string | undefined>,
+  templates: readonly T[],
+  variables: Record<T, string>,
+):
+  | { ok: true; templateIds: Record<T, number> }
+  | {
+      ok: false;
+      reason: "missing-template-id" | "invalid-template-id";
+      templateVariable: string;
+    } {
+  const templateIds = {} as Record<T, number>;
   const configuredIds = new Set<number>();
 
-  for (const template of staffOrderTemplates) {
-    const variable = BREVO_STAFF_TEMPLATE_ID_VARS[template];
+  for (const template of templates) {
+    const variable = variables[template];
     const raw = (env[variable] ?? "").trim();
     if (!raw)
       return { ok: false, reason: "missing-template-id", templateVariable: variable };
@@ -248,6 +347,40 @@ export function readStaffEmailTemplateIds(
   }
 
   return { ok: true, templateIds };
+}
+
+/**
+ * Reads the five optional staff alert template IDs. Missing values do not
+ * disable customer sending: the worker retries a staff row whose template is not
+ * configured yet, leaving customer delivery untouched.
+ */
+export function readStaffEmailTemplateIds(
+  env: Record<string, string | undefined> = process.env,
+): StaffTemplateIdsResult {
+  return readOptionalTemplateIds(env, staffOrderTemplates, BREVO_STAFF_TEMPLATE_ID_VARS);
+}
+
+export type NewsletterTemplateIdsResult =
+  | { ok: true; templateIds: Record<NewsletterInterestTemplate, number> }
+  | {
+      ok: false;
+      reason: "missing-template-id" | "invalid-template-id";
+      templateVariable: string;
+    };
+
+/**
+ * Reads the single optional manager alert template ID (Phase 5 MVP). Missing
+ * value does not disable customer or staff sending: the worker retries the
+ * newsletter alert row until the template is saved in Brevo.
+ */
+export function readNewsletterTemplateIds(
+  env: Record<string, string | undefined> = process.env,
+): NewsletterTemplateIdsResult {
+  return readOptionalTemplateIds(
+    env,
+    newsletterInterestTemplates,
+    BREVO_NEWSLETTER_TEMPLATE_ID_VARS,
+  );
 }
 
 /** Safe operator-facing explanation. Never includes a secret value. */
@@ -279,14 +412,16 @@ export function emailConfigMessage(
  * The template ids every delivery path must use.
  *
  * The post-commit dispatch and the protected worker endpoint (the scheduler's
- * path) both need the same set: the six required customer ids plus the staff ids
- * once they are configured. Reading them in one place stops the two paths from
- * drifting, which would otherwise leave staff alerts permanently retrying on the
- * scheduled drain while the post-commit kick could send them.
+ * path) both need the same set: the six required customer ids plus the staff
+ * ids and the newsletter manager alert id once they are configured. Reading them
+ * in one place stops the paths from drifting, which would otherwise leave an
+ * optional alert permanently retrying on the scheduled drain while the
+ * post-commit kick could send it.
  *
- * Staff ids are all-or-nothing: one missing or malformed id means no staff ids
- * are returned, so a partially configured account cannot produce an inconsistent
- * subset of alerts. Customer ids are always included when they are valid.
+ * Staff and newsletter ids are all-or-nothing per group: one missing or
+ * malformed id means no ids from that group are returned, so a partially
+ * configured account cannot produce an inconsistent subset of alerts. Customer
+ * ids are always included when they are valid.
  */
 export function readDeliveryTemplateIds(
   env: Record<string, string | undefined> = process.env,
@@ -295,17 +430,26 @@ export function readDeliveryTemplateIds(
   staffConfigured: boolean;
   /** The first unconfigured staff variable, for operator-facing messaging. */
   staffTemplateVariable: string | null;
+  newsletterConfigured: boolean;
+  /** The first unconfigured newsletter variable, for operator messaging. */
+  newsletterTemplateVariable: string | null;
 } {
   const customer = readTransactionalEmailConfig(env);
   const staff = readStaffEmailTemplateIds(env);
+  const newsletter = readNewsletterTemplateIds(env);
 
   return {
     templateIds: {
       ...(customer.ok ? customer.config.templateIds : {}),
       ...(staff.ok ? staff.templateIds : {}),
+      ...(newsletter.ok ? newsletter.templateIds : {}),
     },
     staffConfigured: staff.ok,
     staffTemplateVariable: staff.ok ? null : staff.templateVariable,
+    newsletterConfigured: newsletter.ok,
+    newsletterTemplateVariable: newsletter.ok
+      ? null
+      : newsletter.templateVariable,
   };
 }
 

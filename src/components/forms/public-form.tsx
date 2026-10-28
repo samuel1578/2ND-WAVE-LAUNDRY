@@ -80,9 +80,11 @@ const definitions: Record<Kind, Definition[]> = {
 export function PublicForm({
   kind,
   reviewSubmissionsEnabled = false,
+  newsletterInterestEnabled = false,
 }: {
   kind: Kind;
   reviewSubmissionsEnabled?: boolean;
+  newsletterInterestEnabled?: boolean;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -145,22 +147,33 @@ export function PublicForm({
     setError("");
     try {
       key.current ||= crypto.randomUUID();
-      if (kind === "review" && !demoMode) {
-        const response = await fetch("/api/reviews", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": key.current,
+      if ((kind === "review" || kind === "newsletter") && !demoMode) {
+        const response = await fetch(
+          kind === "review" ? "/api/reviews" : "/api/newsletter-interest",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": key.current,
+            },
+            body: JSON.stringify(
+              kind === "review"
+                ? {
+                    name: values.name,
+                    body: values.review,
+                    rating: values.rating ? Number(values.rating) : null,
+                    branch: values.branch || null,
+                    consent,
+                    website: values.website || "",
+                  }
+                : {
+                    email: values.email,
+                    consent,
+                    website: values.website || "",
+                  },
+            ),
           },
-          body: JSON.stringify({
-            name: values.name,
-            body: values.review,
-            rating: values.rating ? Number(values.rating) : null,
-            branch: values.branch || null,
-            consent,
-            website: values.website || "",
-          }),
-        });
+        );
         const result = (await response.json()) as {
           ok?: boolean;
           message?: string;
@@ -168,7 +181,12 @@ export function PublicForm({
         };
         if (!response.ok || result.ok !== true) {
           if (result.fieldErrors) setErrors((current) => ({ ...current, ...result.fieldErrors }));
-          throw new Error(result.message || "We couldn’t save your review. Please try again.");
+          throw new Error(
+            result.message ||
+              (kind === "review"
+                ? "We couldn’t save your review. Please try again."
+                : "We couldn’t save your sign-up. Please try again."),
+          );
         }
       } else {
         await repository.createLead(
@@ -211,7 +229,9 @@ export function PublicForm({
         )}
       </div>
     );
-  if (!demoMode && kind !== "review")
+  const liveFormActive =
+    kind === "review" || (kind === "newsletter" && newsletterInterestEnabled);
+  if (!demoMode && !liveFormActive)
     return (
       <Notice>
         Online submissions are not active yet. Please contact our team.
@@ -222,7 +242,7 @@ export function PublicForm({
       <p className="muted">Fields marked * are required.</p>
       {error && <Notice error>{error}</Notice>}
       <div className={kind === "newsletter" ? "" : "form-grid"}>
-        {kind === "review" && (
+        {(kind === "review" || kind === "newsletter") && (
           <input
             type="text"
             name="website"

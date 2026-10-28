@@ -424,7 +424,70 @@ reply:       none -> draft -> published
 
 ---
 
-## 7. Hard rules (every sprint, no exceptions)
+## 7. Sprint 6 — Move Website Content and Settings from Demo to Functional Admin
+
+**Status:** PLANNED — this sprint is the next step toward replacing the frontend demo with a functional application. Phase 5 code completion does not mean the whole product is production-ready: website content and most settings are still demo/mock-store data, public rendering is still partly sourced from hardcoded/code-managed content, and the newsletter currently implements interest collection/admin visibility rather than the complete unsubscribe, suppression and Brevo campaign workflow described in Sprint 5B/5C. Sprint 6 addresses the Website Content and Settings management gap; it does not silently claim or include completion of every remaining production acceptance item.
+
+**Objective:** make the records administrators expect to maintain in `/admin/content` and `/admin/settings` durable, server-authorised, and the actual source read by the public website and booking workflows, while preserving an isolated demo mode and the existing visual design.
+
+**Observed baseline / scope evidence:**
+
+- `FaqManager` currently calls `getFaqs()` / `saveFaqs()` in `src/lib/mock-store.ts`, while the public FAQ page reads `faqs` directly from `src/lib/content.ts` (the approved content JSON). Therefore FAQ edits do **not** update the public FAQ page; this is a confirmed data-flow disconnect, not an assumption.
+- The FAQ manager supports editing, ordering, enabling/disabling, and deleting seeded FAQs, but has no create/add FAQ control. Define and implement an explicit create path in this sprint so administrators can manage the full collection.
+- `WebsiteContentState` (locations, gallery placements, FAQs, promotions), blog/service editor records, marketing media, and `Settings` are currently held in the in-memory demo store. Their mock mutations are rejected outside demo mode; there are no CMS/content persistence migrations or admin APIs for these modules in the existing code.
+- The public website reads business identity/contact values and fixed service definitions/relationships from `src/lib/content.ts`; branch details are defined there (some location seeds are copied into the demo manager); FAQs are read from content JSON; gallery display currently reads the static `photos.batch_14_gallery` asset list rather than the admin gallery placements. Admin-edited content and public render sources are therefore inconsistent in multiple places.
+- Settings controls for business contacts/social links, accepting bookings, pickup window/cutoff, and newsletter visibility read/write the mock store. The public shell and booking form read separate hardcoded `contact` constants / server-side configuration / database rules, so changing demo settings does not establish that the live public behaviour changes.
+- Existing durable booking tables include `branches`, `services`, `branch_operating_hours`, `branch_pickup_windows`, `branch_pickup_exceptions`, and singleton `booking_settings`; the booking catalogue loader reads active `services` from Supabase. Treat these as existing operational schema, not as proof that Website Content, contact/social details, or every Settings field has a live admin write/read path. Review existing migrations and actual call sites before adding duplicate tables or declaring a field complete.
+- Homepage, About and Policy Pages are explicitly marked code-managed in `content-config.ts`; content JSON (`src/data/content.json`), assets (`src/data/assets.json`), fixed service slugs/relationships, navigation, imagery overrides, and fixed branch/contact constants remain code-owned. Their editability boundary must be decided and recorded before implementation; do not invent copy, prices, claims, policies, or branding. Use the approved source documents and preserve approved content unless the owner authorises a change.
+- Retention values (booking 12 calendar months; customer photos 90 days) are displayed read-only; they are not a general-purpose admin policy editor. Security-sensitive/provider feature flags, secrets, email templates, and consent-version configuration remain deployment/operator configuration, not ordinary website editor fields.
+
+### 7.1 Sprint 6A — Inventory, contracts, and source-of-truth decisions
+
+1. Produce a field-by-field inventory for every existing Website Content module (Services, Locations, Gallery, Blog, FAQs, Promotions), Media Library, and Settings panel. For each field record its current source, current write path, public/operational consumers, target durable source, ownership/permission, and whether it is editable, intentionally fixed, or requires owner decision.
+2. Reconcile the inventory against the approved PDF/SRS/PRD/content references and the already-existing migrations. Reuse the existing `public.services`, `public.branches`, operational hours/pickup-window tables and `public.booking_settings` where their semantics fit; do not build parallel sources for operational catalogue/scheduling data.
+3. Define how website copy/content JSON will be represented and served (including FAQs and static section copy) without breaking approved SEO routes, slugs, design, accessibility, or server rendering. Decide the mapping between existing seeded FAQ content and durable rows; seed only approved existing FAQ text and make reruns safe. Do not silently drop or duplicate FAQ categories from sections `04.00` and `13`.
+4. Explicitly decide and document whether homepage/About/policy copy and public contact/social data become editable in the existing admin, remain code-managed, or require a later owner decision. Resolve the overlap between Settings contacts and branch-specific contacts, plus per-role permissions, before exposing writes.
+5. Keep `NEXT_PUBLIC_DEMO_MODE` isolated: demo may continue using mock store; live mode must read/write the authoritative durable records, fail closed on missing configuration/data, and never display/save success for a mock-only mutation.
+
+**Deliverable:** a source-of-truth matrix in the Sprint 6 execution record before schema/API implementation proceeds. Any unresolved business/content decision is marked `BLOCKED-ON-OWNER`; do not fabricate the choice.
+
+### 7.2 Sprint 6B — Durable Website Content and correct public consumption
+
+1. Add only the forward migrations required after 6A. The precise schema is a deliverable of the inventory, not pre-decided here. Every new table has constraints, RLS, least-privilege grants, server-only write paths, audit where an administrative publish/state change requires it, and optimistic versioning for mutable records.
+2. Implement authenticated Full Admin APIs/server actions for the agreed Website Content modules and Media Library, with verified session → existing `content.manage`/`media.manage` capability → origin/rate/input validation → trusted database/repository operation; add focused permission tests for anonymous, Operational Admin and Full Admin.
+3. Make public server/client rendering consume persisted published values in live mode and approved seeds in demo mode, including at minimum FAQs, gallery placements, and the currently implemented content modules. Keep unpublished drafts private. Avoid rendering two competing versions or stale code constants after a durable edit.
+4. Add FAQ creation as well as edit, reorder, enable/disable and delete; existing FAQ content is imported/preserved once according to the approved mapping. Verify a newly created/edited/disabled/reordered FAQ is reflected on the public FAQ page in live mode and that drafts/unpublished content are not exposed.
+5. Connect the Services editor to the same durable catalogue used by the live booking form. Preserve the distinction between public presentation, active/bookable state, and service kind; editing a title/slug must not silently corrupt existing bookings or break routes.
+6. Connect Locations editor to the authoritative public branch records. Preserve stable ids/slugs referenced by bookings; where adding/removing branches is permitted, define referential behavior and prevent deleting branches with historical bookings or live configuration.
+7. Connect Blog and Promotions editors to public rendering and durable publication/lifecycle state. The currently observed public `Promotion` component still renders code-managed copy from content JSON, not the `websiteContent.promotions` collection; resolve this mismatch rather than claiming that editor records publish.
+8. Connect Gallery placements to the public `Gallery` component and durable media metadata/storage. Do not expose customer booking photos. Existing admin media upload currently uses local object URLs/in-memory records; implement a durable marketing-media path only after confirming the existing storage provider/bucket and approved deployment constraints. No new third-party service without owner approval.
+9. Keep content rendering escaped by default. If rich HTML is in approved scope, sanitize server-side with the project’s existing allow-list convention and test hostile input; do not use raw customer/user HTML.
+
+### 7.3 Sprint 6C — Durable operational/site settings
+
+1. Create a settings source-of-truth matrix separating: public business contacts/social URLs; operational branch opening hours; pickup operating window and express cutoff; online booking pause; newsletter visibility/consent activation; retention display/policy; email worker/provider configuration. These have different owners and trust levels; do not force all into one generic JSON settings row.
+2. Wire admin-editable operational settings to existing database records/functions where available (`booking_settings`, branch tables) and ensure the booking form, submission validation, confirmation copy, public header/footer, and branch pages all read the same committed values. Where the SQL booking function is authoritative, update and test that function rather than only changing a client-side validator.
+3. Treat feature flags, approved consent text/version, service credentials, scheduler secrets, Brevo template IDs, and retention execution as controlled operator/security settings unless an explicit requirement says otherwise. A UI toggle must not imply activation when server flags or legal prerequisites remain unset.
+4. Implement durable Full-Admin-only read/write paths with database-side validation, audit of operational toggles/changes, optimistic concurrency, no-store responses, and safe configuration errors. Preserve the existing `booking_alert_recipients` settings panel and its separate audited table.
+5. Confirm displayed retention values against the existing retention migration and actual scheduled job behavior. Do not change retention periods or enable deletion without an owner-approved policy.
+6. Fix the current conflict where `/admin/settings` contact/social/pickup/accept-bookings/newsletter values are in-memory and different public/booking code reads hardcoded or independently configured values. Verify after save and a fresh session/reload that public contact links and booking availability/times reflect the saved values.
+
+### Sprint 6 tests and evidence
+
+- Add PGlite migration/repository tests and `supabase/tests/sprint_6_*_security.sql` operator scripts for each migration/schema group; mark hosted execution explicitly `NOT EXECUTED` until an operator runs it on an approved disposable/local Supabase database.
+- Add public rendering/data-projection tests for each connected module, especially FAQ create/edit/disable/order → public FAQ; service changes → booking catalogue; location changes → public location cards and branch details; gallery placement changes → public gallery; publication state → blog/promotion visibility; settings changes → public contacts and booking rules.
+- Add Full Admin / Operational Admin / anonymous permission tests at every server mutation/read boundary. Prove drafts/private media/settings never leak through public APIs.
+- Assert demo mode remains isolated and functional; live mode never falls back to mock content or reports mock saves as persisted.
+- Run `npm run check`, a built-server smoke in demo and live/configured modes, verify client bundles contain no elevated credentials, and record all manual owner QA and blocked items.
+- Update `src/lib/features.ts` to describe the actual resulting mix of live and sample modules; do not announce that the whole backend is connected until each declared surface is durable and exercised.
+
+**Out of scope unless separately approved:** changing approved public wording, changing brand/design, inventing pricing or operational policies, a general page-builder, new admin roles, campaign/unsubscribe features not yet implemented in Phase 5, changing retention, importing demo leads/subscribers as real customers, deleting or rewriting applied migrations, applying migrations to hosted Supabase, or declaring production acceptance without owner live QA/sign-off.
+
+**Sprint 6 exit gate:** Website Content and Settings changes made by an authorised Full Admin are durable across reloads, are consumed by the intended public/booking surfaces in live mode, respect publication/access boundaries and audit/concurrency rules, while demo mode remains isolated. All unresolved owner decisions and hosted/live verifications remain explicitly blocked rather than implied complete.
+
+---
+
+## 8. Hard rules (every sprint, no exceptions)
 
 1. **Authorisation is server-side, three layers:** session re-verified (`getCurrentAdmin`) -> capability from registry -> database re-validation/RLS. Never trust client role/permission state; navigation hiding is display-only.
 2. **No client-held secrets.** Elevated keys server-only; no `NEXT_PUBLIC_*` secret ever; verify with a client-bundle grep each phase.

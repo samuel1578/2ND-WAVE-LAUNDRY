@@ -160,16 +160,22 @@ function LivePublishedReviews() {
 export function PublishedReviews() {
   return demoMode ? <DemoPublishedReviews /> : <LivePublishedReviews />;
 }
-export function Newsletter() {
+export function Newsletter({ interestEnabled = false }: { interestEnabled?: boolean }) {
   const store = useDemoStore();
-  if (!store.settings.newsletter) return null;
+  // Demo workspace keeps the settings toggle; the live site is gated by the
+  // server-read NEWSLETTER_INTEREST_ENABLED flag, never a NEXT_PUBLIC_* value.
+  const visible = demoMode ? store.settings.newsletter : interestEnabled;
+  if (!visible) return null;
   return (
     <Section
       className="newsletter"
       title={copy("16", "Heading")}
       description={copy("16", "Body")}
     >
-      <PublicForm kind="newsletter" />
+      <PublicForm
+        kind="newsletter"
+        newsletterInterestEnabled={demoMode || interestEnabled}
+      />
     </Section>
   );
 }

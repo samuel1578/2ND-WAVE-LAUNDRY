@@ -1,0 +1,112 @@
+<!--
+Brevo template draft: NEWSLETTER INTEREST — New interest registered
+Suggested subject: New newsletter interest — {{ params.subscriberEmail }} | 2nd Wave Laundry
+Suggested preview: A visitor has registered interest in newsletter updates.
+Audience: sent once per first-time address to the manager
+  (manager@2ndwavelaundry.com — hardcoded server constant in
+  src/lib/newsletter/config.ts, a verified Brevo identity in this account).
+  Duplicate submissions queue no second alert.
+
+Required parameters: subscriberEmail, submittedAt, source, websiteUrl,
+  contactUrl, privacyUrl, headerImageUrl, headerImageAlt
+
+The header image URL and alt text are literal values in this draft so Brevo can
+load the image in previews without sample header parameters. This template is an
+internal manager alert rendered from the newsletter interest contract in
+src/lib/email/templates.ts (buildNewsletterInterestParams) — never a marketing
+email to the submitter. The subject and preview belong in the Brevo template
+settings, not the HTML.
+-->
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap" rel="stylesheet">
+  <title>New newsletter interest | 2nd Wave Laundry Services</title>
+</head>
+
+<body style="margin:0;padding:0;background-color:#FAFBFC;color:#091D2D;font-family:'Lato',Arial,Helvetica,sans-serif;">
+  <div
+    style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all;">
+    A visitor has registered interest in newsletter updates. &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+    style="width:100%;background-color:#FAFBFC;">
+    <tr>
+      <td align="center" style="padding:28px 12px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0"
+          style="width:100%;max-width:600px;background-color:#FFFFFF;border:1px solid #D9E7EF;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:0;"><img src="https://2ndwave.vercel.app/headers/newsletter.png" width="600"
+                alt="Newsletter interest — 2nd Wave Laundry Services"
+                style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 28px 12px;">
+              <p
+                style="margin:0 0 10px;color:#00609A;font-size:12px;font-weight:700;letter-spacing:1.6px;line-height:1.4;text-transform:uppercase;">
+                Manager alert</p>
+              <h1
+                style="margin:0 0 18px;color:#102B51;font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:400;letter-spacing:-0.6px;line-height:1.2;">
+                New newsletter interest registered.</h1>
+              <p style="margin:0 0 18px;color:#091D2D;font-size:16px;line-height:1.6;">Hello,</p>
+              <p style="margin:0 0 22px;color:#526477;font-size:15px;line-height:1.65;">A visitor has registered interest
+                in receiving news and offers by email. Their address is recorded below. No confirmation email has been
+                sent to them, and no newsletter campaign is active yet.</p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+                style="width:100%;background-color:#EDF4FF;border:1px solid #D9E7EF;border-radius:12px;">
+                <tr>
+                  <td style="padding:20px;">
+                    <p
+                      style="margin:0 0 14px;color:#102B51;font-family:Georgia,'Times New Roman',serif;font-size:19px;font-weight:400;line-height:1.4;">
+                      Submission details</p>
+                    <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong
+                        style="color:#102B51;">Email address:</strong> {{ params.subscriberEmail }}</p>
+                    <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong
+                        style="color:#102B51;">Submitted:</strong> {{ params.submittedAt }}</p>
+                    <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong
+                        style="color:#102B51;">Source:</strong> {{ params.source }}</p>
+                    <p
+                      style="margin:14px 0 0;padding:12px 14px;background-color:#FFFFFF;border-left:4px solid #0B80CA;border-radius:8px;color:#102B51;font-size:13px;line-height:1.6;">
+                      <strong>Consent:</strong> the visitor checked the approved opt-in checkbox on the website before
+                      submitting. The consent version is stored with the record in the administration console.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:22px 0 0;color:#526477;font-size:15px;line-height:1.65;">This is an internal manager
+                alert for 2nd Wave Laundry Services. Please do not forward it.</p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" bgcolor="#EDF4FF"
+              style="padding:22px 24px;background:#EDF4FF;background-color:#EDF4FF;border-top:1px solid #D9E7EF;">
+              <a href="https://2ndwave.vercel.app/" style="display:inline-block;text-decoration:none;"><img
+                  src="https://2ndwave.vercel.app/images/logo.png" width="76" height="76"
+                  alt="2nd Wave Laundry Services"
+                  style="display:block;width:76px;height:76px;border:0;outline:none;text-decoration:none;"></a>
+              <p style="margin:12px 0 4px;color:#102B51;font-size:14px;font-weight:700;line-height:1.5;">2nd Wave
+                Laundry Services</p>
+              <p style="margin:0 0 8px;color:#526477;font-size:13px;line-height:1.6;"><a href="tel:+233595224280"
+                  style="color:#00609A;text-decoration:underline;">059 522 4280</a></p>
+              <p style="margin:0;color:#526477;font-size:12px;line-height:1.7;">Internal manager notification. Sent once
+                per new interest registration.</p>
+              <p style="margin:10px 0 0;font-size:12px;line-height:1.6;"><a href="{{ params.websiteUrl }}"
+                  style="color:#00609A;text-decoration:underline;">Visit our website</a> &nbsp;|&nbsp; <a
+                  href="{{ params.contactUrl }}" style="color:#00609A;text-decoration:underline;">Customer contact
+                  page</a></p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+
+</html>

@@ -24,6 +24,8 @@ export type EmailMonitoringRow = {
   nextAttemptAt: string | null;
   lastError: string | null;
   latestDeliveryEvent: EmailDeliveryEventSummary | null;
+  isTest: boolean;
+  resendOf: string | null;
 };
 
 export type EmailMonitoringPage = {
@@ -38,7 +40,9 @@ type OutboxRecord = {
   booking_id: string | null;
   template: string;
   recipient_email: string;
-  payload: { booking_reference?: unknown } | null;
+  payload:
+    | { booking_reference?: unknown; subscriber_email?: unknown }
+    | null;
   status: string;
   attempt_count: number;
   max_attempts: number;
@@ -46,6 +50,8 @@ type OutboxRecord = {
   sent_at: string | null;
   next_attempt_at: string | null;
   last_error: string | null;
+  is_test: boolean;
+  resend_of: string | null;
 };
 
 type EventRecord = {
@@ -68,6 +74,7 @@ const validTemplates = new Set([
   "staff_order_ready",
   "staff_order_completed",
   "staff_order_cancelled",
+  "newsletter_interest_received",
 ]);
 const validStatuses = new Set([
   "pending",
@@ -94,7 +101,7 @@ export async function listEmailMonitoring(
   let request = client
     .from("email_outbox")
     .select(
-      "id, booking_id, template, recipient_email, payload, status, attempt_count, max_attempts, last_attempt_at, sent_at, next_attempt_at, last_error",
+      "id, booking_id, template, recipient_email, payload, status, attempt_count, max_attempts, last_attempt_at, sent_at, next_attempt_at, last_error, is_test, resend_of",
       { count: "exact" },
     )
     .order("created_at", { ascending: false })
@@ -138,6 +145,33 @@ export async function listEmailMonitoring(
       const template = row.template as EmailTemplate;
       if (!validStatuses.has(status) || !validTemplates.has(template))
         throw new EmailMonitoringRepositoryError();
+      // The newsletter manager alert has no booking: its subscriber address is
+      // the only identifying value, shown in the same title position.
+      if (template === "newsletter_interest_received") {
+        const subscriber = row.payload?.subscriber_email;
+        if (typeof subscriber !== "string")
+          throw new EmailMonitoringRepositoryError();
+        return {
+          id: row.id,
+          bookingId: row.booking_id,
+          bookingReference: subscriber,
+          template,
+          recipientEmail: row.recipient_email,
+          status,
+          attemptCount: row.attempt_count,
+          maxAttempts: row.max_attempts,
+          lastAttemptAt: row.last_attempt_at,
+          sentAt: row.sent_at,
+          nextAttemptAt:
+            status === "pending" || status === "retryable_failed"
+              ? row.next_attempt_at
+              : null,
+          lastError: row.last_error,
+          latestDeliveryEvent: latestEmailDeliveryEvent(rowEvents),
+          isTest: row.is_test === true,
+          resendOf: row.resend_of ?? null,
+        };
+      }
       const reference = row.payload?.booking_reference;
       if (typeof reference !== "string")
         throw new EmailMonitoringRepositoryError();
@@ -159,6 +193,8 @@ export async function listEmailMonitoring(
             : null,
         lastError: row.last_error,
         latestDeliveryEvent: latestEmailDeliveryEvent(rowEvents),
+        isTest: row.is_test === true,
+        resendOf: row.resend_of ?? null,
       };
     }),
     total: typeof count === "number" ? count : rows.length,

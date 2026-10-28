@@ -398,6 +398,8 @@ function makeRepository(
     async loadBookingContext() {
       return CONTEXT;
     },
+    async createTestSend() { return randomUUID(); },
+    async resend() { return randomUUID(); },
   };
 
   return { repository, calls };

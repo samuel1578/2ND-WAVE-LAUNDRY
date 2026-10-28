@@ -15,8 +15,10 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { bookingStatuses, type BookingStatus } from "@/lib/bookings/types";
 import {
+  isNewsletterInterestTemplate,
   isStaffOrderTemplate,
   type BookingEmailContext,
+  type NewsletterInterestContext,
   type NotificationTemplate,
   type StaffActorType,
   type StaffNotificationContext,
@@ -27,12 +29,22 @@ export type ClaimedOutboxEmail = {
   bookingId: string | null;
   template: NotificationTemplate;
   recipientEmail: string;
-  payload: {
-    booking_reference: string;
-    status: string;
+  payload:
+    | {
+        booking_reference: string;
+        status: string;
+      }
+    | NewsletterInterestContext;
+  testContext?: {
+    booking: BookingEmailContext;
+    staff?: StaffNotificationContext;
   };
+  isTest?: boolean;
+  resendOf?: string | null;
   /** Present only for staff_order_* rows; never for a customer template. */
   staff?: StaffNotificationContext;
+  /** Present only for newsletter_interest_received rows. */
+  newsletter?: NewsletterInterestContext;
   attemptCount: number;
   maxAttempts: number;
 };
@@ -61,6 +73,19 @@ export type EmailOutboxRepository = {
     error: string;
   }): Promise<boolean>;
   loadBookingContext(bookingId: string): Promise<BookingEmailContext | null>;
+  createTestSend(input: {
+    template: NotificationTemplate;
+    recipientEmail: string;
+    testContext: { booking: BookingEmailContext; staff?: StaffNotificationContext };
+    actorId: string;
+    correlationId: string;
+  }): Promise<string>;
+  resend(input: {
+    id: string;
+    actorId: string;
+    reason: string;
+    correlationId: string;
+  }): Promise<string>;
 };
 
 /** Safe, non-identifying repository failure. */
@@ -78,6 +103,9 @@ type OutboxRow = {
   template: string;
   recipient_email: string;
   payload: unknown;
+  is_test?: boolean;
+  test_context?: unknown;
+  resend_of?: string | null;
   attempt_count: number;
   max_attempts: number;
 };
@@ -117,6 +145,7 @@ const TEMPLATE_SET = new Set<NotificationTemplate>([
   "staff_order_ready",
   "staff_order_completed",
   "staff_order_cancelled",
+  "newsletter_interest_received",
 ]);
 
 const asBookingStatus = (value: unknown): BookingStatus | null =>
@@ -124,18 +153,58 @@ const asBookingStatus = (value: unknown): BookingStatus | null =>
     ? (value as BookingStatus)
     : null;
 
+const NEWSLETTER_EMAIL_SHAPE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/**
+ * Parses the manager alert payload written by `newsletter_interest_submit`.
+ * A malformed payload is a repository error, never a fabricated value.
+ */
+function asNewsletterContext(value: unknown): NewsletterInterestContext {
+  if (typeof value !== "object" || value === null)
+    throw new EmailRepositoryError();
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.subscriber_email !== "string" ||
+    typeof record.submitted_at !== "string" ||
+    typeof record.source !== "string"
+  )
+    throw new EmailRepositoryError();
+  if (
+    record.subscriber_email.length > 254 ||
+    !NEWSLETTER_EMAIL_SHAPE.test(record.subscriber_email) ||
+    Number.isNaN(Date.parse(record.submitted_at)) ||
+    record.source !== "public_newsletter_form"
+  )
+    throw new EmailRepositoryError();
+  return {
+    subscriberEmail: record.subscriber_email,
+    submittedAt: record.submitted_at,
+    source: record.source,
+  };
+}
+
 /**
  * Parses the minimal render payload. Customer rows carry exactly two keys; staff
  * rows additionally carry the trusted event metadata written by the enqueue
- * trigger. A malformed payload is a repository error, never a fabricated value.
+ * trigger; the newsletter manager alert carries only its committed sign-up
+ * detail. A malformed payload is a repository error, never a fabricated value.
  */
 function asPayload(
   value: unknown,
   template: NotificationTemplate,
-): { payload: ClaimedOutboxEmail["payload"]; staff?: StaffNotificationContext } {
+): {
+  payload: ClaimedOutboxEmail["payload"];
+  staff?: StaffNotificationContext;
+  newsletter?: NewsletterInterestContext;
+} {
   if (typeof value !== "object" || value === null)
     throw new EmailRepositoryError();
   const record = value as Record<string, unknown>;
+
+  if (isNewsletterInterestTemplate(template)) {
+    return { payload: asNewsletterContext(record), newsletter: asNewsletterContext(record) };
+  }
+
   if (
     typeof record.booking_reference !== "string" ||
     typeof record.status !== "string"
@@ -185,12 +254,80 @@ function asPayload(
   };
 }
 
+function asTestContext(value: unknown): ClaimedOutboxEmail["testContext"] {
+  if (typeof value !== "object" || value === null) throw new EmailRepositoryError();
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => key !== "booking" && key !== "staff"))
+    throw new EmailRepositoryError();
+  const booking = record.booking;
+  if (typeof booking !== "object" || booking === null) throw new EmailRepositoryError();
+  const context = booking as Record<string, unknown>;
+  if (
+    Object.keys(context).some((key) => !["reference", "customerName", "serviceTitles", "requestedDate", "requestedTime", "agreedPickupAt", "agreedFee", "currency", "branch"].includes(key)) ||
+    typeof context.reference !== "string" ||
+    typeof context.customerName !== "string" ||
+    !Array.isArray(context.serviceTitles) ||
+    !context.serviceTitles.every((item) => typeof item === "string") ||
+    !(context.requestedDate === null || typeof context.requestedDate === "string") ||
+    !(context.requestedTime === null || typeof context.requestedTime === "string") ||
+    !(context.agreedPickupAt === null || typeof context.agreedPickupAt === "string") ||
+    !(context.agreedFee === null || typeof context.agreedFee === "number") ||
+    typeof context.currency !== "string"
+  ) throw new EmailRepositoryError();
+
+  const bookingContext: BookingEmailContext = {
+    reference: context.reference,
+    customerName: context.customerName,
+    serviceTitles: context.serviceTitles,
+    requestedDate: context.requestedDate,
+    requestedTime: context.requestedTime,
+    agreedPickupAt: context.agreedPickupAt,
+    agreedFee: context.agreedFee,
+    currency: context.currency,
+    branch:
+      typeof context.branch === "object" && context.branch !== null &&
+      typeof (context.branch as Record<string, unknown>).title === "string"
+        ? { title: (context.branch as Record<string, string>).title }
+        : null,
+  };
+  const staffValue = record.staff;
+  let staff: StaffNotificationContext | undefined;
+  if (staffValue !== undefined) {
+    if (Object.keys(record).some((key) => key !== "booking" && key !== "staff"))
+      throw new EmailRepositoryError();
+    if (typeof staffValue !== "object" || staffValue === null)
+      throw new EmailRepositoryError();
+    const staffRecord = staffValue as Record<string, unknown>;
+    if (Object.keys(staffRecord).some((key) => !["previousStatus", "actorType", "actorName", "actorRole", "occurredAt", "cancellationReason"].includes(key)))
+      throw new EmailRepositoryError();
+    const actorType = staffRecord.actorType;
+    if (
+      !(staffRecord.previousStatus === null || asBookingStatus(staffRecord.previousStatus)) ||
+      !(actorType === "customer" || actorType === "admin" || actorType === "system") ||
+      !(staffRecord.actorName === null || typeof staffRecord.actorName === "string") ||
+      !(staffRecord.actorRole === null || typeof staffRecord.actorRole === "string") ||
+      !(staffRecord.occurredAt === null || typeof staffRecord.occurredAt === "string") ||
+      !(staffRecord.cancellationReason === null || typeof staffRecord.cancellationReason === "string")
+    ) throw new EmailRepositoryError();
+    staff = {
+      previousStatus: staffRecord.previousStatus as BookingStatus | null,
+      actorType,
+      actorName: staffRecord.actorName as string | null,
+      actorRole: staffRecord.actorRole as string | null,
+      occurredAt: staffRecord.occurredAt as string | null,
+      cancellationReason: staffRecord.cancellationReason as string | null,
+    };
+  }
+  return { booking: bookingContext, ...(staff ? { staff } : {}) };
+}
+
 function mapClaimed(row: OutboxRow): ClaimedOutboxEmail {
   if (!TEMPLATE_SET.has(row.template as NotificationTemplate))
     throw new EmailRepositoryError();
 
   const template = row.template as NotificationTemplate;
   const parsed = asPayload(row.payload, template);
+  const testContext = row.is_test ? asTestContext(row.test_context) : undefined;
 
   return {
     id: row.id,
@@ -199,6 +336,10 @@ function mapClaimed(row: OutboxRow): ClaimedOutboxEmail {
     recipientEmail: row.recipient_email,
     payload: parsed.payload,
     ...(parsed.staff ? { staff: parsed.staff } : {}),
+    ...(parsed.newsletter ? { newsletter: parsed.newsletter } : {}),
+    ...(testContext ? { testContext } : {}),
+    isTest: row.is_test === true,
+    ...(typeof row.resend_of === "string" ? { resendOf: row.resend_of } : {}),
     attemptCount: Number(row.attempt_count),
     maxAttempts: Number(row.max_attempts),
   };
@@ -267,6 +408,31 @@ export function createEmailOutboxRepository(): EmailOutboxRepository {
       });
       if (error) throw new EmailRepositoryError();
       return data === true;
+    },
+
+    async createTestSend(input): Promise<string> {
+      const client = createSupabaseAdminClient();
+      const { data, error } = await client.rpc("email_outbox_create_test_send", {
+        p_template: input.template,
+        p_recipient_email: input.recipientEmail,
+        p_test_context: input.testContext,
+        p_actor_id: input.actorId,
+        p_correlation: input.correlationId,
+      });
+      if (error || typeof data !== "string") throw new EmailRepositoryError();
+      return data;
+    },
+
+    async resend(input): Promise<string> {
+      const client = createSupabaseAdminClient();
+      const { data, error } = await client.rpc("email_outbox_resend", {
+        p_id: input.id,
+        p_actor_id: input.actorId,
+        p_reason: input.reason,
+        p_correlation: input.correlationId,
+      });
+      if (error || typeof data !== "string") throw new EmailRepositoryError();
+      return data;
     },
 
     async loadBookingContext(

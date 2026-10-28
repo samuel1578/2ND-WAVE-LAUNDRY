@@ -4,6 +4,7 @@ import { createBrevoClient } from "@/lib/email/brevo";
 import {
   readDeliveryTemplateIds,
   readTransactionalEmailConfig,
+  readVercelCronSecret,
   readWorkerSecret,
 } from "@/lib/email/config";
 import { createEmailOutboxRepository } from "@/lib/email/outbox-repository";
@@ -20,8 +21,7 @@ import { runEmailWorker } from "@/lib/email/worker";
  * caller.
  *
  * This endpoint drains due rows. It is intentionally not a public API and is not
- * reachable without the secret. Scheduling is documented in the sprint report;
- * this sprint does not deploy a scheduler.
+ * reachable without a valid worker or Vercel Cron bearer secret.
  */
 
 export const dynamic = "force-dynamic";
@@ -34,12 +34,16 @@ function json(body: Record<string, unknown>, status = 200) {
 }
 
 async function handle(request: NextRequest) {
-  const secret = readWorkerSecret();
-  if (!secret.ok) return json({ ok: false, code: "not_configured" }, 503);
+  const authorization = request.headers.get("authorization");
+  const cronSecret = readVercelCronSecret();
+  const workerSecret = readWorkerSecret();
+  const hasConfiguredSecret = cronSecret.ok || workerSecret.ok;
+  if (!hasConfiguredSecret) return json({ ok: false, code: "not_configured" }, 503);
 
-  if (!bearerMatches(request.headers.get("authorization"), secret.secret)) {
-    return json({ ok: false, code: "unauthorized" }, 401);
-  }
+  const authorised =
+    (cronSecret.ok && bearerMatches(authorization, cronSecret.secret)) ||
+    (workerSecret.ok && bearerMatches(authorization, workerSecret.secret));
+  if (!authorised) return json({ ok: false, code: "unauthorized" }, 401);
 
   const config = readTransactionalEmailConfig();
   if (!config.ok) {

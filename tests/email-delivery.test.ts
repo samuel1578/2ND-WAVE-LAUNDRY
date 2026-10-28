@@ -10,9 +10,16 @@ import {
   TRANSACTIONAL_EMAILS_ENABLED_VAR,
   readBrevoApiKey,
   readBrevoWebhookConfig,
+  readEmailOperationalConfiguration,
+  readEmailTemplateConfiguration,
+  readEmailTestRecipient,
+  BREVO_STAFF_TEMPLATE_ID_VARS,
+  EMAIL_TEST_RECIPIENT_VAR,
+  VERCEL_CRON_SECRET_VAR,
   readSiteUrl,
   readTransactionalEmailConfig,
   readWorkerSecret,
+  BREVO_NEWSLETTER_TEMPLATE_ID_VARS,
 } from "../src/lib/email/config";
 import {
   formatFee,
@@ -92,7 +99,7 @@ test("transactional email is disabled by default and never sends", () => {
   );
 });
 
-test("manual Brevo sends require only the global enable flag and API key", () => {
+test("server-only Brevo credentials require the enable flag and API key", () => {
   assert.deepEqual(readBrevoApiKey({}), {
     ok: false,
     reason: "disabled",
@@ -162,6 +169,40 @@ test("enabled configuration fails closed on each missing or invalid value", () =
       BREVO_TEMPLATE_ID_VARS.booking_confirmed,
     );
   }
+});
+
+test("template registry exposes configured, missing and invalid states without IDs", () => {
+  const entries = readEmailTemplateConfiguration({
+    ...VALID_ENV,
+    [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_pending]: "501",
+    [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_processing]: "bad",
+  });
+  assert.equal(entries.length, 12);
+  assert.equal(entries.find((entry) => entry.template === "newsletter_interest_received")?.status, "missing");
+  assert.equal(entries.find((entry) => entry.template === "booking_created")?.status, "configured");
+  assert.equal(entries.find((entry) => entry.template === "staff_order_pending")?.status, "configured");
+  assert.equal(entries.find((entry) => entry.template === "staff_order_processing")?.status, "invalid");
+  assert.equal(entries.find((entry) => entry.template === "staff_order_ready")?.status, "missing");
+  assert.equal(entries.find((entry) => entry.template === "newsletter_interest_received")?.status, "missing");
+  const withNewsletter = readEmailTemplateConfiguration({
+    ...VALID_ENV,
+    [BREVO_NEWSLETTER_TEMPLATE_ID_VARS.newsletter_interest_received]: "707",
+  });
+  assert.equal(
+    withNewsletter.find((entry) => entry.template === "newsletter_interest_received")?.status,
+    "configured",
+  );
+  assert.equal("id" in (entries[0] as object), false);
+});
+
+test("test recipient is server-read, normalised and validated", () => {
+  assert.deepEqual(readEmailTestRecipient({}), { ok: false, reason: "missing" });
+  assert.deepEqual(readEmailTestRecipient({ [EMAIL_TEST_RECIPIENT_VAR]: "not-an-email" }), { ok: false, reason: "invalid" });
+  assert.deepEqual(readEmailTestRecipient({ [EMAIL_TEST_RECIPIENT_VAR]: "  QA@example.test " }), { ok: true, email: "qa@example.test" });
+  const config = readEmailOperationalConfiguration({ ...VALID_ENV, [VERCEL_CRON_SECRET_VAR]: "x".repeat(32) });
+  assert.equal(config.cronSecretConfigured, true);
+  assert.equal(config.apiKeyConfigured, true);
+  assert.equal(JSON.stringify(config).includes(VALID_ENV[BREVO_API_KEY_VAR]), false);
 });
 
 test("enabled configuration is accepted without sender environment variables", () => {
@@ -560,12 +601,13 @@ function makeRepository(
     async markDead(input) {
       calls.dead.push({ id: input.id, error: input.error });
       return true;
-    },
-    async loadBookingContext() {
-      if (options.contextThrows) throw new Error("db unavailable");
-      return options.context === undefined ? CONTEXT : options.context;
-    },
-  };
+    },      async loadBookingContext() {
+        if (options.contextThrows) throw new Error("db unavailable");
+        return options.context === undefined ? CONTEXT : options.context;
+      },
+      async createTestSend() { return randomUUID(); },
+      async resend() { return randomUUID(); },
+    };
 
   return { repository, calls };
 }
@@ -831,4 +873,123 @@ test("backoff is exponential, jittered and capped", () => {
   assert.equal(retryDelaySeconds(5, () => 0), 900);
   assert.equal(retryDelaySeconds(20, () => 0), 900);
   assert.ok(retryDelaySeconds(1, () => 0.99) <= 900);
+});
+
+/* -------------------------------------------------------------------------- */
+/* Newsletter manager alert (Phase 5 MVP)                                      */
+/* -------------------------------------------------------------------------- */
+
+const NEWSLETTER_PAYLOAD = {
+  subscriberEmail: "ama@example.test",
+  submittedAt: "2026-10-27T09:30:00Z",
+  source: "public_newsletter_form",
+};
+
+function newsletterRow(overrides: Partial<ClaimedOutboxEmail> = {}): ClaimedOutboxEmail {
+  return {
+    id: randomUUID(),
+    bookingId: null,
+    template: "newsletter_interest_received",
+    recipientEmail: "manager@2ndwavelaundry.com",
+    payload: { ...NEWSLETTER_PAYLOAD },
+    newsletter: { ...NEWSLETTER_PAYLOAD },
+    attemptCount: 1,
+    maxAttempts: 5,
+    ...overrides,
+  };
+}
+
+test("the manager alert sends from its payload without any booking lookup", async () => {
+  const { repository, calls } = makeRepository({ rows: [newsletterRow()] });
+  let contextLoads = 0;
+  const watched: EmailOutboxRepository = {
+    ...repository,
+    async loadBookingContext(bookingId) {
+      contextLoads += 1;
+      return repository.loadBookingContext(bookingId);
+    },
+  };
+  let sentInput:
+    | {
+        templateId: number;
+        params: Record<string, string>;
+        to: string;
+        idempotencyKey: string;
+      }
+    | undefined;
+  const result = await runEmailWorker(
+    deps(watched, undefined, {
+      templateIds: { newsletter_interest_received: 707 },
+      provider: {
+        send: async (input) => {
+          sentInput = input;
+          return { ok: true, providerMessageId: null, duplicate: false };
+        },
+      },
+    }),
+    { workerId: "worker-newsletter" },
+  );
+
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.sent, 1);
+    assert.equal(result.claimed, 1);
+  }
+  assert.equal(contextLoads, 0);
+  assert.equal(calls.sent.length, 1);
+  assert.equal(sentInput?.templateId, 707);
+  assert.equal(sentInput?.to, "manager@2ndwavelaundry.com");
+  assert.equal(sentInput?.params.subscriberEmail, "ama@example.test");
+  assert.equal(sentInput?.params.submittedAt, "Tuesday, 27 October 2026 at 09:30 GMT");
+  assert.equal(sentInput?.params.source, "2nd Wave Laundry website");
+  assert.equal(sentInput?.params.websiteUrl, "https://2ndwave.example");
+  assert.equal(sentInput?.params.headerImageUrl, "https://2ndwave.example/headers/newsletter.png");
+  assert.ok(sentInput?.idempotencyKey);
+});
+
+test("an unsaved newsletter template id keeps the alert retryable at the retry cap", async () => {
+  const { repository, calls } = makeRepository({ rows: [newsletterRow()] });
+  let providerCalled = false;
+  const result = await runEmailWorker(
+    deps(repository, undefined, {
+      provider: {
+        send: async () => {
+          providerCalled = true;
+          return { ok: true, providerMessageId: null, duplicate: false };
+        },
+      },
+    }),
+    { workerId: "worker-newsletter" },
+  );
+
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.retried, 1);
+  assert.equal(providerCalled, false);
+  assert.equal(calls.sent.length, 0);
+  assert.equal(calls.retried.length, 1);
+  assert.equal(calls.retried[0].error, "email_template_not_configured");
+  assert.equal(calls.retried[0].delaySeconds, 900);
+});
+
+test("a missing or unparseable newsletter payload is dead-lettered without a provider call", async () => {
+  const missing = makeRepository({ rows: [newsletterRow({ newsletter: undefined })] });
+  const missingResult = await runEmailWorker(deps(missing.repository), { workerId: "worker-newsletter" });
+  assert.equal(missingResult.ok, true);
+  if (missingResult.ok) assert.equal(missingResult.dead, 1);
+  assert.equal(missing.calls.dead[0].error, "email_template_params_failed");
+  assert.equal(missing.calls.sent.length, 0);
+
+  const broken = makeRepository({
+    rows: [newsletterRow({ newsletter: { ...NEWSLETTER_PAYLOAD, submittedAt: "not a time" } })],
+  });
+  const brokenResult = await runEmailWorker(
+    deps(broken.repository, undefined, {
+      templateIds: { newsletter_interest_received: 707 },
+    }),
+    { workerId: "worker-newsletter" },
+  );
+  assert.equal(brokenResult.ok, true);
+  if (brokenResult.ok) assert.equal(brokenResult.dead, 1);
+  assert.equal(broken.calls.dead[0].error, "email_template_params_failed");
+  assert.equal(broken.calls.sent.length, 0);
 });

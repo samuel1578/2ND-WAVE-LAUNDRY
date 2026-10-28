@@ -5,15 +5,33 @@
 
 import { hasPermission } from "../auth/permissions";
 import type { AdminRole } from "../auth/roles";
-import { emailTemplates, staffOrderTemplates } from "./templates";
+import { emailTemplates, newsletterInterestTemplates, staffOrderTemplates } from "./templates";
 
-/** Both audiences share one outbox, so the monitor must recognise both. */
+/** Every audience shares one outbox, so the monitor must recognise all of them. */
 export const EMAIL_TEMPLATES = [
   ...emailTemplates,
   ...staffOrderTemplates,
+  ...newsletterInterestTemplates,
 ] as const;
 
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
+
+export type EmailTemplateConfiguration = {
+  template: EmailTemplate;
+  variable: string;
+  status: "configured" | "missing" | "invalid";
+};
+
+export type EmailOperationalConfiguration = {
+  transactionalEnabled: boolean;
+  apiKeyConfigured: boolean;
+  siteUrlConfigured: boolean;
+  workerSecretConfigured: boolean;
+  cronSecretConfigured: boolean;
+  webhookSecretConfigured: boolean;
+  testRecipientConfigured: boolean;
+  templates: EmailTemplateConfiguration[];
+};
 export type OutboxStatus =
   | "pending"
   | "sending"
@@ -158,6 +176,7 @@ export function emailTemplateLabel(template: EmailTemplate): string {
     staff_order_ready: "Staff alert — ready",
     staff_order_completed: "Staff alert — completed",
     staff_order_cancelled: "Staff alert — cancelled",
+    newsletter_interest_received: "Newsletter interest — new sign-up",
   };
   return labels[template];
 }

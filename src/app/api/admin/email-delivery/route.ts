@@ -7,6 +7,7 @@ import {
 import {
   listEmailMonitoring,
 } from "@/lib/email/monitoring-repository";
+import { readEmailOperationalConfiguration } from "@/lib/email/config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,6 +30,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const params = request.nextUrl.searchParams;
+    if (params.get("view") === "configuration")
+      return NextResponse.json(
+        { configuration: readEmailOperationalConfiguration() },
+        { headers: NO_STORE },
+      );
+
     const page = await listEmailMonitoring(
       normaliseEmailMonitoringQuery({
         status: params.get("status"),

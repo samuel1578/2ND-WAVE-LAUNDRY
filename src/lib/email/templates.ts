@@ -3,7 +3,8 @@
  *
  * Phase 2D defined the six customer notifications. Phase 2E.1 adds the five
  * staff/admin order alerts; both audiences share the same outbox, worker and
- * Brevo parameter conventions.
+ * Brevo parameter conventions. The Phase 5 MVP adds one internal manager alert
+ * (`newsletter_interest_received`) that renders only from its committed payload.
  *
  * The Brevo account's template bodies are intentionally not managed here.
  * Configure them to use these New Template Language `params.*` names; the
@@ -37,7 +38,100 @@ export const staffOrderTemplates = [
 
 export type StaffOrderTemplate = (typeof staffOrderTemplates)[number];
 
-export type NotificationTemplate = EmailTemplate | StaffOrderTemplate;
+/**
+ * Internal manager alert for a first-time newsletter interest sign-up
+ * (Phase 5 MVP). It shares the outbox and worker but is not a booking or a
+ * subscriber-facing message.
+ */
+export const newsletterInterestTemplates = [
+  "newsletter_interest_received",
+] as const;
+
+export type NewsletterInterestTemplate =
+  (typeof newsletterInterestTemplates)[number];
+
+export type NotificationTemplate =
+  | EmailTemplate
+  | StaffOrderTemplate
+  | NewsletterInterestTemplate;
+
+export function isNewsletterInterestTemplate(
+  value: unknown,
+): value is NewsletterInterestTemplate {
+  return (
+    typeof value === "string" &&
+    (newsletterInterestTemplates as readonly string[]).includes(value)
+  );
+}
+
+/** Required/optional params actually produced by the builders below. */
+export const EMAIL_TEMPLATE_PARAM_CONTRACTS: Record<
+  NotificationTemplate,
+  { required: readonly string[]; optional: readonly string[] }
+> = {
+  booking_created: {
+    required: ["customerName", "bookingReference", "bookingStatus", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup"],
+  },
+  booking_confirmed: {
+    required: ["customerName", "bookingReference", "bookingStatus", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup", "agreedPickup", "branchName", "confirmedFee"],
+  },
+  booking_processing_started: {
+    required: ["customerName", "bookingReference", "bookingStatus", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup", "branchName"],
+  },
+  booking_ready: {
+    required: ["customerName", "bookingReference", "bookingStatus", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup", "branchName"],
+  },
+  booking_completed: {
+    required: ["customerName", "bookingReference", "bookingStatus", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup"],
+  },
+  booking_cancelled: {
+    required: ["customerName", "bookingReference", "bookingStatus", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup"],
+  },
+  staff_order_pending: {
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup", "branchName", "eventAt", "actorName", "actorRole"],
+  },
+  staff_order_processing: {
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup", "branchName", "previousStatus", "eventAt", "actorName", "actorRole"],
+  },
+  staff_order_ready: {
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup", "branchName", "previousStatus", "eventAt", "actorName", "actorRole"],
+  },
+  staff_order_completed: {
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup", "branchName", "previousStatus", "eventAt", "actorName", "actorRole"],
+  },
+  staff_order_cancelled: {
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: ["serviceSummary", "requestedPickup", "branchName", "previousStatus", "eventAt", "actorName", "actorRole", "cancellationReason"],
+  },
+  newsletter_interest_received: {
+    required: ["subscriberEmail", "submittedAt", "source", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: [],
+  },
+};
+
+/** Rejects missing required params and unexpected keys before any provider call. */
+export function validateEmailTemplateParams(
+  template: NotificationTemplate,
+  params: Record<string, string>,
+): void {
+  const contract = EMAIL_TEMPLATE_PARAM_CONTRACTS[template];
+  const allowed = new Set([...contract.required, ...contract.optional]);
+  const missing = contract.required.filter((key) => typeof params[key] !== "string");
+  const invalidValues = Object.entries(params).some(([, value]) => typeof value !== "string");
+  const unexpected = Object.keys(params).filter((key) => !allowed.has(key));
+  if (missing.length || unexpected.length || invalidValues)
+    throw new Error(`Invalid ${template} parameter contract.`);
+}
 
 /**
  * The authoritative order status each staff alert describes, mapped from the
@@ -379,4 +473,49 @@ export function buildStaffOrderTemplateParams(
   }
 
   return params;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Newsletter interest manager alert (Phase 5 MVP)                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Trusted render context parsed from the committed outbox payload. Written
+ * once by `newsletter_interest_submit` and never client-editable.
+ */
+export type NewsletterInterestContext = {
+  subscriberEmail: string;
+  submittedAt: string;
+  source: string;
+};
+
+/** Checked-in newsletter header asset; no new image URL is invented. */
+export const NEWSLETTER_HEADER_ASSET = "newsletter.png";
+
+const NEWSLETTER_SOURCE_LABEL: Record<string, string> = {
+  public_newsletter_form: "2nd Wave Laundry website",
+};
+
+/**
+ * Builds the manager alert parameter contract. There is no booking context by
+ * design: the alert reports one consented sign-up and nothing else.
+ */
+export function buildNewsletterInterestParams(
+  context: NewsletterInterestContext,
+  options: RenderEmailOptions,
+): BrevoBookingTemplateParams {
+  const submittedAt = formatEventTimestamp(context.submittedAt);
+  if (!submittedAt) throw new Error("Newsletter interest timestamp is missing.");
+
+  const siteUrl = options.siteUrl.replace(/\/+$/, "");
+  return {
+    subscriberEmail: collapse(context.subscriberEmail),
+    submittedAt,
+    source: NEWSLETTER_SOURCE_LABEL[context.source] ?? collapse(context.source),
+    websiteUrl: siteUrl,
+    contactUrl: `${siteUrl}/contact`,
+    privacyUrl: `${siteUrl}/privacy`,
+    headerImageUrl: `${siteUrl}/headers/${NEWSLETTER_HEADER_ASSET}`,
+    headerImageAlt: "2nd Wave Laundry newsletter interest",
+  };
 }

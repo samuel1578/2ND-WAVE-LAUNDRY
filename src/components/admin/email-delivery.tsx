@@ -29,6 +29,8 @@ type MonitoringRow = {
   nextAttemptAt: string | null;
   lastError: string | null;
   latestDeliveryEvent: EmailDeliveryEventSummary | null;
+  isTest: boolean;
+  resendOf: string | null;
 };
 
 type MonitoringPage = {
@@ -36,6 +38,21 @@ type MonitoringPage = {
   total: number;
   page: number;
   pageSize: number;
+};
+
+type OperationalConfiguration = {
+  transactionalEnabled: boolean;
+  apiKeyConfigured: boolean;
+  siteUrlConfigured: boolean;
+  workerSecretConfigured: boolean;
+  cronSecretConfigured: boolean;
+  webhookSecretConfigured: boolean;
+  testRecipientConfigured: boolean;
+  templates: Array<{
+    template: EmailTemplate;
+    variable: string;
+    status: "configured" | "missing" | "invalid";
+  }>;
 };
 
 const STATUS_FILTERS: Array<[EmailStatusFilter, string]> = [
@@ -72,6 +89,20 @@ export function EmailDelivery() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [configuration, setConfiguration] = useState<OperationalConfiguration | null>(null);
+  const [selectedTest, setSelectedTest] = useState<EmailTemplate>("booking_created");
+  const [testBusy, setTestBusy] = useState(false);
+
+  const loadConfiguration = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/email-delivery?view=configuration", { cache: "no-store" });
+      if (!response.ok) throw new Error("unavailable");
+      const result = (await response.json()) as { configuration: OperationalConfiguration };
+      setConfiguration(result.configuration);
+    } catch {
+      setConfiguration(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,7 +129,52 @@ export function EmailDelivery() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadConfiguration();
+  }, [load, loadConfiguration]);
+
+  async function sendTemplateTest() {
+    setTestBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await fetch("/api/admin/email-delivery/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template: selectedTest }),
+      });
+      if (!response.ok) throw new Error("test_unavailable");
+      setMessage("A controlled test was queued to the configured test recipient.");
+      await load();
+    } catch {
+      setError("The template test could not be queued. Check the test recipient and template configuration.");
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
+  async function resend(row: MonitoringRow) {
+    const reason = window.prompt(
+      `Why should ${emailTemplateLabel(row.template)} for ${row.bookingReference} be deliberately resent?`,
+    );
+    if (!reason?.trim()) return;
+    setRetrying(row.id);
+    setMessage("");
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/email-delivery/${encodeURIComponent(row.id)}/resend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!response.ok) throw new Error("resend_unavailable");
+      setMessage("A deliberate resend was queued and recorded in the audit log.");
+      await load();
+    } catch {
+      setError("This notification could not be queued for resend.");
+    } finally {
+      setRetrying(null);
+    }
+  }
 
   async function retry(row: MonitoringRow) {
     if (
@@ -137,8 +213,48 @@ export function EmailDelivery() {
       <p className="demo-caption">
         “Accepted by provider” means Brevo accepted the request, not that it
         reached an inbox. Delivered status appears only after an authenticated
-        Brevo delivery event.
+        Brevo delivery event. One-off administrator messages are sent by the
+        owner through Gmail Send As, not from this application.
       </p>
+      <section className="panel">
+        <h2>Transactional email configuration</h2>
+        {!configuration ? <p>Configuration status is unavailable.</p> : (
+          <>
+            <dl className="review-list">
+              {[
+                ["Transactional sending", configuration.transactionalEnabled ? "Enabled" : "Disabled"],
+                ["Brevo API key", configuration.apiKeyConfigured ? "Configured" : "Missing"],
+                ["Site URL", configuration.siteUrlConfigured ? "Configured" : "Missing or invalid"],
+                ["Worker secret", configuration.workerSecretConfigured ? "Configured" : "Missing or invalid"],
+                ["Vercel cron secret", configuration.cronSecretConfigured ? "Configured" : "Missing or invalid"],
+                ["Brevo webhook secret", configuration.webhookSecretConfigured ? "Configured" : "Missing or invalid"],
+                ["Controlled test recipient", configuration.testRecipientConfigured ? "Configured" : "Missing or invalid"],
+              ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+            </dl>
+            <h3>Saved Brevo template IDs</h3>
+            <ul>
+              {configuration.templates.map((entry) => (
+                <li key={entry.template}>
+                  {emailTemplateLabel(entry.template)} — <code>{entry.variable}</code>: {entry.status}
+                </li>
+              ))}
+            </ul>
+            <label>
+              Send controlled template test
+              <select value={selectedTest} onChange={(event) => setSelectedTest(event.target.value as EmailTemplate)}>
+                {EMAIL_TEMPLATES.filter((template) => template !== "newsletter_interest_received").map((template) => {
+                  const entry = configuration.templates.find((item) => item.template === template);
+                  return <option key={template} value={template} disabled={entry?.status !== "configured"}>{emailTemplateLabel(template)}{entry?.status !== "configured" ? " — not configured" : ""}</option>;
+                })}
+              </select>
+            </label>
+            <button className="button secondary" disabled={testBusy || !configuration.testRecipientConfigured || !configuration.transactionalEnabled || configuration.templates.find((entry) => entry.template === selectedTest)?.status !== "configured"} onClick={() => void sendTemplateTest()}>
+              {testBusy ? "Queueing test…" : "Send template test"}
+            </button>
+            {!configuration.testRecipientConfigured && <p className="demo-caption">Set the server-only EMAIL_TEST_RECIPIENT to enable controlled tests. No customer recipient is accepted by the test API.</p>}
+          </>
+        )}
+      </section>
       {message && <Notice success>{message}</Notice>}
       {error && (
         <Notice error>
@@ -210,6 +326,8 @@ export function EmailDelivery() {
                     {emailDeliveryStatusLabel(row.status, row.latestDeliveryEvent)}
                   </span>
                 </div>
+                {row.isTest && <p className="eyebrow">Controlled template test</p>}
+                {row.resendOf && <p className="demo-caption">Deliberate resend of {row.resendOf}</p>}
                 <dl className="review-list">
                   <div>
                     <dt>Recipient</dt>
@@ -256,6 +374,11 @@ export function EmailDelivery() {
                   <Notice error={row.status === "dead" || row.latestDeliveryEvent?.event === "bounced"}>
                     {row.latestDeliveryEvent?.reason ?? row.lastError}
                   </Notice>
+                )}
+                {row.status === "sent" && !row.isTest && (
+                  <button className="button secondary" disabled={retrying === row.id} onClick={() => void resend(row)}>
+                    {retrying === row.id ? "Queueing…" : "Deliberately resend"}
+                  </button>
                 )}
                 {row.status === "dead" && row.maxAttempts < 20 && (
                   <button

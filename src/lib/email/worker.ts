@@ -20,12 +20,19 @@
  */
 
 import type { BrevoClient, BrevoSendResult } from "./brevo";
-import type { EmailOutboxRepository } from "./outbox-repository";
+import type {
+  ClaimedOutboxEmail,
+  EmailOutboxRepository,
+} from "./outbox-repository";
 import {
   buildBrevoTemplateParams,
+  buildNewsletterInterestParams,
   buildStaffOrderTemplateParams,
   emailTemplates,
+  isNewsletterInterestTemplate,
   isStaffOrderTemplate,
+  validateEmailTemplateParams,
+  type BookingEmailContext,
   type NotificationTemplate,
 } from "./templates";
 
@@ -171,8 +178,181 @@ export async function runEmailWorker(
   let skipped = 0;
   let failed = 0;
 
+  /**
+   * Provider call plus completion bookkeeping for one already-rendered row.
+   * Shared by every template family so retry, dead-letter and lease handling
+   * stay identical across customer, staff and newsletter alerts.
+   */
+  const deliverRow = async (
+    row: ClaimedOutboxEmail,
+    templateId: number,
+    params: Record<string, string>,
+  ): Promise<void> => {
+    let providerResult: BrevoSendResult;
+    try {
+      providerResult = asResult(
+        await deps.provider.send({
+          to: row.recipientEmail,
+          templateId,
+          params,
+          idempotencyKey: row.id,
+          template: row.template,
+        }),
+      );
+    } catch {
+      // An unexpected provider exception is retryable, never a booking failure.
+      providerResult = {
+        ok: false,
+        classification: "retryable",
+        reason: "email_delivery_exception",
+      };
+    }
+
+    if (providerResult.ok) {
+      let marked: boolean;
+      try {
+        marked = await deps.repository.markSent({
+          id: row.id,
+          workerId: options.workerId,
+          providerMessageId: providerResult.providerMessageId,
+        });
+      } catch {
+        failed += 1;
+        return;
+      }
+
+      if (marked) sent += 1;
+      else {
+        // The lease was lost (for example the row was reaped and reclaimed).
+        // Never claim a send that this worker can no longer record.
+        skipped += 1;
+        deps.log?.({
+          level: "warn",
+          event: "email_delivery_skipped",
+          outboxId: row.id,
+          template: row.template,
+          reason: "lease_not_owned",
+        });
+      }
+      return;
+    }
+
+    if (providerResult.classification === "permanent") {
+      try {
+        const marked = await deps.repository.markDead({
+          id: row.id,
+          workerId: options.workerId,
+          error: providerResult.reason,
+        });
+        if (marked) dead += 1;
+        else skipped += 1;
+      } catch {
+        failed += 1;
+      }
+
+      deps.log?.({
+        level: "warn",
+        event: "email_delivery_dead",
+        outboxId: row.id,
+        template: row.template,
+        reason: providerResult.reason,
+      });
+      return;
+    }
+
+    const backoff = retryDelaySeconds(row.attemptCount, deps.random);
+    const delay = Math.min(
+      RETRY_CAP_SECONDS,
+      Math.max(backoff, providerResult.retryAfterSeconds ?? 0),
+    );
+
+    let status: "retryable_failed" | "dead" | null;
+    try {
+      status = await deps.repository.markRetry({
+        id: row.id,
+        workerId: options.workerId,
+        error: providerResult.reason,
+        delaySeconds: delay,
+      });
+    } catch {
+      failed += 1;
+      return;
+    }
+
+    if (status === "dead") dead += 1;
+    else if (status === "retryable_failed") retried += 1;
+    else skipped += 1;
+
+    deps.log?.({
+      level: "warn",
+      event: status === "dead" ? "email_delivery_dead" : "email_delivery_retry",
+      outboxId: row.id,
+      template: row.template,
+      reason: providerResult.reason,
+    });
+  };
+
   for (const row of claimedRows) {
-    if (!row.bookingId) {
+    // The newsletter manager alert is not a booking message: it renders purely
+    // from its committed payload and never reads a customer record. Its template
+    // id is optional (retried until saved in Brevo), exactly like the staff ids.
+    if (isNewsletterInterestTemplate(row.template)) {
+      let params: Record<string, string>;
+      try {
+        if (!row.newsletter) throw new Error("Newsletter interest payload is missing.");
+        params = buildNewsletterInterestParams(row.newsletter, {
+          siteUrl: deps.siteUrl,
+        });
+        validateEmailTemplateParams(row.template, params);
+      } catch {
+        try {
+          const marked = await deps.repository.markDead({
+            id: row.id,
+            workerId: options.workerId,
+            error: "email_template_params_failed",
+          });
+          if (marked) dead += 1;
+          else skipped += 1;
+        } catch {
+          failed += 1;
+        }
+        continue;
+      }
+
+      const templateId = deps.templateIds[row.template];
+      if (
+        typeof templateId !== "number" ||
+        !Number.isSafeInteger(templateId) ||
+        templateId < 1
+      ) {
+        try {
+          const status = await deps.repository.markRetry({
+            id: row.id,
+            workerId: options.workerId,
+            error: "email_template_not_configured",
+            delaySeconds: RETRY_CAP_SECONDS,
+          });
+          if (status === "dead") dead += 1;
+          else if (status === "retryable_failed") retried += 1;
+          else skipped += 1;
+        } catch {
+          failed += 1;
+        }
+        continue;
+      }
+
+      await deliverRow(row, templateId, params);
+      continue;
+    }
+
+    let context: BookingEmailContext | null | undefined;
+    let staffContext = row.staff;
+    if ((row.isTest ?? Boolean(row.testContext)) && row.testContext) {
+      // Controlled test rows are intentionally bookingless and render only from
+      // their fixed, server-created fixture. They never read a customer record.
+      context = row.testContext.booking;
+      staffContext = staffContext ?? row.testContext.staff;
+    } else if (!row.bookingId || row.testContext) {
       try {
         const marked = await deps.repository.markDead({
           id: row.id,
@@ -185,16 +365,15 @@ export async function runEmailWorker(
         failed += 1;
       }
       continue;
-    }
-
-    let context;
-    try {
-      context = await deps.repository.loadBookingContext(row.bookingId);
-    } catch {
-      // Leave the row leased. The reaper will recover it after the lease
-      // expires; a transient database failure must not dead-letter a message.
-      failed += 1;
-      continue;
+    } else {
+      try {
+        context = await deps.repository.loadBookingContext(row.bookingId);
+      } catch {
+        // Leave the row leased. The reaper will recover it after the lease
+        // expires; a transient database failure must not dead-letter a message.
+        failed += 1;
+        continue;
+      }
     }
 
     if (!context) {
@@ -258,11 +437,11 @@ export async function runEmailWorker(
     let params: Record<string, string>;
     try {
       if (isStaffOrderTemplate(row.template)) {
-        if (!row.staff) throw new Error("Staff alert metadata is missing.");
+        if (!staffContext) throw new Error("Staff alert metadata is missing.");
         params = buildStaffOrderTemplateParams(
           row.template,
           context,
-          row.staff,
+          staffContext,
           { siteUrl: deps.siteUrl },
         );
       } else {
@@ -270,6 +449,7 @@ export async function runEmailWorker(
           siteUrl: deps.siteUrl,
         });
       }
+      validateEmailTemplateParams(row.template, params);
     } catch {
       // Invalid persisted template parameters cannot be fixed by retrying.
       try {
@@ -286,108 +466,7 @@ export async function runEmailWorker(
       continue;
     }
 
-    let providerResult: BrevoSendResult;
-    try {
-      providerResult = asResult(
-        await deps.provider.send({
-          to: row.recipientEmail,
-          templateId,
-          params,
-          idempotencyKey: row.id,
-          template: row.template,
-        }),
-      );
-    } catch {
-      // An unexpected provider exception is retryable, never a booking failure.
-      providerResult = {
-        ok: false,
-        classification: "retryable",
-        reason: "email_delivery_exception",
-      };
-    }
-
-    if (providerResult.ok) {
-      let marked: boolean;
-      try {
-        marked = await deps.repository.markSent({
-          id: row.id,
-          workerId: options.workerId,
-          providerMessageId: providerResult.providerMessageId,
-        });
-      } catch {
-        failed += 1;
-        continue;
-      }
-
-      if (marked) sent += 1;
-      else {
-        // The lease was lost (for example the row was reaped and reclaimed).
-        // Never claim a send that this worker can no longer record.
-        skipped += 1;
-        deps.log?.({
-          level: "warn",
-          event: "email_delivery_skipped",
-          outboxId: row.id,
-          template: row.template,
-          reason: "lease_not_owned",
-        });
-      }
-      continue;
-    }
-
-    if (providerResult.classification === "permanent") {
-      try {
-        const marked = await deps.repository.markDead({
-          id: row.id,
-          workerId: options.workerId,
-          error: providerResult.reason,
-        });
-        if (marked) dead += 1;
-        else skipped += 1;
-      } catch {
-        failed += 1;
-      }
-
-      deps.log?.({
-        level: "warn",
-        event: "email_delivery_dead",
-        outboxId: row.id,
-        template: row.template,
-        reason: providerResult.reason,
-      });
-      continue;
-    }
-
-    const backoff = retryDelaySeconds(row.attemptCount, deps.random);
-    const delay = Math.min(
-      RETRY_CAP_SECONDS,
-      Math.max(backoff, providerResult.retryAfterSeconds ?? 0),
-    );
-
-    let status: "retryable_failed" | "dead" | null;
-    try {
-      status = await deps.repository.markRetry({
-        id: row.id,
-        workerId: options.workerId,
-        error: providerResult.reason,
-        delaySeconds: delay,
-      });
-    } catch {
-      failed += 1;
-      continue;
-    }
-
-    if (status === "dead") dead += 1;
-    else if (status === "retryable_failed") retried += 1;
-    else skipped += 1;
-
-    deps.log?.({
-      level: "warn",
-      event: status === "dead" ? "email_delivery_dead" : "email_delivery_retry",
-      outboxId: row.id,
-      template: row.template,
-      reason: providerResult.reason,
-    });
+    await deliverRow(row, templateId, params);
   }
 
   return {
