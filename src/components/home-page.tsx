@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { copy, services, foldedLinen, photos, faqs } from "@/lib/content";
+import { copy, services as defaultServices, foldedLinen, photos as defaultPhotos, faqs as defaultFaqs } from "@/lib/content";
+import type { PublicWebsiteSnapshot } from "@/lib/website/public";
 import {
   Action,
   BranchCards,
@@ -17,9 +18,12 @@ import { Promotion, Newsletter } from "./published-content";
 import { HomeHero } from "./home-hero";
 import { readNewsletterInterestConfig } from "@/lib/newsletter/config";
 
-const galleryTiles = photos.batch_14_gallery ?? [];
+const galleryTiles = defaultPhotos.batch_14_gallery ?? [];
 
-export function HomePage() {
+export function HomePage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
+  const services = website?.services ?? defaultServices;
+  const faqs = website?.faqs ?? defaultFaqs;
+  const gallery = website?.gallery ?? galleryTiles;
   const newsletterInterestEnabled = readNewsletterInterestConfig().enabled;
   return (
     <>
@@ -69,13 +73,13 @@ export function HomePage() {
             See How It Works
           </Action>
         </Section>
-        <Promotion />
+        <Promotion promotions={website?.promotions} />
         <Section title="Find your nearest branch">
-          <BranchCards />
+        <BranchCards branches={website?.branches} />
         </Section>
         <Section title="A closer look">
           <CascadeSlider label="Gallery highlights">
-            {galleryTiles.map((photo, i) => (
+            {gallery.map((photo, i) => (
               <Reveal key={photo.src} delay={i * 0.06}>
                 <Link href="/gallery" className="tile">
                   <Picture photo={photo} />

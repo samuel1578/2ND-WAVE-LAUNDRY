@@ -16,6 +16,9 @@ import type { PromotionRecord } from "@/lib/contracts";
 import { promotionBadge } from "@/lib/rules";
 import { ModuleShell } from "./shared/module-shell";
 import styles from "./content.module.css";
+import { demoMode } from "@/lib/demo-mode";
+import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
+import { saveLivePromotion } from "@/lib/website/actions";
 const blankPromotion: PromotionRecord = {
   id: "",
   internalTitle: "",
@@ -42,21 +45,20 @@ export function PromotionsManager({
   state?: string;
 }) {
   const store = useDemoStore();
+  const live = useAdminWebsiteData<PromotionRecord>("promotion", []);
+  const records = demoMode ? store.websiteContent.promotions : live.items;
   if (id) {
-    const record =
-      id === "new"
-        ? undefined
-        : store.websiteContent.promotions.find((p) => p.id === id);
+    const record = id === "new" ? undefined : records.find((p) => p.id === id);
     if (id !== "new" && !record)
       return (
         <Empty
           title="Record not found"
-          body="This promotion is not available in the demo store."
+          body={live.error || "This promotion is not available."}
         />
       );
     return <PromotionEditor key={record?.id || "new"} record={record} />;
   }
-  const promotions = state === "empty" ? [] : getPromotions();
+  const promotions = state === "empty" ? [] : demoMode ? getPromotions() : records;
   return (
     <>
       <ModuleShell
@@ -126,7 +128,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
     setError("");
     setSuccess("");
     try {
-      const next = await savePromotion(form);
+      const next = demoMode ? await savePromotion(form) : await saveLivePromotion(form);
       setForm(next);
       setBaseline(JSON.stringify(next));
       setSuccess("Changes saved.");
@@ -142,6 +144,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
     setError("");
     setSuccess("");
     try {
+      if(!demoMode) throw new Error("Promotion lifecycle changes require a dedicated reviewed action. Save changes to preserve the current status.");
       const next = await transitionPromotion(form.id, form.version, action);
       setConfirm(null);
       if (action === "delete-draft") {

@@ -20,6 +20,7 @@ import {
 import { BookingForm } from "@/components/forms/booking";
 import { branches, demoMode, services } from "@/lib/content";
 import { PreviewPage } from "@/components/preview";
+import { getPublicWebsiteSnapshot } from "@/lib/website/public";
 const titles: Record<string, string> = {
   services: "Our Services",
   "how-it-works": "Laundry arrangements made clear",
@@ -80,22 +81,23 @@ export default async function Page({
   const { slug } = await params;
   const query = await searchParams;
   const key = slug.join("/");
+  const website = await getPublicWebsiteSnapshot();
   let page: React.ReactNode;
   switch (key) {
     case "services":
-      page = <ServicesPage />;
+      page = <ServicesPage website={website} />;
       break;
     case "how-it-works":
       page = <HowPage />;
       break;
     case "locations":
-      page = <LocationsPage />;
+      page = <LocationsPage website={website} />;
       break;
     case "about":
       page = <AboutPage />;
       break;
     case "contact":
-      page = <ContactPage />;
+      page = <ContactPage website={website} />;
       break;
     case "commercial-laundry":
       page = <CommercialPage />;
@@ -107,7 +109,7 @@ export default async function Page({
       page = <GalleryPage />;
       break;
     case "faq":
-      page = <FAQPage />;
+      page = <FAQPage website={website} />;
       break;
     case "blog":
       page = <BlogPage />;
@@ -145,16 +147,16 @@ export default async function Page({
       if (
         slug[0] === "services" &&
         slug.length === 2 &&
-        services.some((s) => s.slug === slug[1])
+        website.services.some((s) => s.slug === slug[1])
       )
-        page = <ServiceDetail slug={slug[1]} />;
+        page = <ServiceDetail slug={slug[1]} website={website} />;
       else if (
         slug[0] === "locations" &&
         slug.length === 2 &&
-        branches.some((b) => b.slug === slug[1])
+        website.branches.some((b) => b.slug === slug[1])
       )
-        page = <BranchPage slug={slug[1]} />;
-      else if (slug[0] === "blog" && slug.length === 2 && demoMode)
+        page = <BranchPage slug={slug[1]} website={website} />;
+      else if (slug[0] === "blog" && slug.length === 2)
         page = <ArticlePage slug={slug[1]} />;
       else notFound();
   }

@@ -9,6 +9,10 @@ import { deleteContent, saveContent, useDemoStore } from "@/lib/mock-store";
 import type { ContentItem } from "@/lib/contracts";
 import { ModuleShell } from "./shared/module-shell";
 import { MediaPicker } from "./shared/media-picker";
+import { demoMode } from "@/lib/demo-mode";
+import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
+import { saveLiveService } from "@/lib/website/actions";
+import { seededServices } from "@/lib/website/types";
 export function ServicesManager({
   id,
   state,
@@ -17,22 +21,24 @@ export function ServicesManager({
   state?: string;
 }) {
   const store = useDemoStore();
+  const live = useAdminWebsiteData<ContentItem>("services", seededServices);
+  const records = demoMode ? store.content.filter(c=>c.module==="Services") : live.items;
   if (id) {
     const item =
       id === "new"
         ? undefined
-        : store.content.find((c) => c.id === id && c.module === "Services");
+        : records.find((c) => c.id === id && c.module === "Services");
     if (id !== "new" && !item)
       return (
         <Empty
           title="Record not found"
-          body="This service is not available in the demo store."
+          body={live.error || "This service is not available."}
         />
       );
     return <ServiceEditor key={item?.id || "new"} item={item} />;
   }
   const services =
-    state === "empty" ? [] : store.content.filter((c) => c.module === "Services");
+    state === "empty" ? [] : records;
   return (
     <>
       <ModuleShell
@@ -127,7 +133,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
     setError("");
     setSuccess("");
     try {
-      const next = await saveContent(form, action);
+      const next = demoMode ? await saveContent(form, action) : await saveLiveService(form);
       setForm(next);
       setBaseline(JSON.stringify(next));
       setSuccess(
@@ -153,6 +159,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
     setBusy(true);
     setError("");
     try {
+      if (!demoMode) throw new Error("Existing operational services cannot be deleted here.");
       await deleteContent(form.id);
       setConfirm(null);
       setDeleted(true);

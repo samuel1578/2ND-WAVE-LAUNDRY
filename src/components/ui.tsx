@@ -14,7 +14,7 @@ import { Reveal } from "./motion";
 import { BrandText } from "./brand-text";
 import { FaqAccordion } from "./faq-accordion";
 import {
-  branches,
+  branches as defaultBranches,
   bookingHref,
   contact,
   copy,
@@ -190,7 +190,7 @@ export function ServiceCard({
     </Reveal>
   );
 }
-export function BranchCards() {
+export function BranchCards({ branches = defaultBranches }: { branches?: typeof defaultBranches }) {
   return (
     <div className="grid three">
       {branches.map((b, i) => (

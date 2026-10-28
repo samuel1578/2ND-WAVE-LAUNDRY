@@ -9,6 +9,10 @@ import { telHref } from "@/lib/rules";
 import type { LocationRecord } from "@/lib/contracts";
 import { ModuleShell } from "./shared/module-shell";
 import styles from "./content.module.css";
+import { demoMode } from "@/lib/demo-mode";
+import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
+import { saveLiveLocation } from "@/lib/website/actions";
+import { seededLocations } from "@/lib/website/types";
 export function LocationsManager({
   id,
   state,
@@ -17,20 +21,22 @@ export function LocationsManager({
   state?: string;
 }) {
   const store = useDemoStore();
+  const live = useAdminWebsiteData<LocationRecord>("locations", seededLocations);
+  const records = demoMode ? store.websiteContent.locations : live.items;
   if (id) {
-    const location = store.websiteContent.locations.find(
+    const location = records.find(
       (l) => l.id === id,
     );
     if (!location)
       return (
         <Empty
           title="Record not found"
-          body="This branch is not available in the demo store."
+          body={live.error || "This branch is not available."}
         />
       );
     return <LocationEditor key={location.id} location={location} />;
   }
-  const locations = state === "empty" ? [] : getLocations();
+  const locations = state === "empty" ? [] : demoMode ? getLocations() : [...live.items].sort((a,b)=>a.order-b.order);
   return (
     <>
       <ModuleShell
@@ -108,7 +114,7 @@ function LocationEditor({ location }: { location: LocationRecord }) {
     setError("");
     setSuccess("");
     try {
-      const next = await saveLocation(form);
+      const next = demoMode ? await saveLocation(form) : await saveLiveLocation(form);
       setForm(next);
       setBaseline(JSON.stringify(next));
       setSuccess("Changes saved.");

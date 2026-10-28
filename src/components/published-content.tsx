@@ -13,9 +13,18 @@ import { Action, Empty, Picture, Section, Skeleton } from "./ui";
 import { BrandText } from "./brand-text";
 import { PublicForm } from "./forms/public-form";
 import { Dialog } from "./dialog";
+import type { ContentItem, PromotionRecord } from "@/lib/contracts";
 export function PublishedBlog() {
   const store = useDemoStore();
-  const posts = store.content.filter((c) => c.module === "Blog" && c.published);
+  const [livePosts, setLivePosts] = useState<ContentItem[] | null>(null);
+  useEffect(() => {
+    if (demoMode) return;
+    fetch("/api/website?module=blog", { cache: "no-store" })
+      .then(response => response.ok ? response.json() : Promise.reject(new Error("Blog unavailable")))
+      .then(body => setLivePosts(body.items ?? []))
+      .catch(() => setLivePosts([]));
+  }, []);
+  const posts = demoMode ? store.content.filter((c) => c.module === "Blog" && c.published) : (livePosts ?? []);
   return posts.length ? (
     <div className="grid three">
       {posts.map((p) => (
@@ -52,9 +61,17 @@ export function PublishedBlog() {
 }
 export function PublishedArticle({ slug }: { slug: string }) {
   const store = useDemoStore();
-  const post = store.content.find(
-    (c) => c.module === "Blog" && c.published?.slug === slug,
-  )?.published;
+  const [livePost, setLivePost] = useState<ContentItem | null>(null);
+  useEffect(() => {
+    if (demoMode) return;
+    fetch("/api/website?module=blog", { cache: "no-store" })
+      .then(response => response.ok ? response.json() : Promise.reject(new Error("Article unavailable")))
+      .then(body => setLivePost((body.items ?? []).find((item: ContentItem) => item.slug === slug) ?? null))
+      .catch(() => setLivePost(null));
+  }, [slug]);
+  const post = demoMode
+    ? store.content.find((c) => c.module === "Blog" && c.published?.slug === slug)?.published
+    : livePost?.published;
   if (!post)
     return (
       <Empty
@@ -179,17 +196,17 @@ export function Newsletter({ interestEnabled = false }: { interestEnabled?: bool
     </Section>
   );
 }
-export function Promotion({ force = false }: { force?: boolean }) {
+export function Promotion({ force = false, promotions }: { force?: boolean; promotions?: PromotionRecord[] }) {
   const store = useDemoStore();
   const [open, setOpen] = useState(false);
-  const approved = store.content.find(
+  const approved = demoMode ? store.content.find(
     (c) =>
       c.module === "Promotions" &&
       c.published &&
       c.extra.enabled === "yes" &&
       c.extra.yearConfirmed === "yes" &&
       promoActive(true, c.extra.start, c.extra.end),
-  );
+  ) : promotions?.find(p => p.enabled && p.yearConfirmed && p.status === "active");
   if (!force && !approved) return null;
   return (
     <section className="promotion">

@@ -6,13 +6,23 @@ import { photos } from "@/lib/content";
 import { Picture, Empty } from "./ui";
 import { Dialog } from "./dialog";
 import { CascadeSlider } from "./cascade-slider";
+import { demoMode } from "@/lib/demo-mode";
 const gallery = (photos.batch_14_gallery || []).filter(
   (p) => !/logo/i.test(p.alt),
 );
 export function Gallery() {
   const [filter, setFilter] = useState("All");
   const [index, setIndex] = useState<number | null>(null);
-  const filtered = gallery.filter(
+  const [liveGallery, setLiveGallery] = useState<typeof gallery | null>(null);
+  useEffect(() => {
+    if (demoMode) return;
+    fetch("/api/website?module=gallery", { cache: "no-store" })
+      .then(response => response.ok ? response.json() : Promise.reject(new Error("Gallery unavailable")))
+      .then(body => setLiveGallery((body.items ?? []).map((item: { src: string; alt: string }) => ({ src: item.src, alt: item.alt }))))
+      .catch(() => setLiveGallery([]));
+  }, []);
+  const sourceGallery = demoMode ? gallery : (liveGallery ?? []);
+  const filtered = sourceGallery.filter(
     (p) =>
       filter === "All" ||
       (filter === "Garments"

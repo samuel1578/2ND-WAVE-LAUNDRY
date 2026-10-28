@@ -34,6 +34,18 @@ export function BookingForm({
   previewState?: string;
 }) {
   const store = useDemoStore();
+  const [settings, setSettings] = useState({ ...store.settings });
+  const [catalogue, setCatalogue] = useState(services);
+  useEffect(() => {
+    if (demoMode) return;
+    Promise.all([
+      fetch("/api/website?module=settings", { cache: "no-store" }).then(r => r.ok ? r.json() : Promise.reject(new Error("Settings unavailable"))),
+      fetch("/api/website?module=services", { cache: "no-store" }).then(r => r.ok ? r.json() : Promise.reject(new Error("Services unavailable"))),
+    ]).then(([settingsBody, servicesBody]) => {
+      if (settingsBody.settings) setSettings(settingsBody.settings);
+      if (Array.isArray(servicesBody.items)) setCatalogue(servicesBody.items);
+    }).catch(() => undefined);
+  }, []);
   const [step, setStep] = useState(0);
   const [input, setInput] = useState<BookingInput>({
     services: services.some((s) => s.slug === preselect && s.bookable)
@@ -45,7 +57,7 @@ export function BookingForm({
     address: "",
     landmark: "",
     map: "",
-    date: defaultPickupDate(new Date(), store.settings.end),
+    date: defaultPickupDate(new Date(), settings.end),
     time: "",
     transport: "No preference",
     name: "",
@@ -108,7 +120,7 @@ export function BookingForm({
         input.time,
         input.services.includes("express-same-day-laundry"),
         new Date(),
-        store.settings,
+        settings,
       );
       if (schedule) e.date = schedule;
       if (!validMap(input.map))
@@ -286,7 +298,7 @@ export function BookingForm({
       if (!demoMode && result.photoUploadToken && photoRef.current.length)
         void uploadPhotos(result.photoUploadToken);
       setMessage(
-        `Hello 2nd Wave team. I would like to discuss pickup request ${reference}.\nName: ${input.name}\nServices: ${input.services.map((slug) => services.find((s) => s.slug === slug)?.title).join(", ")}\nPreferred date: ${input.date}\nPreferred time: ${input.time || "As soon as possible"}\nPlease contact me to agree the fee and arrangements.`,
+        `Hello 2nd Wave team. I would like to discuss pickup request ${reference}.\nName: ${input.name}\nServices: ${input.services.map((slug) => catalogue.find((s) => s.slug === slug)?.title).join(", ")}\nPreferred date: ${input.date}\nPreferred time: ${input.time || "As soon as possible"}\nPlease contact me to agree the fee and arrangements.`,
       );
     } catch (e) {
       setError(
@@ -384,7 +396,7 @@ export function BookingForm({
         </div>
       </div>
     );
-  if (!store.settings.acceptBookings || previewState === "paused")
+  if (!settings.acceptBookings || previewState === "paused")
     return (
       <div className="panel">
         <h1>{copy("06.06", "H1")}</h1>
@@ -465,7 +477,7 @@ export function BookingForm({
                 <legend>Select your services *</legend>
                 <small>You can select more than one service.</small>
                 <div className="grid two">
-                  {services
+                  {catalogue
                     .filter((s) => s.bookable)
                     .map((s) => (
                       <label
@@ -603,8 +615,8 @@ export function BookingForm({
                 })}
                 {text("time", "Preferred collection time (optional)", {
                   type: "time",
-                  min: store.settings.start,
-                  max: store.settings.end,
+                  min: settings.start,
+                  max: settings.end,
                 })}
               </div>
               <p>{copy("06.02", "Date helper")}</p>
@@ -613,8 +625,8 @@ export function BookingForm({
                 7:00 AM to 5:00 PM. Please choose a time within these hours.
               </p>
               <p>
-                Pickup operates from {clockLabel(store.settings.start)} to{" "}
-                {clockLabel(store.settings.end)}. Your preferred time is subject
+                Pickup operates from {clockLabel(settings.start)} to{" "}
+                {clockLabel(settings.end)}. Your preferred time is subject
                 to confirmation.
               </p>
               <Field id="transport" label="Transport preference *">
@@ -632,7 +644,7 @@ export function BookingForm({
               {input.services.includes("express-same-day-laundry") && (
                 <Notice>
                   For Express/Same-Day Laundry requiring pickup for service
-                  today, request by {clockLabel(store.settings.cutoff)}. The
+                  today, request by {clockLabel(settings.cutoff)}. The
                   team confirms availability and completion timing.
                 </Notice>
               )}
@@ -695,7 +707,7 @@ export function BookingForm({
               <dl className="review-list">
                 {Object.entries({
                   Services: input.services
-                    .map((s) => services.find((v) => v.slug === s)?.title)
+                    .map((s) => catalogue.find((v) => v.slug === s)?.title)
                     .join(", "),
                   "Load Size": input.items,
                   "Pickup date": input.date,

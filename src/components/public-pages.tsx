@@ -27,9 +27,9 @@ import {
 } from "lucide-react";
 import {
   copy,
-  services,
+  services as defaultServices,
   commercial,
-  branches,
+  branches as defaultBranches,
   photos,
   faqs,
   sections,
@@ -38,6 +38,7 @@ import {
   relatedFor,
   serviceHref,
 } from "@/lib/content";
+import type { PublicWebsiteSnapshot } from "@/lib/website/public";
 import {
   Action,
   Breadcrumb,
@@ -66,7 +67,8 @@ import {
   PublishedArticle,
   PublishedReviews,
 } from "./published-content";
-export function ServicesPage() {
+export function ServicesPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
+  const services = website?.services ?? defaultServices;
   return (
     <>
       <section className="page-hero">
@@ -131,7 +133,8 @@ const relatedIcons: Record<string, LucideIcon> = {
   "express-same-day-laundry": Zap,
   "pickup-and-delivery": Truck,
 };
-export function ServiceDetail({ slug }: { slug: string }) {
+export function ServiceDetail({ slug, website }: { slug: string; website?: PublicWebsiteSnapshot }) {
+  const services = website?.services ?? defaultServices;
   const s = services.find((s) => s.slug === slug)!;
   const id = s.section;
   const fields = sections[id].fields;
@@ -359,7 +362,7 @@ export function HowPage() {
     </>
   );
 }
-export function LocationsPage() {
+export function LocationsPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
   return (
     <>
       <section className="page-hero">
@@ -372,7 +375,7 @@ export function LocationsPage() {
         </div>
       </section>
       <div className="container">
-        <BranchCards />
+        <BranchCards branches={website?.branches} />
         <Section
           title={copy("07.01", "Pickup heading")}
           description={copy("07.01", "Pickup text")}
@@ -383,8 +386,8 @@ export function LocationsPage() {
     </>
   );
 }
-export function BranchPage({ slug }: { slug: string }) {
-  const branch = branches.find((b) => b.slug === slug)!;
+export function BranchPage({ slug, website }: { slug: string; website?: PublicWebsiteSnapshot }) {
+  const branch = (website?.branches ?? defaultBranches).find((b) => b.slug === slug)!;
   return (
     <>
       <Link className="back-link" href="/locations">
@@ -464,7 +467,15 @@ export function AboutPage() {
     </>
   );
 }
-export function ContactPage() {
+export function ContactPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
+  const branches = website?.branches ?? defaultBranches;
+  const phone = website?.settings.phone ?? contact.phone;
+  const tel = `tel:${phone.replace(/\D/g, "")}`;
+  const whatsapp = website?.settings.whatsapp.startsWith("http")
+    ? website.settings.whatsapp
+    : website?.settings.whatsapp
+      ? `https://wa.me/${website.settings.whatsapp.replace(/\D/g, "")}`
+      : contact.whatsapp;
   const emailContacts = [
     {
       label: "Orders & scheduling",
@@ -505,14 +516,14 @@ export function ContactPage() {
         <div className="contact-grid">
           <aside className="contact-panel">
             <p className="eyebrow">Get in touch</p>
-            <a className="contact-number" href={contact.tel}>
-              {contact.phone}
+            <a className="contact-number" href={tel}>
+              {phone}
             </a>
             <div className="menu-actions">
-              <a className="button" href={contact.tel}>
+              <a className="button" href={tel}>
                 Call Us
               </a>
-              <a className="button whatsapp" href={contact.whatsapp}>
+              <a className="button whatsapp" href={whatsapp}>
                 Chat on WhatsApp
               </a>
               <Action href="/locations" secondary>
@@ -650,7 +661,7 @@ export function GalleryPage() {
     </>
   );
 }
-export function FAQPage() {
+export function FAQPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
   return (
     <>
       <section className="page-hero">
@@ -660,7 +671,7 @@ export function FAQPage() {
         </div>
       </section>
       <div className="container narrow">
-        <FAQ items={faqs} />
+        <FAQ items={website?.faqs ?? faqs} />
         <Section title={copy("13", "Closing")}>
           <Action href="/contact">Contact the Team</Action>
         </Section>

@@ -1,6 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { saveSettings, useDemoStore } from "@/lib/mock-store";
+import { saveLiveSettings } from "@/lib/website/actions";
+import type { Settings } from "@/lib/contracts";
+import { demoMode } from "@/lib/demo-mode";
 import { validEmail, validPhone, validClock, clockLabel } from "@/lib/rules";
 import { Heading } from "@/components/ui";
 import { Dialog } from "@/components/dialog";
@@ -15,13 +18,33 @@ import { BookingAlertRecipients } from "./booking-alert-recipients";
 
 export function SettingsAdmin({ live = false }: { live?: boolean }) {
   const store = useDemoStore();
-  const [form, setForm] = useState({ ...store.settings });
+  const [form, setForm] = useState<Settings>({ ...store.settings });
   const [baseline, setBaseline] = useState(JSON.stringify(form));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [pause, setPause] = useState(false);
   const dirty = JSON.stringify(form) !== baseline;
+  useEffect(() => {
+    if (!live || demoMode) return;
+    let active = true;
+    fetch("/api/admin/website?module=settings", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Settings could not be loaded.");
+        const body = await response.json() as { settings?: Settings };
+        if (!body.settings) throw new Error("Settings could not be loaded.");
+        if (active) {
+          setForm(body.settings);
+          setBaseline(JSON.stringify(body.settings));
+        }
+      })
+      .catch((cause) => {
+        if (active) setError((cause as Error).message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [live]);
   async function save() {
     if (busy) return;
     setError("");
@@ -57,7 +80,7 @@ export function SettingsAdmin({ live = false }: { live?: boolean }) {
     }
     setBusy(true);
     try {
-      const next = await saveSettings(form);
+      const next = live && !demoMode ? await saveLiveSettings(form) : await saveSettings(form);
       setForm(next);
       setBaseline(JSON.stringify(next));
       setSuccess("Settings saved.");

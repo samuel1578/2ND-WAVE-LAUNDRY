@@ -10,16 +10,25 @@ import type { GalleryPlacement } from "@/lib/contracts";
 import { ModuleShell } from "./shared/module-shell";
 import { MediaPicker } from "./shared/media-picker";
 import styles from "./content.module.css";
+import { demoMode } from "@/lib/demo-mode";
+import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
+import { saveLiveGallery } from "@/lib/website/actions";
+import type { MediaAsset } from "@/lib/contracts";
+import { seededGallery, seededMedia } from "@/lib/website/types";
 export function GalleryManager({ state }: { state?: string }) {
   const store = useDemoStore();
+  const liveGallery = useAdminWebsiteData<(GalleryPlacement & {asset?:MediaAsset})>("gallery", seededGallery);
+  const liveMedia = useAdminWebsiteData<MediaAsset>("media", seededMedia);
+  const allMedia = demoMode ? store.media : liveMedia.items;
+  const sourceGallery = demoMode ? getGallery().map(row=>row.placement) : liveGallery.items;
   const [draft, setDraft] = useState<GalleryPlacement[]>(() =>
     structuredClone(
-      state === "empty" ? [] : getGallery().map((row) => row.placement),
+      state === "empty" ? [] : sourceGallery,
     ),
   );
   const [baseline, setBaseline] = useState(() =>
     JSON.stringify(
-      state === "empty" ? [] : getGallery().map((row) => row.placement),
+      state === "empty" ? [] : sourceGallery,
     ),
   );
   const [error, setError] = useState("");
@@ -43,7 +52,7 @@ export function GalleryManager({ state }: { state?: string }) {
     setSuccess("");
     try {
       const ordered = [...draft].sort((a, b) => a.order - b.order);
-      const saved = await saveGallery(ordered);
+      const saved = demoMode ? await saveGallery(ordered) : await saveLiveGallery(ordered);
       setDraft(structuredClone(saved));
       setBaseline(JSON.stringify(saved));
       setSuccess("Gallery saved.");
@@ -53,7 +62,7 @@ export function GalleryManager({ state }: { state?: string }) {
       setBusy(false);
     }
   }
-  const availableAssets = store.media.filter(
+  const availableAssets = allMedia.filter(
     (m) => !m.archived && !draft.some((d) => d.mediaId === m.id),
   );
   return (
@@ -90,7 +99,7 @@ export function GalleryManager({ state }: { state?: string }) {
         {draft.length ? (
           <div className="stack">
             {draft.map((placement, i) => {
-              const asset = store.media.find((m) => m.id === placement.mediaId);
+              const asset = demoMode ? store.media.find((m) => m.id === placement.mediaId) : allMedia.find((m) => m.id === placement.mediaId);
               const available = !!asset && !asset.archived;
               return (
                 <article className="panel form-stack" key={placement.id}>
@@ -198,7 +207,7 @@ export function GalleryManager({ state }: { state?: string }) {
             )
           }
           onConfirm={() => {
-            const picked = store.media.filter((m) => selected.includes(m.id));
+            const picked = allMedia.filter((m) => selected.includes(m.id));
             setDraft((rows) => [
               ...rows,
               ...picked.map((asset, index) => ({

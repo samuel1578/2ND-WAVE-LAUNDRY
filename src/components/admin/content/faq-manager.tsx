@@ -5,14 +5,16 @@ import { Field, Submit, TextField } from "@/components/forms/controls";
 import { Dialog } from "@/components/dialog";
 import { UnsavedGuard } from "../unsaved";
 import { getFaqs, saveFaqs, useDemoStore } from "@/lib/mock-store";
+import { demoMode } from "@/lib/demo-mode";
+import { saveLiveFaqs } from "@/lib/website/actions";
+import { useEffect } from "react";
 import type { FaqItem } from "@/lib/contracts";
 import { ModuleShell } from "./shared/module-shell";
 import styles from "./content.module.css";
 export function FaqManager({ state }: { state?: string }) {
   useDemoStore();
-  const [draft, setDraft] = useState<FaqItem[]>(() =>
-    structuredClone(state === "empty" ? [] : getFaqs()),
-  );
+  const [draft, setDraft] = useState<FaqItem[]>(() => structuredClone(state === "empty" ? [] : getFaqs()));
+  const [loaded, setLoaded] = useState(demoMode);
   const [baseline, setBaseline] = useState(() =>
     JSON.stringify(state === "empty" ? [] : getFaqs()),
   );
@@ -21,6 +23,17 @@ export function FaqManager({ state }: { state?: string }) {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState("");
   const [confirmDelete, setConfirmDelete] = useState("");
+  useEffect(() => {
+    if (demoMode) return;
+    let active = true;
+    fetch("/api/website?module=faq", { cache: "no-store" }).then(async r => {
+      if (!r.ok) throw new Error("FAQs could not be loaded.");
+      const data = await r.json();
+      const rows: FaqItem[] = (data.items ?? []).map((row: { id: string; payload: { question?: string; answer?: string; glow?: string; enabled?: boolean }; sort_order: number; version: number }) => ({ id: row.id, question: row.payload.question ?? "", answer: row.payload.answer ?? "", glow: row.payload.glow, enabled: row.payload.enabled === true, order: row.sort_order, version: row.version }));
+      if (active) { setDraft(rows); setBaseline(JSON.stringify(rows)); setLoaded(true); }
+    }).catch(err => { if (active) { setError(err.message); setLoaded(true); } });
+    return () => { active = false; };
+  }, []);
   const dirty = JSON.stringify(draft) !== baseline;
   function replace(rows: FaqItem[]) {
     setDraft(rows.map((row, i) => ({ ...row, order: i + 1 })));
@@ -45,7 +58,8 @@ export function FaqManager({ state }: { state?: string }) {
     setError("");
     setSuccess("");
     try {
-      const saved = await saveFaqs(draft);
+      if (!loaded) throw new Error("FAQs are still loading.");
+      const saved = demoMode ? await saveFaqs(draft) : await saveLiveFaqs(draft.map(row => ({...row, version: row.version || 0})));
       setDraft(structuredClone(saved));
       setBaseline(JSON.stringify(saved));
       setSuccess("Changes saved.");
@@ -61,13 +75,14 @@ export function FaqManager({ state }: { state?: string }) {
       <form noValidate onSubmit={save}>
         <ModuleShell
           title="FAQs"
-          description="Questions and answers shown on the public FAQ page. Reorder, enable or disable individual entries."
+          description="Questions and answers shown on the public FAQ page. Reorder, enable or disable individual entries. Add FAQs to manage the full collection."
           backHref="/admin/content"
           backLabel="Website Content"
           badge={
             <div className={styles.cardActions}>
               {dirty && <span className="badge">Unsaved changes</span>}
-              <Submit busy={busy} label="Save Changes" />
+              <button type="button" className="button secondary" disabled={busy || !loaded} onClick={() => { const item: FaqItem = { id: crypto.randomUUID(), question: "", answer: "", order: draft.length + 1, enabled: false, version: 0 }; replace([...draft, item]); setEditing(item.id); }}>Add FAQ</button>
+              <Submit busy={busy || !loaded} label="Save Changes" />
             </div>
           }
           error={error}
