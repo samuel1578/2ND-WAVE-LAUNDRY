@@ -11,11 +11,11 @@ import {
   readEmailOperationalConfiguration,
 } from "../src/lib/email/config";
 
-test("Vercel Cron schedules the internal worker hourly", () => {
+test("Vercel Hobby Cron schedules the internal worker once per day", () => {
   const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as {
     crons?: Array<{ path?: string; schedule?: string }>;
   };
-  assert.deepEqual(vercel.crons, [{ path: "/api/internal/email/worker", schedule: "0 * * * *" }]);
+  assert.deepEqual(vercel.crons, [{ path: "/api/internal/email/worker", schedule: "0 0 * * *" }]);
   const worker = readFileSync("src/app/api/internal/email/worker/route.ts", "utf8");
   assert.match(worker, /readVercelCronSecret\(\)/);
   assert.match(worker, /readWorkerSecret\(\)/);
