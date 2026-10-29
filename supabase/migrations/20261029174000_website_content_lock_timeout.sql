@@ -1,5 +1,5 @@
 -- Phase 6 maintenance — fail fast when a website-content write is blocked.
---
+-- TEST TEST
 -- Apply after 20261028100000_phase6_website_content.sql.
 -- This does not alter FAQ data. It only prevents an admin save from waiting
 -- for the Supabase gateway timeout when another content transaction is stuck.
