@@ -45,7 +45,7 @@ export async function GET(request:Request) {
     const {data,error}=await db.from("website_content").select("id,module,record_key,payload,published,sort_order,version").eq("module",contentModule).order("sort_order");
     if(error)throw Error();
     const items=(data??[]).map(row=>{
-      const base={id:row.id,key:row.record_key,module:row.module,payload:row.payload,published:row.published,sort_order:row.sort_order,version:row.version};
+      const base={id:row.record_key,key:row.record_key,module:row.module,payload:row.payload,published:row.published,sort_order:row.sort_order,version:row.version};
       if (contentModule === "blog") return toContent(base);
       if (contentModule === "faq") return toFaq({ ...base, id: row.record_key });
       return toPromotion(base);

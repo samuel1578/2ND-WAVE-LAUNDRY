@@ -8,6 +8,17 @@ type RpcContentRow = { id: string; key: string; payload: Record<string, unknown>
 type GalleryRelation = { id: string; public_url: string; name: string; alt: string; caption: string; source: string; permission: string; archived: boolean };
 type GalleryRow = { id: string; record_key: string; payload: Record<string, unknown>; published: boolean; sort_order: number; version: number; website_gallery_media: GalleryRelation | null };
 type MediaRow = { id: string; public_url: string; name: string; alt: string; caption: string; source: string; permission: string; archived: boolean; version: number };
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, i) => sameJson(value, b[i]));
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && sameJson(left[key], right[key]));
+}
 const mapSettings = (row: Record<string, unknown> | null): PublicSettings => row ? {
   email: String(row.business_email ?? ""), phone: String(row.phone), whatsapp: String(row.whatsapp), instagram: String(row.instagram), tiktok: String(row.tiktok), facebook: String(row.facebook), newsletter: Boolean(row.newsletter_visible),
   acceptBookings: Boolean(row.accept_public_bookings ?? true), start: String(row.pickup_start ?? "07:00").slice(0,5), end: String(row.pickup_end ?? "17:00").slice(0,5), cutoff: String(row.express_cutoff ?? "11:00").slice(0,5), version: Number(row.version ?? 1),
@@ -82,6 +93,12 @@ export async function writeContent(actor:string,item:ContentItem,action:"draft"|
   const published=action==="publish" || (action==="draft" && !!item.published);
   const payload={title:item.title,slug:item.slug,summary:item.summary,body:item.body,image:item.image,alt:item.alt,extra:item.extra,status:action==="archive"?"Archived":published?"Published":"Draft"};
   const {data,error}=await client.rpc("website_content_upsert",{p_actor:actor,p_module:"blog",p_key:item.slug,p_payload:payload,p_published:published,p_sort_order:item.sort,p_expected_version:item.version||null});
+  if(error?.code==="40001") {
+    const current=await client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module","blog").eq("record_key",item.slug).maybeSingle();
+    if(!current.error && current.data && current.data.published===published && current.data.sort_order===item.sort && sameJson(current.data.payload,payload)) {
+      return toContent({id:current.data.record_key,key:current.data.record_key,module:"blog",payload:current.data.payload,published:current.data.published,sort_order:current.data.sort_order,version:current.data.version});
+    }
+  }
   if(error)return fail(error.code==="40001"?"Article changed while editing. Reload and try again.":"Article could not be saved.");
   return toContent({id:data.id,key:data.key,module:"blog",payload:data.payload,published:data.published,sort_order:data.sort_order,version:data.version});
 }
@@ -90,6 +107,12 @@ export async function writePromotion(actor:string,item:PromotionRecord) {
   const payload={...item};
   const isPublished=item.enabled && item.yearConfirmed && ["active","scheduled"].includes(item.status);
   const {data,error}=await client.rpc("website_content_upsert",{p_actor:actor,p_module:"promotion",p_key:item.id||crypto.randomUUID(),p_payload:payload,p_published:isPublished,p_sort_order:item.priority,p_expected_version:item.version||null});
+  if(error?.code==="40001" && item.id) {
+    const current=await client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module","promotion").eq("record_key",item.id).maybeSingle();
+    if(!current.error && current.data && current.data.published===isPublished && current.data.sort_order===item.priority && sameJson(current.data.payload,payload)) {
+      return toPromotion({id:current.data.record_key,key:current.data.record_key,module:"promotion",payload:current.data.payload,published:current.data.published,sort_order:current.data.sort_order,version:current.data.version});
+    }
+  }
   if(error)return fail("Promotion could not be saved.");
   return toPromotion({id:data.id,key:data.key,module:"promotion",payload:data.payload,published:data.published,sort_order:data.sort_order,version:data.version});
 }
