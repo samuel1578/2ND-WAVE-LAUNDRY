@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { toContent, toGallery, toPromotion } from "@/lib/website/types";
+import { toContent, toFaq, toGallery, toPromotion } from "@/lib/website/types";
 export const dynamic="force-dynamic";
 const NO_STORE={"Cache-Control":"private, no-store, max-age=0"} as const;
 export async function GET(request:Request) {
@@ -46,7 +46,9 @@ export async function GET(request:Request) {
     if(error)throw Error();
     const items=(data??[]).map(row=>{
       const base={id:row.id,key:row.record_key,module:row.module,payload:row.payload,published:row.published,sort_order:row.sort_order,version:row.version};
-      return contentModule==="blog" ? toContent(base) : toPromotion(base);
+      if (contentModule === "blog") return toContent(base);
+      if (contentModule === "faq") return toFaq({ ...base, id: row.record_key });
+      return toPromotion(base);
     });
     return NextResponse.json({items},{headers:NO_STORE});
   } catch {

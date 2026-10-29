@@ -15,7 +15,6 @@ import {
 import { m, useSpring, useTransform, type MotionValue } from "motion/react";
 import type { ReactNode } from "react";
 import { BrandText } from "@/components/brand-text";
-import { Logo } from "@/components/shell";
 import { Action } from "@/components/ui";
 import { heroContent, stageImages, stageOneTitle } from "./content";
 
@@ -77,9 +76,6 @@ function StageOne({ progress, active }: StageProps) {
   const envelope = useTransform(progress, [0.22, 0.4], [1, 0]);
   const pillOpacity = useTransform(progress, [0.14, 0.26], [1, 0]);
   const pillY = useTransform(progress, [0, 0.28], [0, -20]);
-  const logoOpacity = useTransform(progress, [0.16, 0.3], [1, 0]);
-  const logoY = useTransform(progress, [0, 0.3], [0, -52]);
-  const logoScale = useTransform(progress, [0, 0.3], [1, 0.86]);
   const brandOpacity = useTransform(progress, [0.16, 0.3], [1, 0]);
   const brandY = useTransform(progress, [0, 0.3], [0, -34]);
   const titleOpacity = useTransform(progress, [0.24, 0.4], [1, 0]);
@@ -115,14 +111,6 @@ function StageOne({ progress, active }: StageProps) {
                 );
               })}
             </span>
-          </Rise>
-        </m.div>
-        <m.div
-          className="hero-logo"
-          style={{ opacity: logoOpacity, y: logoY, scale: logoScale }}
-        >
-          <Rise delay={0} y={16}>
-            <Logo large />
           </Rise>
         </m.div>
         <m.div
@@ -300,7 +288,6 @@ function StageTwo({ progress, active }: StageProps) {
     damping: 22,
     mass: 0.35,
   });
-  const logoOpacity = useTransform(progress, [0.23, 0.34], [0, 1]);
   const textY = useTransform(
     progress,
     [0.22, 0.4, 0.58, 0.76],
@@ -359,9 +346,6 @@ function StageTwo({ progress, active }: StageProps) {
         </m.div>
       </m.div>
       <m.div className="hero-stage__copy" style={{ y: textY }}>
-        <m.div className="hero-logo" style={{ opacity: logoOpacity }}>
-          <Logo large />
-        </m.div>
         <m.h2 style={{ opacity: headingOpacity }}>
           {heroContent.care.heading}
         </m.h2>

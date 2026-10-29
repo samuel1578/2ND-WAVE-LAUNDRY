@@ -50,16 +50,32 @@ export async function writeFaqs(actor: string, items: FaqItem[]) {
   const rows=items.map((f,i)=>({key:f.id,payload:{question:f.question,answer:f.answer,glow:f.glow,enabled:f.enabled},published:true,sort_order:i+1}));
   const expected=Object.fromEntries(items.map(f=>[f.id,f.version]));
   const {data,error}=await client.rpc("website_content_replace",{p_actor:actor,p_module:"faq",p_items:rows,p_expected_versions:expected});
-  if(error)return fail(error.code==="40001"?"FAQs changed while editing. Reload and try again.":"FAQs could not be saved.");
-  return (data as RpcContentRow[]).map(r=>toFaq({id:r.id,key:r.key,module:"faq",payload:r.payload,published:r.published,sort_order:r.sort_order,version:r.version}));
+  if(error?.code==="40001") {
+    const current=await client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module","faq").order("sort_order");
+    if(!current.error && Array.isArray(current.data) && current.data.length===rows.length) {
+      const matches=current.data.every((row, i) => {
+        const wanted=rows[i];
+        return row.record_key===wanted.key
+          && row.published===wanted.published
+          && row.sort_order===wanted.sort_order
+          && JSON.stringify(row.payload)===JSON.stringify(wanted.payload);
+      });
+      if(matches) {
+        return current.data.map(r=>toFaq({id:r.record_key,key:r.record_key,module:"faq",payload:r.payload as Record<string,unknown>,published:r.published,sort_order:r.sort_order,version:r.version}));
+      }
+    }
+    return fail("FAQs changed while editing. The latest saved version is different; reload the page before trying again.");
+  }
+  if(error)return fail(error.code==="55P03"?"Another website content save is still finishing. Wait a few seconds and retry.":`FAQs could not be saved. ${error.message ?? ""}`.trim());
+  return (data as RpcContentRow[]).map(r=>toFaq({id:r.key,key:r.key,module:"faq",payload:r.payload,published:r.published,sort_order:r.sort_order,version:r.version}));
 }
 export async function writeGallery(actor:string, items:GalleryPlacement[]) {
   const client=createSupabaseAdminClient();
   const rows=items.map((g,i)=>({key:g.id,payload:{media_id:g.mediaId,alt:g.alt,caption:g.caption},published:g.visible,sort_order:i+1}));
   const expected=Object.fromEntries(items.map(g=>[g.id,g.version]));
   const {data,error}=await client.rpc("website_content_replace",{p_actor:actor,p_module:"gallery",p_items:rows,p_expected_versions:expected});
-  if(error)return fail(error.code==="40001"?"Gallery changed while editing. Reload and try again.":"Gallery could not be saved.");
-  return (data as RpcContentRow[]).map(r=>({id:r.id,mediaId:String(r.payload.media_id ?? ""),alt:String(r.payload.alt ?? ""),caption:String(r.payload.caption ?? ""),order:r.sort_order,visible:r.published,version:r.version}));
+  if(error)return fail(error.code==="40001"?"Gallery changed while editing.":`Gallery could not be saved. ${error.message ?? ""}`.trim());
+  return (data as RpcContentRow[]).map(r=>({id:r.key,mediaId:String(r.payload.media_id ?? ""),alt:String(r.payload.alt ?? ""),caption:String(r.payload.caption ?? ""),order:r.sort_order,visible:r.published,version:r.version}));
 }
 export async function writeContent(actor:string,item:ContentItem,action:"draft"|"publish"|"archive"|"unpublish") {
   const client=createSupabaseAdminClient();

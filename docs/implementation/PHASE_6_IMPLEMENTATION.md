@@ -29,4 +29,4 @@
 
 ## Known live verification boundaries
 
-A local source/test pass cannot verify the deployment's migration history, Full Admin provisioning, Storage bucket/CDN configuration, public URL availability, or a fresh-session browser reload against hosted data. These require an operator-configured disposable or approved live environment. Gallery media is intentionally not seeded from local `/images` paths because live media rows require HTTPS public URLs; upload the approved marketing assets to the dedicated Storage bucket before testing live gallery publication.
+A local source/test pass cannot verify the deployment's migration history, Full Admin provisioning, Storage bucket/CDN configuration, public URL availability, or a fresh-session browser reload against hosted data. These require an operator-configured disposable or approved live environment. The Phase 6 repair migration preserves the existing FAQ records and five approved `/images/GALLERY-*.jpg` placements when the durable tables are empty; newly uploaded gallery media should use the dedicated Storage bucket and HTTPS public URLs.

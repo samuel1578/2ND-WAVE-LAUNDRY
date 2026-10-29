@@ -64,10 +64,6 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
     db.from("public_site_settings").select("business_email,phone,whatsapp,instagram,tiktok,facebook,newsletter_visible").eq("id", true).maybeSingle(),
     db.from("booking_settings").select("accept_public_bookings,pickup_start,pickup_end,express_cutoff").eq("id", true).maybeSingle(),
   ]);
-  if ([servicesResult, branchesResult, faqResult, galleryResult, blogResult, promotionResult, siteResult, bookingResult].some(result => result.error)) {
-    return emptyLiveSnapshot;
-  }
-
   const serviceRows = servicesResult.data ?? [];
   const serviceBySlug = new Map(defaultServices.map(service => [service.slug, service]));
   const services = serviceRows.map(row => {
@@ -96,11 +92,16 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
       map: row.public_map_url || baseline?.map || "",
     };
   });
-  const faqs = (faqResult.data ?? []).map(row => ({
+  const persistedFaqs = (faqResult.data ?? []).map(row => ({
     q: String(row.payload.question ?? ""),
     a: String(row.payload.answer ?? ""),
+    enabled: row.payload.enabled !== false,
     ...(typeof row.payload.glow === "string" ? { glow: row.payload.glow } : {}),
-  }));
+  })).filter((faq) => faq.enabled && faq.q.trim() && faq.a.trim()).map(({ enabled: _enabled, ...faq }) => faq);
+  if (faqResult.error) {
+    console.error("Public FAQ content could not be loaded.", faqResult.error);
+  }
+  const faqs = faqResult.error ? defaultFaqs : persistedFaqs;
   const gallery = (galleryResult.data ?? []).flatMap(row => {
     const media = Array.isArray(row.website_gallery_media) ? row.website_gallery_media[0] : row.website_gallery_media;
     return media && !media.archived ? [{ src: media.public_url, alt: String(row.payload.alt ?? media.alt) }] : [];

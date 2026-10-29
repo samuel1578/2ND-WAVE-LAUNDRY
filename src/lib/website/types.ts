@@ -9,7 +9,7 @@ export const defaultSettings: PublicSettings = {
   start: "07:00", end: "17:00", cutoff: "11:00", version: 1,
 };
 export function toFaq(row: WebsiteRow): FaqItem {
-  return { id: row.id || row.key, question: String(row.payload.question ?? ""), answer: String(row.payload.answer ?? ""), glow: typeof row.payload.glow === "string" ? row.payload.glow : undefined, enabled: row.payload.enabled === true, order: row.sort_order, version: row.version };
+  return { id: row.id || row.key, question: String(row.payload.question ?? ""), answer: String(row.payload.answer ?? ""), glow: typeof row.payload.glow === "string" ? row.payload.glow : undefined, enabled: row.payload.enabled !== false, order: row.sort_order, version: row.version };
 }
 export function toGallery(row: WebsiteRow, media: Record<string, unknown>): GalleryPlacement & { asset?: MediaAsset } {
   const asset = media[String(row.payload.media_id ?? "")] as Record<string, unknown> | undefined;

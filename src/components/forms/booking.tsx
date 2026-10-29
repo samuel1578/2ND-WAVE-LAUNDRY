@@ -506,9 +506,6 @@ export function BookingForm({
                   <p className="field-error">{errors.services}</p>
                 )}
               </fieldset>
-              {input.services.includes("wash-ironing-fold") && (
-                <Notice>{copy("04.01", "Eligibility")}</Notice>
-              )}
               <Field id="category" label="Item category *">
                 <select
                   id="category"

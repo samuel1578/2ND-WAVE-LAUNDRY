@@ -29,7 +29,7 @@ export function FaqManager({ state }: { state?: string }) {
     fetch("/api/website?module=faq", { cache: "no-store" }).then(async r => {
       if (!r.ok) throw new Error("FAQs could not be loaded.");
       const data = await r.json();
-      const rows: FaqItem[] = (data.items ?? []).map((row: { id: string; payload: { question?: string; answer?: string; glow?: string; enabled?: boolean }; sort_order: number; version: number }) => ({ id: row.id, question: row.payload.question ?? "", answer: row.payload.answer ?? "", glow: row.payload.glow, enabled: row.payload.enabled === true, order: row.sort_order, version: row.version }));
+      const rows: FaqItem[] = (data.items ?? []).map((row: { id: string; payload: { question?: string; answer?: string; glow?: string; enabled?: boolean }; sort_order: number; version: number }) => ({ id: row.id, question: row.payload.question ?? "", answer: row.payload.answer ?? "", glow: row.payload.glow, enabled: row.payload.enabled !== false, order: row.sort_order, version: row.version }));
       if (active) { setDraft(rows); setBaseline(JSON.stringify(rows)); setLoaded(true); }
     }).catch(err => { if (active) { setError(err.message); setLoaded(true); } });
     return () => { active = false; };
@@ -121,6 +121,18 @@ export function FaqManager({ state }: { state?: string }) {
                         }
                       />
                     </Field>
+                    <TextField
+                      id={`faq-glow-${faq.id}`}
+                      label="Branded highlight text"
+                      value={faq.glow ?? ""}
+                      maxLength={300}
+                      help="Optional: enter an exact phrase from the answer to show it in the deep-blue branded style."
+                      onChange={(e) =>
+                        patch(faq.id, {
+                          glow: e.target.value || undefined,
+                        })
+                      }
+                    />
                   </>
                 )}
                 <div className={styles.cardActions}>

@@ -57,6 +57,14 @@ export const elevatedKey = readElevatedKey({
 });
 
 export const isElevatedConfigured = elevatedKey.ok;
+const ADMIN_REQUEST_TIMEOUT_MS = 15_000;
+
+function fetchWithAdminTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ADMIN_REQUEST_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: init?.signal ?? controller.signal })
+    .finally(() => clearTimeout(timer));
+}
 
 /** Safe, non-secret explanation for the operator. */
 export function elevatedConfigMessage(reason: ElevatedErrorReason): string {
@@ -89,6 +97,9 @@ export function createSupabaseAdminClient(): SupabaseClient {
   if (!elevatedKey.ok) throw new SupabaseElevatedConfigError(elevatedKey.reason);
   return createClient(supabaseConfig.url, elevatedKey.key, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { "X-Client-Info": "2ndwave-staff-admin" } },
+    global: {
+      headers: { "X-Client-Info": "2ndwave-staff-admin" },
+      fetch: fetchWithAdminTimeout,
+    },
   });
 }

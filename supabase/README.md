@@ -28,6 +28,8 @@ already been applied to the target project.
 | 13 | `migrations/20261019120000_email_outbox.sql` | **Sprint 2D.1** — `public.email_outbox`, six typed booking notification templates, transactional enqueue triggers on `public.bookings`, RLS with no client access. No email is sent. |
 | 14 | `migrations/20261019130000_email_delivery.sql` | **Sprint 2D.2** — outbox claim/reap/retry/dead-letter functions, per-provider-message delivery events, RLS with no client access. Requires migration 13. No email is sent by the migration. |
 | 15 | `migrations/20261019140000_email_monitoring.sql` | **Sprint 2D.3** — audited, active-Full-Admin-only retry of one dead outbox row. Requires migrations 13–14. No email is sent by the migration. |
+| 16 | `migrations/20261029172000_booking_compute_maintenance.sql` | Booking rate-limit maintenance: removes expired counters and installs a service-role-only cleanup function. Apply after `20261011140000_booking_rate_limit.sql`. |
+| 17 | `migrations/20261029174000_website_content_lock_timeout.sql` | Phase 6 write safety: bounds FAQ/gallery lock waits and returns a retryable error instead of waiting for the gateway timeout. Apply after `20261028100000_phase6_website_content.sql`. |
 
 Each new migration ends with read-only verification queries. Run the file and
 check the returned rows before moving to the next one. For migration 12,

@@ -12,7 +12,6 @@ import {
   Store,
 } from "lucide-react";
 import { BrandText } from "@/components/brand-text";
-import { Logo } from "@/components/shell";
 import { Action } from "@/components/ui";
 import { heroContent, stageImages, stageOneTitle } from "./content";
 
@@ -45,9 +44,6 @@ export function StaticHero() {
                 );
               })}
             </span>
-          </div>
-          <div className="hero-logo">
-            <Logo large />
           </div>
           <div className="hero-brandline">
             <p className="eyebrow">
@@ -104,9 +100,6 @@ export function StaticHero() {
 
       <div className="hero-static__stage hero-stage hero-stage--two">
         <div className="hero-stage__copy">
-          <div className="hero-logo">
-            <Logo large />
-          </div>
           <p className="eyebrow">
             {heroContent.chapterLabels[1]} · {heroContent.chapters[1]}
           </p>

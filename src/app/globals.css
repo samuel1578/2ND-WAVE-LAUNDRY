@@ -673,20 +673,6 @@ strong {
   color: var(--primary);
   flex: none;
 }
-.hero-logo {
-  margin-bottom: 18px;
-}
-.hero-logo .logo.large img {
-  width: 116px;
-  height: 116px;
-}
-.hero-stage--two .hero-logo {
-  margin-bottom: 16px;
-}
-.hero-stage--two .hero-logo .logo.large img {
-  width: 96px;
-  height: 96px;
-}
 .hero-brandline .eyebrow {
   font-size: clamp(32px, 2.9vw, 37px);
   letter-spacing: 0.04em;
@@ -2757,10 +2743,6 @@ tbody tr:hover {
   .hero-stage {
     column-gap: 30px;
   }
-  .hero-stage--two .hero-logo .logo.large img {
-    width: 84px;
-    height: 84px;
-  }
   .hero-progress {
     gap: 16px;
   }
@@ -2834,20 +2816,6 @@ tbody tr:hover {
     padding: 7px 13px;
     gap: 5px 12px;
     font-size: 11px;
-  }
-  .hero-logo {
-    margin-bottom: 12px;
-  }
-  .hero-logo .logo.large img {
-    width: 92px;
-    height: 92px;
-  }
-  .hero-stage--two .hero-logo {
-    margin-bottom: 12px;
-  }
-  .hero-stage--two .hero-logo .logo.large img {
-    width: 72px;
-    height: 72px;
   }
   .hero-wa {
     margin-top: 10px;
@@ -3007,20 +2975,6 @@ tbody tr:hover {
     line-height: 1.14;
     letter-spacing: -0.04em;
     margin-bottom: 12px;
-  }
-  .hero-logo .logo.large img {
-    width: 80px;
-    height: 80px;
-  }
-  .hero-logo {
-    margin-bottom: 10px;
-  }
-  .hero-stage--two .hero-logo {
-    margin-bottom: 10px;
-  }
-  .hero-stage--two .hero-logo .logo.large img {
-    width: 64px;
-    height: 64px;
   }
   .hero-brandline .eyebrow {
     font-size: clamp(24px, 4.6vw, 32px);
