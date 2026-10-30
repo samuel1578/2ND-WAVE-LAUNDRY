@@ -72,7 +72,10 @@ export function Gallery() {
               onClick={() => setIndex(i)}
               aria-label={`Open image: ${photo.alt}`}
             >
-              <Picture photo={photo} />
+              <Picture
+                photo={photo}
+                sizes="(max-width: 700px) 82vw, (max-width: 1100px) 40vw, 360px"
+              />
             </button>
           ))}
         </CascadeSlider>
@@ -88,7 +91,7 @@ export function Gallery() {
         {active && (
           <>
             <div className="lightbox-image">
-              <Image src={active.src} fill alt={active.alt} sizes="90vw" />
+              <Image src={active.src} fill alt={active.alt} sizes="90vw" quality={85} />
             </div>
             <p>{active.alt}</p>
             <div className="split">

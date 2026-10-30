@@ -75,14 +75,17 @@ export function HomePage({ website }: { website?: PublicWebsiteSnapshot } = {}) 
         </Section>
         <PromotionPopup promotions={website?.promotions} />
         <Section title="Find your nearest branch">
-        <BranchCards branches={website?.branches} />
+          <BranchCards branches={website?.branches} />
         </Section>
         <Section title="A closer look">
           <CascadeSlider label="Gallery highlights">
             {gallery.map((photo, i) => (
               <Reveal key={photo.src} delay={i * 0.06}>
                 <Link href="/gallery" className="tile">
-                  <Picture photo={photo} />
+                  <Picture
+                    photo={photo}
+                    sizes="(max-width: 700px) 82vw, (max-width: 1100px) 40vw, 360px"
+                  />
                   <div className="tile-caption">
                     <span className="eyebrow">
                       {String(i + 1).padStart(2, "0")}

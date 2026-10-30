@@ -67,6 +67,8 @@ export function Picture({
           sizes ?? "(max-width: 700px) 100vw, (max-width: 1100px) 50vw, 600px"
         }
         priority={priority}
+        loading={priority ? undefined : "lazy"}
+        quality={82}
         unoptimized={photo.src.startsWith("blob:")}
         style={position ? { objectPosition: position } : undefined}
       />

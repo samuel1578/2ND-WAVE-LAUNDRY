@@ -2754,11 +2754,22 @@ tbody tr:hover {
   padding: 10px;
   border-radius: 12px;
   text-align: left;
+  cursor: pointer;
+}
+.media-picker-item[aria-pressed="true"] {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary);
+  background: var(--tint);
 }
 .media-picker-item span {
   display: block;
   padding: 10px;
   font-size: 12px;
+}
+.media-picker-help {
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-size: 14px;
 }
 .route-grid {
   display: grid;

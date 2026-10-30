@@ -34,7 +34,7 @@ export type Lead = {
   kind: "general" | "commercial" | "review" | "newsletter";
   fields: Record<string, string>;
   status:
-    "new" | "contacted" | "closed" | "approved" | "rejected" | "withdrawn";
+  "new" | "contacted" | "closed" | "approved" | "rejected" | "withdrawn";
   createdAt: string;
   notes: string[];
 };
@@ -70,6 +70,7 @@ export type MediaAsset = {
   permission: string;
   uses: string[];
   archived: boolean;
+  version?: number;
 };
 /** Admin Website Content — fixed branch records (demo, admin-only namespace). */
 export type LocationRecord = {
@@ -131,6 +132,7 @@ export type PromotionRecord = {
   imageUrl?: string;
   imageAlt?: string;
 };
+export type PublishedPromotionRecord = PromotionRecord & { published: boolean };
 /** Admin-only demo records for Website Content (isolated from public pages). */
 export type WebsiteContentState = {
   locations: LocationRecord[];

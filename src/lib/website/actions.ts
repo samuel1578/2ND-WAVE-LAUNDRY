@@ -4,10 +4,30 @@ import { getCurrentAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
 import type { ContentItem, FaqItem, GalleryPlacement, LocationRecord, PromotionRecord, Settings } from "@/lib/contracts";
 import { checkRequestOrigin } from "@/lib/security/request-origin";
-import { writeFaqs, writeGallery, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia } from "./repository";
+import { writeFaqs, writeGallery, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia, deleteMedia as deleteMediaRecord } from "./repository";
 import type { MediaAsset } from "@/lib/contracts";
+import { supabaseConfig } from "@/lib/supabase/config";
 import { assertWebsiteWritesEnabled, consumeWebsiteWrite } from "./write-guard";
 import { revalidatePublicPaths, writeAndRevalidate } from "./revalidation";
+
+function isMarketingAssetUrl(src: string, prefix: string): boolean {
+  try {
+    const url = new URL(src);
+    const base = new URL(prefix);
+    if (
+      url.origin !== base.origin ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !url.pathname.startsWith(base.pathname)
+    ) return false;
+    const path = decodeURIComponent(url.pathname.slice(base.pathname.length));
+    return !!path && path.split("/").every((part) => part && part !== "." && part !== ".." && !part.includes("\\"));
+  } catch {
+    return false;
+  }
+}
 
 async function actor(permission: "content.manage" | "media.manage" | "settings.manage") {
   const admin = await getCurrentAdmin();
@@ -28,14 +48,39 @@ export async function saveLiveFaqs(items: FaqItem[]) {
     ["/", "/faq"],
   );
 }
-export async function saveLiveGallery(items: GalleryPlacement[]) {
+export async function saveLiveGallery(
+  items: GalleryPlacement[],
+  previousVersions: Record<string, number> = {},
+) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
   if (!Array.isArray(items) || items.length > 200) throw new Error("Gallery is too large.");
+  if (!previousVersions || typeof previousVersions !== "object" || Array.isArray(previousVersions) || Object.keys(previousVersions).length > 400) {
+    throw new Error("Gallery version data is invalid. Reload and try again.");
+  }
+  const safeItems = items.map((item) => ({
+    id: item.id,
+    mediaId: item.mediaId,
+    alt: item.alt,
+    caption: item.caption,
+    order: item.order,
+    visible: item.visible,
+    version: item.version,
+  }));
+  const safePreviousVersions: Record<string, number> = {};
+  for (const [id, version] of Object.entries(previousVersions)) {
+    if (!id || !Number.isSafeInteger(version) || version < 0) {
+      throw new Error("Gallery version data is invalid. Reload and try again.");
+    }
+    safePreviousVersions[id] = version;
+  }
   consumeWebsiteWrite(admin.userId);
-  return writeGallery(admin.userId, items);
+  return writeAndRevalidate(
+    () => writeGallery(admin.userId, safeItems, safePreviousVersions),
+    ["/", "/gallery"],
+  );
 }
-export async function saveLiveContent(item: ContentItem, action: "draft"|"publish"|"archive"|"unpublish") {
+export async function saveLiveContent(item: ContentItem, action: "draft" | "publish" | "archive" | "unpublish") {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
   if (!item || item.module !== "Blog" || item.body.length > 50000) throw new Error("Article is invalid.");
@@ -51,34 +96,64 @@ export async function saveLivePromotion(item: PromotionRecord) {
   consumeWebsiteWrite(admin.userId);
   return writeAndRevalidate(
     () => writePromotion(admin.userId, item),
-    ["/"],
+    ["/", "/about", "/preview"],
   );
 }
 export async function saveLiveSettings(settings: Settings) {
   await assertWebsiteWritesEnabled();
-  const admin=await actor("settings.manage");
-  if (!settings || JSON.stringify(settings).length>5000) throw new Error("Settings are invalid.");
+  const admin = await actor("settings.manage");
+  if (!settings || JSON.stringify(settings).length > 5000) throw new Error("Settings are invalid.");
   consumeWebsiteWrite(admin.userId);
-  return writeSettings(admin.userId,settings);
+  return writeSettings(admin.userId, settings);
 }
 export async function saveLiveLocation(location: LocationRecord) {
   await assertWebsiteWritesEnabled();
-  const admin=await actor("content.manage");
-  if (!location || location.hours.length>14) throw new Error("Branch is invalid.");
+  const admin = await actor("content.manage");
+  if (!location || location.hours.length > 14) throw new Error("Branch is invalid.");
   consumeWebsiteWrite(admin.userId);
-  return writeLocation(admin.userId,location);
+  return writeLocation(admin.userId, location);
 }
 export async function saveLiveMedia(asset: MediaAsset, expectedVersion?: number) {
   await assertWebsiteWritesEnabled();
-  const admin=await actor("media.manage");
-  if(!asset || !asset.src.startsWith("https://") || asset.alt.length>1000 || asset.name.length>255) throw new Error("Marketing media is invalid.");
+  const admin = await actor("media.manage");
+  const prefix = supabaseConfig.ok
+    ? new URL("/storage/v1/object/public/marketing-assets/", supabaseConfig.url).toString()
+    : "";
+  if (
+    !asset ||
+    typeof asset.src !== "string" ||
+    !prefix ||
+    !isMarketingAssetUrl(asset.src, prefix) ||
+    typeof asset.alt !== "string" ||
+    asset.alt.length > 1000 ||
+    typeof asset.name !== "string" ||
+    asset.name.length > 255
+  ) {
+    throw new Error("Marketing media must use an image in the marketing-assets storage bucket.");
+  }
   consumeWebsiteWrite(admin.userId);
-  return writeMedia(admin.userId,asset,expectedVersion);
+  return writeAndRevalidate(
+    () => writeMedia(admin.userId, asset, expectedVersion),
+    ["/", "/gallery"],
+  );
+}
+
+export async function deleteLiveMedia(id: string, uses: string[] = []) {
+  await assertWebsiteWritesEnabled();
+  const admin = await actor("media.manage");
+  if (typeof id !== "string" || !id || !Array.isArray(uses)) {
+    throw new Error("Marketing media selection is invalid.");
+  }
+  consumeWebsiteWrite(admin.userId);
+  return writeAndRevalidate(
+    () => deleteMediaRecord(id, uses),
+    ["/", "/gallery"],
+  );
 }
 export async function saveLiveService(item: ContentItem) {
   await assertWebsiteWritesEnabled();
-  const admin=await actor("content.manage");
-  if (!item || item.module!=="Services" || item.body.length>50000) throw new Error("Service is invalid.");
+  const admin = await actor("content.manage");
+  if (!item || item.module !== "Services" || item.body.length > 50000) throw new Error("Service is invalid.");
   consumeWebsiteWrite(admin.userId);
-  return writeService(admin.userId,item);
+  return writeService(admin.userId, item);
 }

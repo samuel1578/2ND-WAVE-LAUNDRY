@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { copy, demoMode, bookingHref } from "@/lib/content";
 import { useDemoStore } from "@/lib/mock-store";
-import { promoActive } from "@/lib/rules";
+import { isPublicPromotionActive, promoActive } from "@/lib/rules";
 import {
   demoPublicReviews,
   projectPublicReviewPayloads,
@@ -13,7 +13,11 @@ import { Action, Empty, Picture, Section, Skeleton } from "./ui";
 import { BrandText } from "./brand-text";
 import { PublicForm } from "./forms/public-form";
 import { Dialog } from "./dialog";
-import type { ContentItem, PromotionRecord } from "@/lib/contracts";
+import type {
+  ContentItem,
+  PromotionRecord,
+  PublishedPromotionRecord,
+} from "@/lib/contracts";
 import { BrandedText } from "@/lib/brand-highlight";
 export function PublishedBlog({ posts: snapshotPosts }: { posts?: ContentItem[] } = {}) {
   const store = useDemoStore();
@@ -199,7 +203,7 @@ export function Newsletter({ interestEnabled = false }: { interestEnabled?: bool
     </Section>
   );
 }
-export function Promotion({ force = false, promotions, previewPromotion }: { force?: boolean; promotions?: PromotionRecord[]; previewPromotion?: PromotionRecord }) {
+export function Promotion({ force = false, promotions, previewPromotion }: { force?: boolean; promotions?: PublishedPromotionRecord[]; previewPromotion?: PromotionRecord }) {
   const store = useDemoStore();
   const [open, setOpen] = useState(false);
   const approved = demoMode ? store.content.find(
@@ -209,7 +213,7 @@ export function Promotion({ force = false, promotions, previewPromotion }: { for
       c.extra.enabled === "yes" &&
       c.extra.yearConfirmed === "yes" &&
       promoActive(true, c.extra.start, c.extra.end),
-  ) : promotions?.find(p => p.enabled && p.yearConfirmed && p.status === "active");
+  ) : promotions?.find((promotion) => isPublicPromotionActive(promotion));
   const livePromotion = approved && "internalTitle" in approved ? approved : undefined;
   const selected = previewPromotion ?? livePromotion;
   if (!force && !selected) return null;
@@ -272,12 +276,12 @@ export function Promotion({ force = false, promotions, previewPromotion }: { for
     </section>
   );
 }
-function activePromotions(promotions?: PromotionRecord[]) {
+function activePromotions(promotions?: PublishedPromotionRecord[], now = new Date()) {
   return (promotions ?? [])
-    .filter((promotion) => promotion.enabled && promotion.yearConfirmed && promotion.status === "active")
+    .filter((promotion) => isPublicPromotionActive(promotion, now))
     .sort((a, b) => a.priority - b.priority);
 }
-export function PromotionPopup({ promotions }: { promotions?: PromotionRecord[] }) {
+export function PromotionPopup({ promotions }: { promotions?: PublishedPromotionRecord[] }) {
   const active = activePromotions(promotions);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -297,7 +301,7 @@ export function PromotionPopup({ promotions }: { promotions?: PromotionRecord[] 
     </Dialog>
   );
 }
-export function PromotionCarousel({ promotions }: { promotions?: PromotionRecord[] }) {
+export function PromotionCarousel({ promotions }: { promotions?: PublishedPromotionRecord[] }) {
   const active = activePromotions(promotions);
   const [index, setIndex] = useState(0);
   if (active.length === 0) return null;

@@ -82,6 +82,7 @@ export function StaticHero() {
                   width={1536}
                   height={1024}
                   sizes={SHOT_SIZES}
+                  quality={82}
                   priority
                 />
               </div>
@@ -143,6 +144,7 @@ export function StaticHero() {
                   width={1536}
                   height={1024}
                   sizes={SHOT_SIZES}
+                  quality={82}
                 />
               </div>
             </div>
@@ -200,6 +202,7 @@ export function StaticHero() {
                   width={1536}
                   height={1024}
                   sizes={SHOT_SIZES}
+                  quality={82}
                 />
               </div>
             </div>

@@ -93,15 +93,17 @@ export function Notice({
 }
 export function Submit({
   busy,
+  disabled = false,
   label = "Save Changes",
   busyLabel = "Saving…",
 }: {
   busy: boolean;
+  disabled?: boolean;
   label?: string;
   busyLabel?: string;
 }) {
   return (
-    <button type="submit" className="button" disabled={busy}>
+    <button type="submit" className="button" disabled={busy || disabled}>
       {busy && <LoaderCircle size={18} className="spin" />}
       {busy ? busyLabel : label}
     </button>

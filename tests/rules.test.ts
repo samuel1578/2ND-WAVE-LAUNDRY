@@ -9,6 +9,8 @@ import {
   validPhone,
   validMap,
   defaultPickupDate,
+  effectivePromotionStatus,
+  isPublicPromotionActive,
   promoActive,
 } from "../src/lib/rules";
 const day = "2026-10-05";
@@ -110,6 +112,105 @@ test("promotion expires at exclusive boundary", () => {
       "2026-10-31",
       new Date("2026-10-31T00:00:00Z"),
     ),
+    false,
+  );
+});
+
+const promotionNow = new Date("2026-10-30T12:00:00Z");
+const promotionWindow = (
+  overrides: Partial<{ status: string; start: string; end: string }> = {},
+) => ({
+  status: "scheduled",
+  start: "2026-10-30T11:00",
+  end: "2026-10-30T13:00",
+  ...overrides,
+});
+test("effective promotion status honors stored terminal states and date windows", () => {
+  assert.equal(
+    effectivePromotionStatus(promotionWindow({ status: "draft" }), promotionNow),
+    "draft",
+  );
+  assert.equal(
+    effectivePromotionStatus(promotionWindow({ status: "paused" }), promotionNow),
+    "paused",
+  );
+  assert.equal(
+    effectivePromotionStatus(promotionWindow({ status: "ended" }), promotionNow),
+    "ended",
+  );
+  assert.equal(
+    effectivePromotionStatus(
+      promotionWindow({ start: "2026-10-30T13:00", end: "2026-10-30T14:00" }),
+      promotionNow,
+    ),
+    "scheduled",
+  );
+  assert.equal(
+    effectivePromotionStatus(promotionWindow(), promotionNow),
+    "active",
+  );
+  assert.equal(
+    effectivePromotionStatus(
+      promotionWindow({ status: "active", end: "2026-10-30T11:00" }),
+      promotionNow,
+    ),
+    "ended",
+  );
+});
+test("effective promotion status treats empty bounds as open and both boundaries as inclusive", () => {
+  assert.equal(
+    effectivePromotionStatus(promotionWindow({ start: "", end: "2026-10-30T13:00" }), promotionNow),
+    "active",
+  );
+  assert.equal(
+    effectivePromotionStatus(promotionWindow({ start: "2026-10-30T11:00", end: "" }), promotionNow),
+    "active",
+  );
+  assert.equal(
+    effectivePromotionStatus(
+      promotionWindow({ start: "2026-10-30T12:00" }),
+      promotionNow,
+    ),
+    "active",
+  );
+  assert.equal(
+    effectivePromotionStatus(
+      promotionWindow({ end: "2026-10-30T12:00" }),
+      promotionNow,
+    ),
+    "active",
+  );
+});
+test("public promotion eligibility requires publication, enablement, confirmation, and an active window", () => {
+  const publishedScheduled = {
+    ...promotionWindow(),
+    published: true,
+    enabled: true,
+    yearConfirmed: true,
+  };
+  assert.equal(isPublicPromotionActive(publishedScheduled, promotionNow), true);
+  assert.equal(
+    isPublicPromotionActive({ ...publishedScheduled, start: "2026-10-30T13:00" }, promotionNow),
+    false,
+  );
+  assert.equal(
+    isPublicPromotionActive({ ...publishedScheduled, end: "2026-10-30T11:00" }, promotionNow),
+    false,
+  );
+  assert.equal(
+    isPublicPromotionActive({ ...publishedScheduled, status: "paused" }, promotionNow),
+    false,
+  );
+  assert.equal(
+    isPublicPromotionActive({ ...publishedScheduled, published: false }, promotionNow),
+    false,
+  );
+  assert.equal(
+    isPublicPromotionActive({ ...publishedScheduled, enabled: false }, promotionNow),
+    false,
+  );
+  assert.equal(
+    isPublicPromotionActive({ ...publishedScheduled, yearConfirmed: false }, promotionNow),
     false,
   );
 });

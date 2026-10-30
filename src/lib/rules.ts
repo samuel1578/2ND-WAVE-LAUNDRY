@@ -181,18 +181,87 @@ export function normaliseQuestion(value: string) {
     .replace(/\s+/g, " ")
     .replace(/[?？.]+$/g, "");
 }
-/** Display state for an admin promotion, derived from status + trusted window. */
+export type EffectivePromotionStatus =
+  | "draft"
+  | "scheduled"
+  | "active"
+  | "paused"
+  | "ended";
+
+function promotionTimestamp(value: string): number | undefined {
+  if (!value) return undefined;
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(value);
+  if (!match) return undefined;
+
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = hourText === undefined ? 0 : Number(hourText);
+  const minute = minuteText === undefined ? 0 : Number(minuteText);
+  if (month < 1 || month > 12 || hour > 23 || minute > 59) return undefined;
+
+  // datetime-local promotion values are Africa/Accra local time (UTC+00:00, no DST).
+  const timestamp = new Date(0);
+  timestamp.setUTCFullYear(year, month - 1, day);
+  timestamp.setUTCHours(hour, minute, 0, 0);
+  if (
+    timestamp.getUTCFullYear() !== year ||
+    timestamp.getUTCMonth() !== month - 1 ||
+    timestamp.getUTCDate() !== day
+  ) return undefined;
+  return timestamp.getTime();
+}
+
+export function effectivePromotionStatus(
+  promotion: { status: string; start: string; end: string },
+  now = new Date(),
+): EffectivePromotionStatus {
+  if (promotion.status === "draft") return "draft";
+  if (promotion.status === "paused") return "paused";
+  if (promotion.status === "ended") return "ended";
+
+  const time = now.getTime();
+  const start = promotionTimestamp(promotion.start);
+  const end = promotionTimestamp(promotion.end);
+  if (start !== undefined && time < start) return "scheduled";
+  // End is inclusive: the promotion ends only after the end timestamp.
+  if (end !== undefined && time > end) return "ended";
+  return "active";
+}
+
+export function isPublicPromotionActive(
+  promotion: {
+    published: boolean;
+    enabled: boolean;
+    yearConfirmed: boolean;
+    status: string;
+    start: string;
+    end: string;
+  },
+  now = new Date(),
+): boolean {
+  return (
+    promotion.published &&
+    promotion.enabled &&
+    promotion.yearConfirmed &&
+    effectivePromotionStatus(promotion, now) === "active"
+  );
+}
+
+/** Display the shared effective status using the admin's title-case labels. */
 export function promotionBadge(
   record: { status: string; start: string; end: string },
   now = new Date(),
 ): "Draft" | "Scheduled" | "Active" | "Paused" | "Ended" {
-  if (record.status === "draft") return "Draft";
-  if (record.status === "paused") return "Paused";
-  if (record.status === "ended") return "Ended";
-  const time = now.getTime();
-  if (time < Date.parse(record.start)) return "Scheduled";
-  if (time >= Date.parse(record.end)) return "Ended";
-  return "Active";
+  const labels: Record<EffectivePromotionStatus, "Draft" | "Scheduled" | "Active" | "Paused" | "Ended"> = {
+    draft: "Draft",
+    scheduled: "Scheduled",
+    active: "Active",
+    paused: "Paused",
+    ended: "Ended",
+  };
+  return labels[effectivePromotionStatus(record, now)];
 }
 /** Reject executable or non-http(s) destinations such as javascript: or data:. */
 export function safeHttpUrl(value: string) {

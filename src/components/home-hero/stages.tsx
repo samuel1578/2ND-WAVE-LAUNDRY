@@ -177,6 +177,7 @@ function StageOne({ progress, active }: StageProps) {
                 width={1536}
                 height={1024}
                 sizes={SHOT_SIZES}
+                quality={82}
                 priority
               />
             </m.div>
@@ -326,6 +327,7 @@ function StageTwo({ progress, active }: StageProps) {
               width={1536}
               height={1024}
               sizes={SHOT_SIZES}
+              quality={82}
             />
           </m.div>
           <m.svg
@@ -450,6 +452,7 @@ function StageThree({ progress, active }: StageProps) {
               width={1536}
               height={1024}
               sizes={SHOT_SIZES}
+              quality={82}
             />
           </m.div>
         </div>

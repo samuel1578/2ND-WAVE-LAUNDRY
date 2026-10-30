@@ -1,6 +1,6 @@
 import "server-only";
 import { branches as defaultBranches, contact, faqs as defaultFaqs, photos, services as defaultServices, type Photo } from "@/lib/content";
-import type { ContentItem, PromotionRecord } from "@/lib/contracts";
+import type { ContentItem, PublishedPromotionRecord } from "@/lib/contracts";
 import { demoMode } from "@/lib/demo-mode";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -14,7 +14,7 @@ export type PublicWebsiteSnapshot = {
   faqs: typeof defaultFaqs;
   gallery: Photo[];
   blog: ContentItem[];
-  promotions: PromotionRecord[];
+  promotions: PublishedPromotionRecord[];
   settings: PublicSettings;
 };
 type PublicContentRow = {
@@ -118,7 +118,10 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
     version: row.version,
   });
   const blog = (blogResult.data ?? []).map(row => toContent(toRow(row as PublicContentRow)));
-  const promotions = (promotionResult.data ?? []).map(row => toPromotion({ ...toRow(row as PublicContentRow), module: "promotion" }));
+  const promotions = (promotionResult.data ?? []).map((row) => ({
+    ...toPromotion({ ...toRow(row as PublicContentRow), module: "promotion" }),
+    published: row.published,
+  }));
   return {
     services: services.length ? services : defaultServices,
     branches: branches.length ? branches : defaultBranches,

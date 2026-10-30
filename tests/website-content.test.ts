@@ -36,7 +36,7 @@ import {
 } from "../src/components/admin/content/content-config";
 import { adminNav, branches, publicNav, services } from "../src/lib/content";
 import type { FaqItem } from "../src/lib/contracts";
-import { toPromotion } from "../src/lib/website/types";
+import { toGallery, toPromotion } from "../src/lib/website/types";
 import {
   detectPromotionImageMime,
   promotionImageError,
@@ -164,6 +164,22 @@ test("branch saves commit once and reject stale versions", async () => {
     saveLocation({ ...saved, name: "" }),
     /branch name/,
   );
+});
+test("gallery mapper uses record_key as the placement identity", () => {
+  const placement = toGallery(
+    {
+      id: "table-row-uuid",
+      key: "gallery-record-key",
+      module: "gallery",
+      payload: { media_id: "media-uuid", alt: "Image", caption: "Caption" },
+      published: true,
+      sort_order: 1,
+      version: 7,
+    },
+    {},
+  );
+  assert.equal(placement.id, "gallery-record-key");
+  assert.equal(placement.version, 7);
 });
 test("gallery placements reference available media", () => {
   const rows = getGallery();

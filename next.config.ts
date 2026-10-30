@@ -1,7 +1,31 @@
 import type { NextConfig } from "next";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseHost = supabaseUrl
+  ? (() => {
+    try {
+      return new URL(supabaseUrl).hostname;
+    } catch {
+      return "";
+    }
+  })()
+  : "";
 const config: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  images: {
+    remotePatterns: supabaseHost
+      ? [
+        {
+          protocol: "https",
+          hostname: supabaseHost,
+          pathname: "/storage/v1/object/public/marketing-assets/**",
+        },
+      ]
+      : [],
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 31536000,
+    qualities: [80, 82, 85],
+  },
   async headers() {
     return [
       {
