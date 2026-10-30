@@ -14,7 +14,7 @@ import {
 import { Reveal } from "./motion";
 import { SwipeTrack } from "./swipe-track";
 import { CascadeSlider } from "./cascade-slider";
-import { Promotion, Newsletter } from "./published-content";
+import { PromotionPopup, Newsletter } from "./published-content";
 import { HomeHero } from "./home-hero";
 import { readNewsletterInterestConfig } from "@/lib/newsletter/config";
 
@@ -73,7 +73,7 @@ export function HomePage({ website }: { website?: PublicWebsiteSnapshot } = {}) 
             See How It Works
           </Action>
         </Section>
-        <Promotion promotions={website?.promotions} />
+        <PromotionPopup promotions={website?.promotions} />
         <Section title="Find your nearest branch">
         <BranchCards branches={website?.branches} />
         </Section>

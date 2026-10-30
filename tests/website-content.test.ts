@@ -24,6 +24,7 @@ import {
   galleryError,
   locationError,
   promotionBadge,
+  promotionCtaError,
   promotionError,
   safeHttpUrl,
   telHref,
@@ -35,6 +36,14 @@ import {
 } from "../src/components/admin/content/content-config";
 import { adminNav, branches, publicNav, services } from "../src/lib/content";
 import type { FaqItem } from "../src/lib/contracts";
+import { toPromotion } from "../src/lib/website/types";
+import {
+  detectPromotionImageMime,
+  promotionImageError,
+  promotionImageUploadError,
+} from "../src/lib/website/promotion-image";
+import { promotionLinkSelection } from "../src/lib/website/promotion-form";
+import { splitBranded } from "../src/lib/brand-highlight";
 import { readFileSync } from "node:fs";
 import { writeAndRevalidate } from "../src/lib/website/revalidation";
 test("six modules, code-managed routes and review relocation", () => {
@@ -364,6 +373,122 @@ test("promotion validation guards dates, links and confirmation", () => {
   assert.equal(safeHttpUrl("javascript:alert(1)"), false);
   assert.equal(safeHttpUrl("https://example.com/offer"), true);
   assert.equal(telHref("059 522 4280"), "tel:+233595224280");
+});
+test("promotions preserve optional images while legacy records remain unchanged", () => {
+  const legacy = toPromotion({
+    id: "promotion-legacy",
+    key: "promotion-legacy",
+    module: "promotion",
+    payload: { heading: "Legacy offer" },
+    published: true,
+    sort_order: 1,
+    version: 1,
+  });
+  assert.equal(legacy.imageUrl, undefined);
+  assert.equal(legacy.imageAlt, undefined);
+  const live = toPromotion({
+    id: "promotion-image",
+    key: "promotion-image",
+    module: "promotion",
+    payload: {
+      heading: "Image offer",
+      imageUrl: "https://project.supabase.co/storage/v1/object/public/marketing-assets/promotions/offer.jpg",
+      imageAlt: "Folded laundry",
+    },
+    published: true,
+    sort_order: 1,
+    version: 2,
+  });
+  assert.equal(live.imageAlt, "Folded laundry");
+  assert.match(readFileSync("src/components/published-content.tsx", "utf8"), /promotion-image/);
+});
+test("promotion image save validation requires the project asset URL and alt text", () => {
+  const base = {
+    imageUrl: "https://project.supabase.co/storage/v1/object/public/marketing-assets/promotions/offer.jpg",
+    imageAlt: "Folded laundry",
+  };
+  assert.match(
+    promotionImageError({ ...base, imageUrl: "https://example.com/offer.jpg" }, "https://project.supabase.co"),
+    /marketing-assets/,
+  );
+  assert.match(
+    promotionImageError({ ...base, imageAlt: " " }, "https://project.supabase.co"),
+    /alt text/,
+  );
+  assert.equal(promotionImageError(base, "https://project.supabase.co"), "");
+});
+test("promotion upload validation checks bytes, MIME and size", () => {
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0x00]);
+  assert.equal(detectPromotionImageMime(jpeg), "image/jpeg");
+  assert.match(
+    promotionImageUploadError(
+      { name: "offer.jpeg", type: "image/jpeg", size: 4 },
+      detectPromotionImageMime(jpeg),
+    ),
+    /^$/,
+  );
+  assert.match(
+    promotionImageUploadError(
+      { name: "offer.jpg", type: "image/jpeg", size: 4 },
+      null,
+    ),
+    /valid JPEG/,
+  );
+  assert.match(
+    promotionImageUploadError(
+      { name: "offer.png", type: "image/jpeg", size: 4 },
+      detectPromotionImageMime(jpeg),
+    ),
+    /extension/,
+  );
+  assert.match(
+    promotionImageUploadError(
+      { name: "offer.jpg", type: "image/jpeg", size: 2 * 1024 * 1024 + 1 },
+      detectPromotionImageMime(jpeg),
+    ),
+    /2 MB/,
+  );
+});
+test("promotion form preserves legacy placement and maps supported links", () => {
+  const legacy = toPromotion({
+    id: "legacy-top",
+    key: "legacy-top",
+    module: "promotion",
+    payload: { placement: "TOP", heading: "Legacy" },
+    published: false,
+    sort_order: 1,
+    version: 1,
+  });
+  assert.equal(legacy.placement, "TOP");
+  assert.equal(promotionLinkSelection("/book"), "/book");
+  assert.equal(promotionLinkSelection("https://example.com/offer"), "custom");
+  assert.equal(promotionLinkSelection(""), "");
+});
+test("promotion buttons may be empty but must be complete when used", () => {
+  assert.equal(promotionCtaError({ ctaLabel: "", ctaHref: "" }), "");
+  assert.match(
+    promotionCtaError({ ctaLabel: "Book now", ctaHref: "" }),
+    /both a button label and a link/,
+  );
+  assert.match(
+    promotionCtaError({ ctaLabel: "", ctaHref: "/book" }),
+    /both a button label and a link/,
+  );
+  assert.equal(
+    promotionCtaError({ ctaLabel: "Book now", ctaHref: "/book" }),
+    "",
+  );
+});
+test("FAQ branded button tokens render as branded text and preserve legacy glow", () => {
+  assert.deepEqual(splitBranded("Start [[brand]]today[[/brand]]"), [
+    { text: "Start ", match: false },
+    { text: "today", match: true },
+  ]);
+  assert.ok(
+    splitBranded("Contact 2nd Wave Laundry", "Contact").some(
+      (part) => part.text === "Contact" && part.match,
+    ),
+  );
 });
 test("promotion badge derives display state from status and window", () => {
   assert.equal(

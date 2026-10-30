@@ -44,6 +44,14 @@ export function GalleryManager({ state }: { state?: string }) {
     );
     setSuccess("");
   }
+  function move(index: number, delta: number) {
+    const target = index + delta;
+    if (target < 0 || target >= draft.length) return;
+    const next = [...draft];
+    [next[index], next[target]] = [next[target], next[index]];
+    setDraft(next.map((row, i) => ({ ...row, order: i + 1 })));
+    setSuccess("");
+  }
   async function save(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
@@ -137,19 +145,25 @@ export function GalleryManager({ state }: { state?: string }) {
                         maxLength={300}
                         onChange={(e) => patch(i, { caption: e.target.value })}
                       />
-                      <TextField
-                        id={`gallery-order-${i}`}
-                        label="Display order"
-                        type="number"
-                        min={1}
-                        step={1}
-                        value={placement.order}
-                        onChange={(e) =>
-                          patch(i, { order: Number(e.target.value) })
-                        }
-                      />
                       <div className={styles.cardActions}>
-                        <span className="badge">
+                        <span className="badge">Position {i + 1}</span>
+                        <button
+                          type="button"
+                          className="button secondary"
+                          disabled={busy || i === 0}
+                          onClick={() => move(i, -1)}
+                        >
+                          Move earlier
+                        </button>
+                        <button
+                          type="button"
+                          className="button secondary"
+                          disabled={busy || i === draft.length - 1}
+                          onClick={() => move(i, 1)}
+                        >
+                          Move later
+                        </button>
+                        <span className={`badge status-${placement.visible ? "visible" : "hidden"}`}>
                           {placement.visible
                             ? "Shown on website"
                             : "Hidden from website"}

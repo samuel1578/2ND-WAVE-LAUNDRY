@@ -128,6 +128,8 @@ export type PromotionRecord = {
   yearConfirmed: boolean;
   status: PromotionStatus;
   version: number;
+  imageUrl?: string;
+  imageAlt?: string;
 };
 /** Admin-only demo records for Website Content (isolated from public pages). */
 export type WebsiteContentState = {

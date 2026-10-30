@@ -12,6 +12,7 @@ import { MediaPicker } from "./shared/media-picker";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
 import { saveLiveContent } from "@/lib/website/actions";
+import { slugify } from "@/lib/content";
 export function BlogManager({
   id,
   state,
@@ -60,7 +61,7 @@ export function BlogManager({
               href={`/admin/content/blog/${article.id}`}
             >
               <div>
-                <span className="badge">
+                <span className={`badge status-${article.published ? "published" : article.status === "Archived" ? "archived" : "draft"}`}>
                   {article.published
                     ? "Published"
                     : article.status === "Archived"
@@ -123,7 +124,11 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
   const showPublish = published ? dirty : true;
   const canSaveDraft = dirty || !form.id;
   function change(key: keyof ContentItem, value: unknown) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => ({
+      ...f,
+      [key]: value,
+      ...(key === "title" && !item ? { slug: slugify(String(value)) } : {}),
+    }));
     setSuccess("");
   }
   async function save(action: "draft" | "publish" | "archive" | "unpublish") {
@@ -219,7 +224,11 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
       >
         <div className="panel form-stack">
           {field("title", "Title *")}
-          {field("slug", "Slug *")}
+          {!item && (
+            <small>
+              Website link: /blog/{form.slug || "your-article-name"} (created from the title)
+            </small>
+          )}
           {field("summary", "Summary *")}
           <Field id="article-body" label="Body *">
             <textarea
@@ -231,15 +240,7 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
             />
           </Field>
           <small>Plain text with paragraph breaks. HTML is not executed.</small>
-          <TextField
-            id="article-sort"
-            label="Sort order"
-            type="number"
-            min={0}
-            step={1}
-            value={form.sort}
-            onChange={(e) => change("sort", Number(e.target.value))}
-          />
+          <small>Newer articles appear first on the blog page after publishing.</small>
         </div>
         <div className="stack">
           <section className="panel form-stack">

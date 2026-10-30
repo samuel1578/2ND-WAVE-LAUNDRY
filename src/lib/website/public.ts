@@ -54,11 +54,12 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
   }
 
   const db = createSupabaseAdminClient();
-  const [servicesResult, branchesResult, faqResult, galleryResult, blogResult, promotionResult, siteResult, bookingResult] = await Promise.all([
+  const [servicesResult, branchesResult, faqResult, galleryResult, galleryMediaResult, blogResult, promotionResult, siteResult, bookingResult] = await Promise.all([
     db.from("services").select("slug,section,title,summary,public_body,public_image,public_alt,active,bookable,sort_order").eq("active", true).order("sort_order"),
     db.from("branches").select("slug,title,label,phone,public_map_url,public_hours,sort_order,active").eq("active", true).order("sort_order"),
     db.from("website_content").select("id,record_key,payload,sort_order,version,published").eq("module", "faq").eq("published", true).order("sort_order"),
-    db.from("website_content").select("id,record_key,payload,sort_order,version,published,website_gallery_media(id,public_url,alt,archived)").eq("module", "gallery").eq("published", true).order("sort_order"),
+    db.from("website_content").select("id,record_key,payload,sort_order,version,published").eq("module", "gallery").eq("published", true).order("sort_order"),
+    db.from("website_gallery_media").select("id,public_url,alt,archived"),
     db.from("website_content").select("id,record_key,payload,sort_order,version,published").eq("module", "blog").eq("published", true).order("sort_order"),
     db.from("website_content").select("id,record_key,payload,sort_order,version,published").eq("module", "promotion").eq("published", true).order("sort_order"),
     db.from("public_site_settings").select("business_email,phone,whatsapp,instagram,tiktok,facebook,newsletter_visible").eq("id", true).maybeSingle(),
@@ -102,8 +103,9 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
     console.error("Public FAQ content could not be loaded.", faqResult.error);
   }
   const faqs = faqResult.error ? defaultFaqs : persistedFaqs;
+  const galleryMediaById = new Map((galleryMediaResult.data ?? []).map(media => [media.id, media]));
   const gallery = (galleryResult.data ?? []).flatMap(row => {
-    const media = Array.isArray(row.website_gallery_media) ? row.website_gallery_media[0] : row.website_gallery_media;
+    const media = galleryMediaById.get(String(row.payload.media_id ?? ""));
     return media && !media.archived ? [{ src: media.public_url, alt: String(row.payload.alt ?? media.alt) }] : [];
   });
   const toRow = (row: PublicContentRow) => ({

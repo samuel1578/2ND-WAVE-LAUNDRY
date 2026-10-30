@@ -66,6 +66,7 @@ import {
   PublishedBlog,
   PublishedArticle,
   PublishedReviews,
+  PromotionCarousel,
 } from "./published-content";
 export function ServicesPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
   const services = website?.services ?? defaultServices;
@@ -448,7 +449,7 @@ export function BranchPage({ slug, website }: { slug: string; website?: PublicWe
     </>
   );
 }
-export function AboutPage() {
+export function AboutPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
   return (
     <>
       <div className="detail-hero">
@@ -463,6 +464,7 @@ export function AboutPage() {
       <Section title={copy("08", "Heading")} description={copy("08", "Text")}>
         <PickupChoice />
       </Section>
+      <PromotionCarousel promotions={website?.promotions} />
       <Closing />
     </>
   );

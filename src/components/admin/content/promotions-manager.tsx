@@ -19,6 +19,9 @@ import styles from "./content.module.css";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
 import { saveLivePromotion } from "@/lib/website/actions";
+import { promotionCtaError, promotionError } from "@/lib/rules";
+import { Promotion } from "@/components/published-content";
+import { promotionLinkOptions, promotionLinkSelection } from "@/lib/website/promotion-form";
 const blankPromotion: PromotionRecord = {
   id: "",
   internalTitle: "",
@@ -81,7 +84,9 @@ export function PromotionsManager({
               key={record.id}
             >
               <div>
-                <span className="badge">{promotionBadge(record)}</span>
+                <span className={`badge status-${promotionBadge(record).toLowerCase()}`}>
+                  {promotionBadge(record)}
+                </span>
                 <h2>{record.internalTitle || "Untitled promotion"}</h2>
                 <p>{record.heading}</p>
                 <small className={styles.count}>
@@ -112,6 +117,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [preview, setPreview] = useState(false);
   const [confirm, setConfirm] = useState<"delete" | null>(null);
   const [deleted, setDeleted] = useState(false);
@@ -123,7 +129,16 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
   }
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || uploadBusy) return;
+    if (form.imageUrl && !form.imageAlt?.trim()) {
+      setError("Add alt text for the promotion image.");
+      return;
+    }
+    const ctaError = promotionCtaError(form);
+    if (ctaError) {
+      setError(ctaError);
+      return;
+    }
     setBusy(true);
     setError("");
     setSuccess("");
@@ -138,13 +153,64 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
       setBusy(false);
     }
   }
+  async function uploadImage(file: File) {
+    if (busy || uploadBusy) return;
+    setUploadBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      const response = await fetch("/api/admin/promotion-image", {
+        method: "POST",
+        body,
+      });
+      const result = (await response.json()) as { imageUrl?: string; message?: string };
+      if (!response.ok || !result.imageUrl)
+        throw new Error(result.message || "The image could not be uploaded.");
+      change({ imageUrl: result.imageUrl });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUploadBusy(false);
+    }
+  }
   async function act(action: PromotionAction) {
     if (busy || !saved) return;
     setBusy(true);
     setError("");
     setSuccess("");
     try {
-      if(!demoMode) throw new Error("Promotion lifecycle changes require a dedicated reviewed action. Save changes to preserve the current status.");
+      if (!demoMode) {
+        if (action === "delete-draft")
+          throw new Error("Live drafts cannot be deleted here. Clear the draft fields and save it as a draft.");
+        if (action === "activate" || action === "resume") {
+          const dateError = promotionError(form, "activate");
+          if (dateError) throw new Error(dateError);
+        }
+        const nextStatus: PromotionRecord["status"] =
+          action === "pause"
+            ? "paused"
+            : action === "end"
+              ? "ended"
+              : Date.parse(form.start) > Date.now()
+                ? "scheduled"
+                : "active";
+        const next = await saveLivePromotion({ ...form, status: nextStatus });
+        setConfirm(null);
+        setForm(next);
+        setBaseline(JSON.stringify(next));
+        setSuccess(
+          action === "activate"
+            ? "Promotion activated."
+            : action === "pause"
+              ? "Promotion paused."
+              : action === "resume"
+                ? "Promotion resumed."
+                : "Promotion ended.",
+        );
+        return;
+      }
       const next = await transitionPromotion(form.id, form.version, action);
       setConfirm(null);
       if (action === "delete-draft") {
@@ -178,7 +244,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
       </Empty>
     );
   const status = form.status;
-  const lifecycleReady = saved && !dirty && !busy;
+  const lifecycleReady = saved && !dirty && !busy && !uploadBusy;
   return (
     <>
       <UnsavedGuard dirty={dirty} />
@@ -199,19 +265,20 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
         <div className="panel form-stack">
           <TextField
             id="promo-internal-title"
-            label="Internal title *"
+            label="Name (only you see this) *"
             value={form.internalTitle}
             maxLength={200}
+            help="Use a short name so your team can find this offer later."
             onChange={(e) => change({ internalTitle: e.target.value })}
           />
           <TextField
             id="promo-heading"
-            label="Heading *"
+            label="Headline customers will see *"
             value={form.heading}
             maxLength={200}
             onChange={(e) => change({ heading: e.target.value })}
           />
-          <Field id="promo-body" label="Offer copy *">
+          <Field id="promo-body" label="Offer details *">
             <textarea
               id="promo-body"
               value={form.body}
@@ -220,7 +287,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
               onChange={(e) => change({ body: e.target.value })}
             />
           </Field>
-          <Field id="promo-terms" label="Terms">
+          <Field id="promo-terms" label="Terms and conditions">
             <textarea
               id="promo-terms"
               value={form.terms}
@@ -229,7 +296,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
               onChange={(e) => change({ terms: e.target.value })}
             />
           </Field>
-          <Field id="promo-exclusions" label="Exclusions">
+          <Field id="promo-exclusions" label="What’s not included">
             <textarea
               id="promo-exclusions"
               value={form.exclusions}
@@ -240,19 +307,78 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
           </Field>
           <TextField
             id="promo-cta-label"
-            label="CTA label"
+            label="Button wording"
             value={form.ctaLabel}
             maxLength={80}
+            help="Optional. If you add this, choose a button link below too."
             onChange={(e) => change({ ctaLabel: e.target.value })}
           />
+          <Field id="promo-cta-href" label="Button link">
+            <select
+              id="promo-cta-href"
+              value={promotionLinkSelection(form.ctaHref)}
+              onChange={(e) =>
+                change({ ctaHref: e.target.value === "custom" ? (form.ctaHref || "https://") : e.target.value })
+              }
+            >
+              {promotionLinkOptions.map(([href, label]) => (
+                <option key={href} value={href}>{label}</option>
+              ))}
+            </select>
+            <small>Button wording and button link must be filled in together, or both left empty.</small>
+            {promotionCtaError(form) && (
+              <small className="field-error">{promotionCtaError(form)}</small>
+            )}
+            {form.ctaHref && promotionLinkSelection(form.ctaHref) === "custom" ? (
+              <TextField
+                id="promo-cta-custom"
+                label="Website link"
+                type="url"
+                value={form.ctaHref}
+                maxLength={500}
+                help="Example: https://example.com/your-offer"
+                onChange={(e) => change({ ctaHref: e.target.value })}
+              />
+            ) : null}
+          </Field>
+          <Field id="promo-image" label="Promotion image">
+            <input
+              id="promo-image"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={busy || uploadBusy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadImage(file);
+                e.currentTarget.value = "";
+              }}
+            />
+            {uploadBusy && <small>Uploading image…</small>}
+            {form.imageUrl && (
+              <>
+                <img
+                  className={styles.promotionPreview}
+                  src={form.imageUrl}
+                  alt={form.imageAlt || "Promotion preview"}
+                />
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={busy || uploadBusy}
+                  onClick={() => change({ imageUrl: "", imageAlt: "" })}
+                >
+                  Remove image
+                </button>
+              </>
+            )}
+          </Field>
           <TextField
-            id="promo-cta-href"
-            label="CTA destination"
-            type="url"
-            value={form.ctaHref}
+            id="promo-image-alt"
+            label={form.imageUrl ? "Image alt text *" : "Image alt text"}
+            value={form.imageAlt ?? ""}
             maxLength={500}
-            help="Absolute http(s) link for the call to action."
-            onChange={(e) => change({ ctaHref: e.target.value })}
+            help="Required when an image is set."
+            onChange={(e) => change({ imageAlt: e.target.value })}
           />
         </div>
         <div className="stack">
@@ -260,32 +386,27 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
             <h2>Schedule</h2>
             <TextField
               id="promo-start"
-              label="Start date *"
+              label="Starts on *"
+              help="When customers can begin using the offer."
               type="datetime-local"
               value={form.start}
               onChange={(e) => change({ start: e.target.value })}
             />
             <TextField
               id="promo-end"
-              label="End date (exclusive) *"
+              label="Ends on *"
+              help="The offer ends at the start of this date."
               type="datetime-local"
               value={form.end}
               onChange={(e) => change({ end: e.target.value })}
             />
-            <TextField
-              id="promo-placement"
-              label="Placement"
-              value={form.placement}
-              maxLength={120}
-              help="Where the campaign is intended to appear."
-              onChange={(e) => change({ placement: e.target.value })}
-            />
-            <TextField
-              id="promo-priority"
-              label="Priority"
-              type="number"
-              step={1}
-              value={form.priority}
+              <TextField
+                id="promo-priority"
+                label="Order when several offers are active"
+                type="number"
+                step={1}
+                help="Lower numbers appear first in the About-page offer list."
+                value={form.priority}
               onChange={(e) => change({ priority: Number(e.target.value) })}
             />
             <label className="checkbox">
@@ -294,7 +415,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
                 checked={form.enabled}
                 onChange={(e) => change({ enabled: e.target.checked })}
               />
-              Enabled
+              Show this offer on the website
             </label>
             <label className="checkbox">
               <input
@@ -302,11 +423,12 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
                 checked={form.yearConfirmed}
                 onChange={(e) => change({ yearConfirmed: e.target.checked })}
               />
-              Offer dates confirmed by the client
+              I have checked the offer dates
             </label>
+            <small>Confirm the dates before activating this offer.</small>
           </section>
           <section className="panel form-stack">
-            <Submit busy={busy} label="Save Changes" />
+            <Submit busy={busy || uploadBusy} label="Save Changes" />
             <button
               type="button"
               className="button secondary"
@@ -386,7 +508,8 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
         <div className="prose">{form.body}</div>
         {form.terms && (
           <p>
-            <strong>Terms:</strong> {form.terms}
+            <strong>Terms:</strong>{" "}
+            <span className="brand-glow">{form.terms}</span>
           </p>
         )}
         {form.exclusions && (
@@ -406,6 +529,10 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
           Preview only. This campaign is not published anywhere.
         </p>
       </Dialog>
+      <section className="panel promotion-editor-preview">
+        <h2>Customer preview</h2>
+        <Promotion force previewPromotion={form} />
+      </section>
       <Dialog
         open={confirm === "delete"}
         onClose={() => setConfirm(null)}

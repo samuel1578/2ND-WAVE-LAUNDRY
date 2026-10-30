@@ -259,3 +259,13 @@ export function promotionError(
     return "Confirm the offer dates with the client before activation.";
   return "";
 }
+export function promotionCtaError(input: { ctaLabel: string; ctaHref: string }) {
+  const hasLabel = input.ctaLabel.trim().length > 0;
+  const hasHref = input.ctaHref.trim().length > 0;
+  if (hasLabel !== hasHref)
+    return "Add both a button label and a link, or leave both fields empty.";
+  const internalPath = /^\/(?!\/)[^\s]*$/.test(input.ctaHref.trim());
+  if (hasHref && !internalPath && !safeHttpUrl(input.ctaHref))
+    return "Choose a valid website link for the button.";
+  return "";
+}

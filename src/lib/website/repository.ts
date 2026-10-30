@@ -1,5 +1,8 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { supabaseConfig } from "@/lib/supabase/config";
+import { promotionImageError } from "./promotion-image";
+import { promotionCtaError } from "@/lib/rules";
 import type { ContentItem, FaqItem, GalleryPlacement, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
 import { defaultSettings, toContent, toFaq, toGallery, toPromotion, type PublicSettings } from "./types";
 
@@ -41,9 +44,16 @@ export async function readPublicContent(module: string) {
 }
 export async function readPublicGallery() {
   const client = createSupabaseAdminClient();
-  const { data, error } = await client.from("website_content").select("id,record_key,payload,published,sort_order,version,website_gallery_media(id,public_url,name,alt,caption,source,permission,archived)").eq("module", "gallery").eq("published", true).order("sort_order", { ascending: true });
-  if (error || !Array.isArray(data)) return fail();
-  return (data as unknown as GalleryRow[]).map(r => toGallery({ id: r.id, key: r.record_key, module: "gallery", payload: r.payload, published: r.published, sort_order: r.sort_order, version: r.version }, r.website_gallery_media && !r.website_gallery_media.archived ? { [r.website_gallery_media.id]: r.website_gallery_media } : {})).filter(row => row.visible && row.asset);
+  const [galleryResult, mediaResult] = await Promise.all([
+    client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "gallery").eq("published", true).order("sort_order", { ascending: true }),
+    client.from("website_gallery_media").select("id,public_url,name,alt,caption,source,permission,archived"),
+  ]);
+  if (galleryResult.error || mediaResult.error || !Array.isArray(galleryResult.data)) return fail();
+  const mediaById = Object.fromEntries((mediaResult.data ?? []).map(media => [media.id, media]));
+  return galleryResult.data.map(r => {
+    const media = mediaById[String(r.payload.media_id ?? "")];
+    return toGallery({ id: r.id, key: r.record_key, module: "gallery", payload: r.payload, published: r.published, sort_order: r.sort_order, version: r.version }, media ? { [media.id]: media } : {});
+  }).filter(row => row.visible && row.asset && !row.asset.archived);
 }
 export async function readAdminContent() {
   const client = createSupabaseAdminClient();
@@ -104,6 +114,10 @@ export async function writeContent(actor:string,item:ContentItem,action:"draft"|
   return toContent({id:data.id,key:data.key,module:"blog",payload:data.payload,published:data.published,sort_order:data.sort_order,version:data.version});
 }
 export async function writePromotion(actor:string,item:PromotionRecord) {
+  const ctaError = promotionCtaError(item);
+  if (ctaError) throw new Error(ctaError);
+  const imageError = promotionImageError(item, supabaseConfig.ok ? supabaseConfig.url : "");
+  if (imageError) throw new Error(imageError);
   const client=createSupabaseAdminClient();
   const payload={...item};
   const isPublished=item.enabled && item.yearConfirmed && ["active","scheduled"].includes(item.status);

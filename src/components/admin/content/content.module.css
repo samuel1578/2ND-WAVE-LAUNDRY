@@ -79,3 +79,26 @@
     grid-template-columns: 1fr;
   }
 }
+.promotionPreview {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: var(--surface);
+  border-radius: 10px;
+}
+.faqPreview {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--tint);
+}
+.faqPreview p {
+  margin: 8px 0 0;
+}
+.brandingGuide {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 14px;
+}

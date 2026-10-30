@@ -34,10 +34,14 @@ export async function GET(request:Request) {
       return NextResponse.json({items:(data??[]).map(r=>({id:r.id,slug:r.slug,section:"",name:r.title,label:r.label,phone:r.phone,map:r.public_map_url,hours:Array.isArray(r.public_hours)&&r.public_hours.length?r.public_hours:[],order:r.sort_order,version:r.version}))},{headers:NO_STORE});
     }
     if(contentModule==="gallery") {
-      const {data,error}=await db.from("website_content").select("id,record_key,payload,published,sort_order,version,website_gallery_media(id,public_url,name,alt,caption,source,permission,archived)").eq("module","gallery").order("sort_order");
-      if(error)throw Error();
-      return NextResponse.json({items:(data??[]).map(row=>{
-        const media=Array.isArray(row.website_gallery_media) ? row.website_gallery_media[0] : row.website_gallery_media;
+      const [galleryResult, mediaResult] = await Promise.all([
+        db.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module","gallery").order("sort_order"),
+        db.from("website_gallery_media").select("id,public_url,name,alt,caption,source,permission,archived"),
+      ]);
+      if(galleryResult.error || mediaResult.error)throw Error();
+      const mediaById = Object.fromEntries((mediaResult.data ?? []).map(media => [media.id, media]));
+      return NextResponse.json({items:(galleryResult.data??[]).map(row=>{
+        const media = mediaById[String(row.payload.media_id ?? "")];
         return toGallery({id:row.id,key:row.record_key,module:"gallery",payload:row.payload,published:row.published,sort_order:row.sort_order,version:row.version},media ? {[media.id]:media} : {});
       })},{headers:NO_STORE});
     }

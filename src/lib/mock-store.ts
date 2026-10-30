@@ -7,8 +7,8 @@ import {
   galleryError,
   locationError,
   promoActive,
+  promotionCtaError,
   promotionError,
-  safeHttpUrl,
   schedulingError,
   transitions,
   type Arrangement,
@@ -560,10 +560,10 @@ export async function savePromotion(next: PromotionRecord) {
   await operation();
   const dateError = promotionError(next);
   if (dateError) throw Error(dateError);
+  const ctaError = promotionCtaError(next);
+  if (ctaError) throw Error(ctaError);
   if (!next.internalTitle.trim())
     throw Error("Enter an internal title for this promotion.");
-  if (!safeHttpUrl(next.ctaHref))
-    throw Error("Use a safe http(s) link for the CTA destination.");
   const previous = state.websiteContent.promotions.find(
     (p) => p.id === next.id,
   );

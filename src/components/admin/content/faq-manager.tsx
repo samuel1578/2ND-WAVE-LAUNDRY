@@ -1,5 +1,5 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Empty } from "@/components/ui";
 import { Field, Submit, TextField } from "@/components/forms/controls";
 import { Dialog } from "@/components/dialog";
@@ -11,6 +11,7 @@ import { useEffect } from "react";
 import type { FaqItem } from "@/lib/contracts";
 import { ModuleShell } from "./shared/module-shell";
 import styles from "./content.module.css";
+import { BrandedText } from "@/lib/brand-highlight";
 export function FaqManager({ state }: { state?: string }) {
   useDemoStore();
   const [draft, setDraft] = useState<FaqItem[]>(() => structuredClone(state === "empty" ? [] : getFaqs()));
@@ -23,6 +24,8 @@ export function FaqManager({ state }: { state?: string }) {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState("");
   const [confirmDelete, setConfirmDelete] = useState("");
+  const [selectedAnswerId, setSelectedAnswerId] = useState("");
+  const answerRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   useEffect(() => {
     if (demoMode) return;
     let active = true;
@@ -44,6 +47,21 @@ export function FaqManager({ state }: { state?: string }) {
       rows.map((row) => (row.id === id ? { ...row, ...changes } : row)),
     );
     setSuccess("");
+  }
+  function applyBrandStyle(id: string) {
+    const textarea = answerRefs.current[id];
+    if (!textarea || textarea.selectionStart === textarea.selectionEnd) {
+      setError("Select the words to style first.");
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const value = textarea.value;
+    patch(id, {
+      answer: `${value.slice(0, start)}[[brand]]${value.slice(start, end)}[[/brand]]${value.slice(end)}`,
+    });
+    setSelectedAnswerId("");
+    setError("");
   }
   function move(index: number, delta: number) {
     const next = [...draft];
@@ -93,7 +111,7 @@ export function FaqManager({ state }: { state?: string }) {
             {draft.map((faq, i) => (
               <article className="panel form-stack" key={faq.id}>
                 <div>
-                  <span className="badge">
+                  <span className={`badge status-${faq.enabled ? "enabled" : "disabled"}`}>
                     {faq.enabled ? "Enabled" : "Disabled"}
                   </span>
                   <h2>{faq.question || "Untitled question"}</h2>
@@ -111,28 +129,46 @@ export function FaqManager({ state }: { state?: string }) {
                       }
                     />
                     <Field id={`faq-answer-${faq.id}`} label="Answer *">
+                      <p className={styles.brandingGuide}>
+                        <strong>Make the answer first.</strong> Write the complete answer your customer should read.
+                        Then select the exact words you want to highlight and apply the branded glow.
+                      </p>
                       <textarea
                         id={`faq-answer-${faq.id}`}
+                        ref={(element) => {
+                          answerRefs.current[faq.id] = element;
+                        }}
                         value={faq.answer}
                         rows={6}
                         maxLength={4000}
+                        placeholder="Write the complete answer here, then select words for the branded glow."
+                        onSelect={(e) =>
+                          setSelectedAnswerId(
+                            e.currentTarget.selectionStart !== e.currentTarget.selectionEnd
+                              ? faq.id
+                              : "",
+                          )
+                        }
                         onChange={(e) =>
                           patch(faq.id, { answer: e.target.value })
                         }
                       />
+                      <button
+                        type="button"
+                        className="button secondary"
+                        disabled={busy || selectedAnswerId !== faq.id}
+                        onClick={() => applyBrandStyle(faq.id)}
+                      >
+                        Apply branded glow to selected words
+                      </button>
+                      <small>
+                        Select words in the answer above first. The customer preview updates immediately after you apply the glow.
+                      </small>
                     </Field>
-                    <TextField
-                      id={`faq-glow-${faq.id}`}
-                      label="Branded highlight text"
-                      value={faq.glow ?? ""}
-                      maxLength={300}
-                      help="Optional: enter an exact phrase from the answer to show it in the deep-blue branded style."
-                      onChange={(e) =>
-                        patch(faq.id, {
-                          glow: e.target.value || undefined,
-                        })
-                      }
-                    />
+                    <div className={styles.faqPreview}>
+                      <strong>Customer preview</strong>
+                      <p><BrandedText text={faq.answer} legacy={faq.glow} /></p>
+                    </div>
                   </>
                 )}
                 <div className={styles.cardActions}>

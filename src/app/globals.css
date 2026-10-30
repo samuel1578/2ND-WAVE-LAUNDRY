@@ -1359,6 +1359,40 @@ strong {
   color: var(--danger);
   background: var(--danger-bg);
 }
+.badge.status-active,
+.badge.status-enabled,
+.badge.status-published,
+.badge.status-ready,
+.badge.status-completed,
+.badge.status-visible,
+.badge.status-confirmed {
+  color: var(--success);
+  background: var(--success-bg);
+}
+.badge.status-scheduled,
+.badge.status-processing,
+.badge.status-picked_up,
+.badge.status-out_for_delivery {
+  color: #075985;
+  background: #dff3ff;
+}
+.badge.status-draft,
+.badge.status-pending,
+.badge.status-disabled,
+.badge.status-hidden,
+.badge.status-paused,
+.badge.status-archived,
+.badge.status-unsent {
+  color: #855500;
+  background: #fff1ca;
+}
+.badge.status-ended,
+.badge.status-cancelled,
+.badge.status-failed,
+.badge.status-rejected {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
 .cell-select {
   -webkit-appearance: none;
   appearance: none;
@@ -1780,6 +1814,45 @@ tbody tr:hover .cell-select.branch {
   color: var(--canvas);
   padding: 50px;
   border-radius: 20px;
+}
+.promotion-with-image {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 30px;
+}
+.promotion-content {
+  min-width: 0;
+}
+.promotion:not(.promotion-with-image) .promotion-content {
+  display: contents;
+}
+.promotion-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: var(--surface);
+  border-radius: 12px;
+}
+.promotion-popup .promotion {
+  margin-block: 0 24px;
+}
+.promotion-popup-dialog {
+  width: min(1100px, calc(100% - 32px));
+}
+.promotion-carousel {
+  max-width: 900px;
+}
+@media (min-width: 900px) {
+  .promotion-with-image {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+  }
+  .promotion-with-image .promotion-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 100%;
+  }
 }
 .promotion h2,
 .promotion p,

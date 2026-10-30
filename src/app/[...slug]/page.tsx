@@ -94,7 +94,7 @@ export default async function Page({
       page = <LocationsPage website={website} />;
       break;
     case "about":
-      page = <AboutPage />;
+      page = <AboutPage website={website} />;
       break;
     case "contact":
       page = <ContactPage website={website} />;

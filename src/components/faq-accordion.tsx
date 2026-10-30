@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import { brandHighlights, splitHighlighted } from "@/lib/brand-highlight";
+import { BrandedText } from "@/lib/brand-highlight";
 
 type FaqItem = { q: string; a: string; glow?: string };
 
@@ -85,18 +85,7 @@ export function FaqAccordion({
             <Plus size={20} aria-hidden="true" />
           </summary>
           <p>
-            {splitHighlighted(
-              item.a,
-              item.glow ? [...brandHighlights, item.glow] : brandHighlights,
-            ).map((part, j) => (
-              <Fragment key={j}>
-                {part.match ? (
-                  <span className="brand-glow">{part.text}</span>
-                ) : (
-                  part.text
-                )}
-              </Fragment>
-            ))}
+            <BrandedText text={item.a} legacy={item.glow} />
           </p>
         </details>
       ))}

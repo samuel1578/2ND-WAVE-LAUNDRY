@@ -14,6 +14,7 @@ import { BrandText } from "./brand-text";
 import { PublicForm } from "./forms/public-form";
 import { Dialog } from "./dialog";
 import type { ContentItem, PromotionRecord } from "@/lib/contracts";
+import { BrandedText } from "@/lib/brand-highlight";
 export function PublishedBlog({ posts: snapshotPosts }: { posts?: ContentItem[] } = {}) {
   const store = useDemoStore();
   const [livePosts, setLivePosts] = useState<ContentItem[] | null>(null);
@@ -198,7 +199,7 @@ export function Newsletter({ interestEnabled = false }: { interestEnabled?: bool
     </Section>
   );
 }
-export function Promotion({ force = false, promotions }: { force?: boolean; promotions?: PromotionRecord[] }) {
+export function Promotion({ force = false, promotions, previewPromotion }: { force?: boolean; promotions?: PromotionRecord[]; previewPromotion?: PromotionRecord }) {
   const store = useDemoStore();
   const [open, setOpen] = useState(false);
   const approved = demoMode ? store.content.find(
@@ -209,26 +210,49 @@ export function Promotion({ force = false, promotions }: { force?: boolean; prom
       c.extra.yearConfirmed === "yes" &&
       promoActive(true, c.extra.start, c.extra.end),
   ) : promotions?.find(p => p.enabled && p.yearConfirmed && p.status === "active");
-  if (!force && !approved) return null;
+  const livePromotion = approved && "internalTitle" in approved ? approved : undefined;
+  const selected = previewPromotion ?? livePromotion;
+  if (!force && !selected) return null;
+  const imageUrl = selected?.imageUrl ?? "";
+  const imageAlt = selected?.imageAlt ?? "";
+  const heading = previewPromotion?.heading || copy("14", "Heading");
+  const body = previewPromotion?.body || copy("14", "Body");
+  const terms = previewPromotion?.terms || copy("14", "Terms");
+  const customCta = selected?.ctaLabel?.trim() && selected?.ctaHref?.trim();
   return (
-    <section className="promotion">
-      <span className="eyebrow">Wash, Ironing & Fold</span>
-      <h2>{copy("14", "Heading")}</h2>
-      <p>{copy("14", "Body")}</p>
-      <p>{copy("14", "Terms")}</p>
-      <div className="actions">
-        <Action href={bookingHref("wash-ironing-fold")}>
-          Book Wash, Ironing & Fold
-        </Action>
-        <button className="button secondary" onClick={() => setOpen(true)}>
-          View Offer Details
-        </button>
-      </div>
-      {force && demoMode && (
-        <small>
-          Preview only. Offer activation requires client confirmation.
-        </small>
+    <section className={`promotion${imageUrl ? " promotion-with-image" : ""}`}>
+      {imageUrl && (
+        <img
+          className="promotion-image"
+          src={imageUrl}
+          alt={imageAlt || ""}
+          width={800}
+          height={600}
+          loading="lazy"
+        />
       )}
+      <div className="promotion-content">
+        <span className="eyebrow">Wash, Ironing & Fold</span>
+        <h2>{heading}</h2>
+        <p>{body}</p>
+        <p className="promotion-terms"><span className="brand-glow"><BrandedText text={terms} /></span></p>
+        <div className="actions">
+          {selected && customCta && (
+            <Action href={selected.ctaHref}>{selected.ctaLabel}</Action>
+          )}
+          {!customCta && !previewPromotion && (
+            <Action href={bookingHref("wash-ironing-fold")}>Book Wash, Ironing & Fold</Action>
+          )}
+          <button className="button secondary" onClick={() => setOpen(true)}>
+            View Offer Details
+          </button>
+        </div>
+        {force && demoMode && (
+          <small>
+            Preview only. Offer activation requires client confirmation.
+          </small>
+        )}
+      </div>
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
@@ -246,5 +270,53 @@ export function Promotion({ force = false, promotions }: { force?: boolean; prom
         </button>
       </Dialog>
     </section>
+  );
+}
+function activePromotions(promotions?: PromotionRecord[]) {
+  return (promotions ?? [])
+    .filter((promotion) => promotion.enabled && promotion.yearConfirmed && promotion.status === "active")
+    .sort((a, b) => a.priority - b.priority);
+}
+export function PromotionPopup({ promotions }: { promotions?: PromotionRecord[] }) {
+  const active = activePromotions(promotions);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (active.length === 0 || window.sessionStorage.getItem("2ndwave-promotion-seen") === "1") return;
+    window.sessionStorage.setItem("2ndwave-promotion-seen", "1");
+    setOpen(true);
+  }, [active.length]);
+  if (active.length === 0) return null;
+  return (
+    <Dialog className="promotion-popup-dialog" open={open} onClose={() => setOpen(false)} title="Current offers">
+      <div className="promotion-popup">
+        <Promotion force previewPromotion={active[0]} />
+        <button type="button" className="button secondary" onClick={() => setOpen(false)}>
+          Continue to the website
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+export function PromotionCarousel({ promotions }: { promotions?: PromotionRecord[] }) {
+  const active = activePromotions(promotions);
+  const [index, setIndex] = useState(0);
+  if (active.length === 0) return null;
+  const promotion = active[index % active.length];
+  return (
+    <Section title="Current offers" description="Browse all active offers before you book.">
+      <div className="promotion-carousel">
+        <Promotion force previewPromotion={promotion} />
+        {active.length > 1 && (
+          <div className="actions">
+            <button type="button" className="button secondary" onClick={() => setIndex((value) => (value - 1 + active.length) % active.length)}>
+              Previous offer
+            </button>
+            <button type="button" className="button secondary" onClick={() => setIndex((value) => (value + 1) % active.length)}>
+              Next offer
+            </button>
+          </div>
+        )}
+      </div>
+    </Section>
   );
 }

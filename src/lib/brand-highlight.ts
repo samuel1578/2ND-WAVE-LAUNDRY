@@ -34,3 +34,56 @@ export function splitHighlighted(
     parts.push({ text: text.slice(lastIndex), match: false });
   return parts;
 }
+
+export function splitBranded(text: string, legacy?: string): HighlightPart[] {
+  const token = /\[\[brand\]\]([\s\S]*?)\[\[\/brand\]\]/gi;
+  const parts: HighlightPart[] = [];
+  let lastIndex = 0;
+  for (const found of text.matchAll(token)) {
+    const index = found.index ?? 0;
+    if (index > lastIndex) {
+      parts.push(
+        ...splitHighlighted(
+          text.slice(lastIndex, index),
+          legacy ? [...brandHighlights, legacy] : brandHighlights,
+        ),
+      );
+    }
+    parts.push({ text: found[1], match: true });
+    lastIndex = index + found[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(
+      ...splitHighlighted(
+        text.slice(lastIndex),
+        legacy ? [...brandHighlights, legacy] : brandHighlights,
+      ),
+    );
+  }
+  return parts;
+}
+
+export function BrandedText({
+  text,
+  legacy,
+}: {
+  text: string;
+  legacy?: string;
+}): ReactNode {
+  return (
+    createElement(
+      Fragment,
+      null,
+      ...splitBranded(text, legacy).map((part, index) =>
+        createElement(
+          Fragment,
+          { key: index },
+          part.match
+            ? createElement("span", { className: "brand-glow" }, part.text)
+            : part.text,
+        ),
+      ),
+    )
+  );
+}
+import { createElement, Fragment, type ReactNode } from "react";
