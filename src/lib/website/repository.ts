@@ -4,6 +4,7 @@ import type { ContentItem, FaqItem, GalleryPlacement, LocationRecord, MediaAsset
 import { defaultSettings, toContent, toFaq, toGallery, toPromotion, type PublicSettings } from "./types";
 
 const fail = (message = "The website content service is unavailable."): never => { throw new Error(message); };
+const isConflict = (e?: { code?: string } | null) => e?.code === "PT409" || e?.code === "40001";
 type RpcContentRow = { id: string; key: string; payload: Record<string, unknown>; published: boolean; sort_order: number; version: number };
 type GalleryRelation = { id: string; public_url: string; name: string; alt: string; caption: string; source: string; permission: string; archived: boolean };
 type GalleryRow = { id: string; record_key: string; payload: Record<string, unknown>; published: boolean; sort_order: number; version: number; website_gallery_media: GalleryRelation | null };
@@ -61,7 +62,7 @@ export async function writeFaqs(actor: string, items: FaqItem[]) {
   const rows=items.map((f,i)=>({key:f.id,payload:{question:f.question,answer:f.answer,glow:f.glow,enabled:f.enabled},published:true,sort_order:i+1}));
   const expected=Object.fromEntries(items.map(f=>[f.id,f.version]));
   const {data,error}=await client.rpc("website_content_replace",{p_actor:actor,p_module:"faq",p_items:rows,p_expected_versions:expected});
-  if(error?.code==="40001") {
+  if(isConflict(error)) {
     const current=await client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module","faq").order("sort_order");
     if(!current.error && Array.isArray(current.data) && current.data.length===rows.length) {
       const matches=current.data.every((row, i) => {
@@ -85,7 +86,7 @@ export async function writeGallery(actor:string, items:GalleryPlacement[]) {
   const rows=items.map((g,i)=>({key:g.id,payload:{media_id:g.mediaId,alt:g.alt,caption:g.caption},published:g.visible,sort_order:i+1}));
   const expected=Object.fromEntries(items.map(g=>[g.id,g.version]));
   const {data,error}=await client.rpc("website_content_replace",{p_actor:actor,p_module:"gallery",p_items:rows,p_expected_versions:expected});
-  if(error)return fail(error.code==="40001"?"Gallery changed while editing.":`Gallery could not be saved. ${error.message ?? ""}`.trim());
+  if(error)return fail(isConflict(error)?"Gallery changed while editing.":`Gallery could not be saved. ${error.message ?? ""}`.trim());
   return (data as RpcContentRow[]).map(r=>({id:r.key,mediaId:String(r.payload.media_id ?? ""),alt:String(r.payload.alt ?? ""),caption:String(r.payload.caption ?? ""),order:r.sort_order,visible:r.published,version:r.version}));
 }
 export async function writeContent(actor:string,item:ContentItem,action:"draft"|"publish"|"archive"|"unpublish") {
@@ -93,13 +94,13 @@ export async function writeContent(actor:string,item:ContentItem,action:"draft"|
   const published=action==="publish" || (action==="draft" && !!item.published);
   const payload={title:item.title,slug:item.slug,summary:item.summary,body:item.body,image:item.image,alt:item.alt,extra:item.extra,status:action==="archive"?"Archived":published?"Published":"Draft"};
   const {data,error}=await client.rpc("website_content_upsert",{p_actor:actor,p_module:"blog",p_key:item.slug,p_payload:payload,p_published:published,p_sort_order:item.sort,p_expected_version:item.version||null});
-  if(error?.code==="40001") {
+  if(isConflict(error)) {
     const current=await client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module","blog").eq("record_key",item.slug).maybeSingle();
     if(!current.error && current.data && current.data.published===published && current.data.sort_order===item.sort && sameJson(current.data.payload,payload)) {
       return toContent({id:current.data.record_key,key:current.data.record_key,module:"blog",payload:current.data.payload,published:current.data.published,sort_order:current.data.sort_order,version:current.data.version});
     }
   }
-  if(error)return fail(error.code==="40001"?"Article changed while editing. Reload and try again.":"Article could not be saved.");
+  if(error)return fail(isConflict(error)?"Article changed while editing. Reload and try again.":"Article could not be saved.");
   return toContent({id:data.id,key:data.key,module:"blog",payload:data.payload,published:data.published,sort_order:data.sort_order,version:data.version});
 }
 export async function writePromotion(actor:string,item:PromotionRecord) {
@@ -107,7 +108,7 @@ export async function writePromotion(actor:string,item:PromotionRecord) {
   const payload={...item};
   const isPublished=item.enabled && item.yearConfirmed && ["active","scheduled"].includes(item.status);
   const {data,error}=await client.rpc("website_content_upsert",{p_actor:actor,p_module:"promotion",p_key:item.id||crypto.randomUUID(),p_payload:payload,p_published:isPublished,p_sort_order:item.priority,p_expected_version:item.version||null});
-  if(error?.code==="40001" && item.id) {
+  if(isConflict(error) && item.id) {
     const current=await client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module","promotion").eq("record_key",item.id).maybeSingle();
     if(!current.error && current.data && current.data.published===isPublished && current.data.sort_order===item.priority && sameJson(current.data.payload,payload)) {
       return toPromotion({id:current.data.record_key,key:current.data.record_key,module:"promotion",payload:current.data.payload,published:current.data.published,sort_order:current.data.sort_order,version:current.data.version});
