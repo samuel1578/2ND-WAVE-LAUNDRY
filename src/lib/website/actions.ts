@@ -7,6 +7,7 @@ import { checkRequestOrigin } from "@/lib/security/request-origin";
 import { writeFaqs, writeGallery, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia } from "./repository";
 import type { MediaAsset } from "@/lib/contracts";
 import { assertWebsiteWritesEnabled, consumeWebsiteWrite } from "./write-guard";
+import { revalidatePublicPaths, writeAndRevalidate } from "./revalidation";
 
 async function actor(permission: "content.manage" | "media.manage" | "settings.manage") {
   const admin = await getCurrentAdmin();
@@ -22,7 +23,10 @@ export async function saveLiveFaqs(items: FaqItem[]) {
   const admin = await actor("content.manage");
   if (!Array.isArray(items) || items.length > 500) throw new Error("FAQ collection is invalid.");
   consumeWebsiteWrite(admin.userId);
-  return writeFaqs(admin.userId, items);
+  return writeAndRevalidate(
+    () => writeFaqs(admin.userId, items),
+    ["/", "/faq"],
+  );
 }
 export async function saveLiveGallery(items: GalleryPlacement[]) {
   await assertWebsiteWritesEnabled();
@@ -36,14 +40,19 @@ export async function saveLiveContent(item: ContentItem, action: "draft"|"publis
   const admin = await actor("content.manage");
   if (!item || item.module !== "Blog" || item.body.length > 50000) throw new Error("Article is invalid.");
   consumeWebsiteWrite(admin.userId);
-  return writeContent(admin.userId,item,action);
+  const saved = await writeContent(admin.userId, item, action);
+  revalidatePublicPaths(["/", "/blog", `/blog/${saved.slug}`]);
+  return saved;
 }
 export async function saveLivePromotion(item: PromotionRecord) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
   if (!item || JSON.stringify(item).length > 20000) throw new Error("Promotion is invalid.");
   consumeWebsiteWrite(admin.userId);
-  return writePromotion(admin.userId,item);
+  return writeAndRevalidate(
+    () => writePromotion(admin.userId, item),
+    ["/"],
+  );
 }
 export async function saveLiveSettings(settings: Settings) {
   await assertWebsiteWritesEnabled();

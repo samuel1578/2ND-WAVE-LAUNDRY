@@ -36,6 +36,7 @@ import {
 import { adminNav, branches, publicNav, services } from "../src/lib/content";
 import type { FaqItem } from "../src/lib/contracts";
 import { readFileSync } from "node:fs";
+import { writeAndRevalidate } from "../src/lib/website/revalidation";
 test("six modules, code-managed routes and review relocation", () => {
   assert.deepEqual(
     contentModules.map((m) => m.slug),
@@ -304,6 +305,41 @@ test("loaded FAQ saves its record key and version", () => {
   };
   assert.equal(savedInput.id, "04.00-02");
   assert.equal(savedInput.version, 1);
+});
+test("public revalidation runs after a successful save", async () => {
+  const paths: string[] = [];
+  const saved = await writeAndRevalidate(
+    async () => "saved",
+    ["/", "/blog", "/blog/article-slug"],
+    path => paths.push(path),
+  );
+  assert.equal(saved, "saved");
+  assert.deepEqual(paths, ["/", "/blog", "/blog/article-slug"]);
+});
+test("public revalidation does not run when the save fails", async () => {
+  const paths: string[] = [];
+  await assert.rejects(
+    writeAndRevalidate(
+      async () => {
+        throw new Error("CONTENT_CONFLICT");
+      },
+      ["/", "/faq"],
+      path => paths.push(path),
+    ),
+    /CONTENT_CONFLICT/,
+  );
+  assert.deepEqual(paths, []);
+});
+test("public revalidation failures cannot fail a successful save", () => {
+  assert.doesNotThrow(() =>
+    writeAndRevalidate(
+      async () => "saved",
+      ["/"],
+      () => {
+        throw new Error("revalidation failed");
+      },
+    ),
+  );
 });
 test("promotion validation guards dates, links and confirmation", () => {
   assert.match(

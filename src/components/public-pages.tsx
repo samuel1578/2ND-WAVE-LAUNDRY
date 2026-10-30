@@ -679,7 +679,7 @@ export function FAQPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
     </>
   );
 }
-export function BlogPage() {
+export function BlogPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
   return (
     <>
       <section className="page-hero">
@@ -692,7 +692,7 @@ export function BlogPage() {
         </div>
       </section>
       <div className="container">
-        <PublishedBlog />
+        <PublishedBlog posts={website?.blog} />
       </div>
     </>
   );

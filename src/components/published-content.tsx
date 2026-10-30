@@ -14,7 +14,7 @@ import { BrandText } from "./brand-text";
 import { PublicForm } from "./forms/public-form";
 import { Dialog } from "./dialog";
 import type { ContentItem, PromotionRecord } from "@/lib/contracts";
-export function PublishedBlog() {
+export function PublishedBlog({ posts: snapshotPosts }: { posts?: ContentItem[] } = {}) {
   const store = useDemoStore();
   const [livePosts, setLivePosts] = useState<ContentItem[] | null>(null);
   useEffect(() => {
@@ -24,7 +24,9 @@ export function PublishedBlog() {
       .then(body => setLivePosts(body.items ?? []))
       .catch(() => setLivePosts([]));
   }, []);
-  const posts = demoMode ? store.content.filter((c) => c.module === "Blog" && c.published) : (livePosts ?? []);
+  const posts = demoMode
+    ? store.content.filter((c) => c.module === "Blog" && c.published)
+    : snapshotPosts ?? livePosts ?? [];
   return posts.length ? (
     <div className="grid three">
       {posts.map((p) => (

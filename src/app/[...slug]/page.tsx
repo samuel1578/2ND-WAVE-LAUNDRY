@@ -112,7 +112,7 @@ export default async function Page({
       page = <FAQPage website={website} />;
       break;
     case "blog":
-      page = <BlogPage />;
+      page = <BlogPage website={website} />;
       break;
     case "reviews":
       page = <ReviewsPage />;
