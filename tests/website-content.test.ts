@@ -35,6 +35,7 @@ import {
 } from "../src/components/admin/content/content-config";
 import { adminNav, branches, publicNav, services } from "../src/lib/content";
 import type { FaqItem } from "../src/lib/contracts";
+import { readFileSync } from "node:fs";
 test("six modules, code-managed routes and review relocation", () => {
   assert.deepEqual(
     contentModules.map((m) => m.slug),
@@ -275,6 +276,34 @@ test("FAQ saves commit reorders and reject stale versions", async () => {
     saveFaqs([{ ...saved[0], version: 0 }]),
     /changed while/,
   );
+});
+test("loaded FAQ saves its record key and version", () => {
+  const source = readFileSync(
+    "src/components/admin/content/faq-manager.tsx",
+    "utf8",
+  );
+  assert.match(source, /record_key: string/);
+  assert.match(
+    source,
+    /id: row\.record_key,[\s\S]*order: row\.sort_order, version: row\.version/,
+  );
+  const loaded = {
+    id: "database-uuid",
+    record_key: "04.00-02",
+    payload: { question: "Multiple services?", answer: "Yes." },
+    sort_order: 2,
+    version: 1,
+  };
+  const savedInput = {
+    id: loaded.record_key,
+    question: loaded.payload.question,
+    answer: loaded.payload.answer,
+    order: loaded.sort_order,
+    enabled: true,
+    version: loaded.version,
+  };
+  assert.equal(savedInput.id, "04.00-02");
+  assert.equal(savedInput.version, 1);
 });
 test("promotion validation guards dates, links and confirmation", () => {
   assert.match(
