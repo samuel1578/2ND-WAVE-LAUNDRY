@@ -47,10 +47,15 @@ export const bookingRateLimits = {
   review_mutation: { limit: 120, windowMs: 15 * 60 * 1000 },
 } as const satisfies Record<string, RateLimitRule>;
 
+export const websiteRateLimits = {
+  website_content: { limit: 5, windowMs: 60 * 1000 },
+} as const satisfies Record<string, RateLimitRule>;
+
 /** Every administrative limit the limiter knows about. */
 export const adminRateLimits = {
   ...staffRateLimits,
   ...bookingRateLimits,
+  ...websiteRateLimits,
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitKey = keyof typeof adminRateLimits;
