@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { copy, demoMode, bookingHref } from "@/lib/content";
+import { copy, demoMode } from "@/lib/content";
+import { buildPromotionView, type PromotionServiceOption } from "@/lib/website/promotion-view";
 import { useDemoStore } from "@/lib/mock-store";
 import { isPublicPromotionActive, promoActive } from "@/lib/rules";
 import {
@@ -203,7 +204,17 @@ export function Newsletter({ interestEnabled = false }: { interestEnabled?: bool
     </Section>
   );
 }
-export function Promotion({ force = false, promotions, previewPromotion }: { force?: boolean; promotions?: PublishedPromotionRecord[]; previewPromotion?: PromotionRecord }) {
+export function Promotion({
+  force = false,
+  promotions,
+  previewPromotion,
+  services = [],
+}: {
+  force?: boolean;
+  promotions?: PublishedPromotionRecord[];
+  previewPromotion?: PromotionRecord;
+  services?: PromotionServiceOption[];
+}) {
   const store = useDemoStore();
   const [open, setOpen] = useState(false);
   const approved = demoMode ? store.content.find(
@@ -217,12 +228,9 @@ export function Promotion({ force = false, promotions, previewPromotion }: { for
   const livePromotion = approved && "internalTitle" in approved ? approved : undefined;
   const selected = previewPromotion ?? livePromotion;
   if (!force && !selected) return null;
+  const view = buildPromotionView(selected, services, demoMode && !selected);
   const imageUrl = selected?.imageUrl ?? "";
   const imageAlt = selected?.imageAlt ?? "";
-  const heading = previewPromotion?.heading || copy("14", "Heading");
-  const body = previewPromotion?.body || copy("14", "Body");
-  const terms = previewPromotion?.terms || copy("14", "Terms");
-  const customCta = selected?.ctaLabel?.trim() && selected?.ctaHref?.trim();
   return (
     <section className={`promotion${imageUrl ? " promotion-with-image" : ""}`}>
       {imageUrl && (
@@ -236,20 +244,21 @@ export function Promotion({ force = false, promotions, previewPromotion }: { for
         />
       )}
       <div className="promotion-content">
-        <span className="eyebrow">Wash, Ironing & Fold</span>
-        <h2>{heading}</h2>
-        <p>{body}</p>
-        <p className="promotion-terms"><span className="brand-glow"><BrandedText text={terms} /></span></p>
+        {view.eyebrow && <span className="eyebrow">{view.eyebrow}</span>}
+        <h2>{view.heading}</h2>
+        <p style={{ whiteSpace: "pre-line" }}>{view.body}</p>
+        {view.terms.trim() && (
+          <p className="promotion-terms">
+            <span className="brand-glow"><BrandedText text={view.terms} /></span>
+          </p>
+        )}
         <div className="actions">
-          {selected && customCta && (
-            <Action href={selected.ctaHref}>{selected.ctaLabel}</Action>
+          {view.cta && <Action href={view.cta.href}>{view.cta.label}</Action>}
+          {view.showDetails && (
+            <button className="button secondary" onClick={() => setOpen(true)}>
+              View Offer Details
+            </button>
           )}
-          {!customCta && !previewPromotion && (
-            <Action href={bookingHref("wash-ironing-fold")}>Book Wash, Ironing & Fold</Action>
-          )}
-          <button className="button secondary" onClick={() => setOpen(true)}>
-            View Offer Details
-          </button>
         </div>
         {force && demoMode && (
           <small>
@@ -260,15 +269,33 @@ export function Promotion({ force = false, promotions, previewPromotion }: { for
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={copy("14", "Heading")}
+        title={view.heading}
       >
-        <p>{copy("14", "Body")}</p>
-        <h3>{copy("14", "Terms heading")}</h3>
-        <p>{copy("14", "Terms")}</p>
-        <p>{copy("14", "Supporting line")}</p>
-        <Action href={bookingHref("wash-ironing-fold")}>
-          Book Wash, Ironing & Fold
-        </Action>
+        <p style={{ whiteSpace: "pre-line" }}>{view.body}</p>
+        {view.endDate && <p>Valid until {view.endDate}</p>}
+        {view.legacyDemoFallback ? (
+          <>
+            <h3>{copy("14", "Terms heading")}</h3>
+            <p style={{ whiteSpace: "pre-line" }}>{view.exclusions}</p>
+            <p>{copy("14", "Supporting line")}</p>
+          </>
+        ) : (
+          <>
+            {view.terms.trim() && (
+              <section>
+                <h3>Terms</h3>
+                <p style={{ whiteSpace: "pre-line" }}>{view.terms}</p>
+              </section>
+            )}
+            {view.exclusions.trim() && (
+              <section>
+                <h3>Offer exclusions</h3>
+                <p style={{ whiteSpace: "pre-line" }}>{view.exclusions}</p>
+              </section>
+            )}
+          </>
+        )}
+        {view.cta && <Action href={view.cta.href}>{view.cta.label}</Action>}
         <button className="text-link" onClick={() => setOpen(false)}>
           Not Now
         </button>
@@ -281,7 +308,13 @@ function activePromotions(promotions?: PublishedPromotionRecord[], now = new Dat
     .filter((promotion) => isPublicPromotionActive(promotion, now))
     .sort((a, b) => a.priority - b.priority);
 }
-export function PromotionPopup({ promotions }: { promotions?: PublishedPromotionRecord[] }) {
+export function PromotionPopup({
+  promotions,
+  services = [],
+}: {
+  promotions?: PublishedPromotionRecord[];
+  services?: PromotionServiceOption[];
+}) {
   const active = activePromotions(promotions);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -293,7 +326,7 @@ export function PromotionPopup({ promotions }: { promotions?: PublishedPromotion
   return (
     <Dialog className="promotion-popup-dialog" open={open} onClose={() => setOpen(false)} title="Current offers">
       <div className="promotion-popup">
-        <Promotion force previewPromotion={active[0]} />
+        <Promotion force previewPromotion={active[0]} services={services} />
         <button type="button" className="button secondary" onClick={() => setOpen(false)}>
           Continue to the website
         </button>
@@ -301,7 +334,13 @@ export function PromotionPopup({ promotions }: { promotions?: PublishedPromotion
     </Dialog>
   );
 }
-export function PromotionCarousel({ promotions }: { promotions?: PublishedPromotionRecord[] }) {
+export function PromotionCarousel({
+  promotions,
+  services = [],
+}: {
+  promotions?: PublishedPromotionRecord[];
+  services?: PromotionServiceOption[];
+}) {
   const active = activePromotions(promotions);
   const [index, setIndex] = useState(0);
   if (active.length === 0) return null;
@@ -309,7 +348,7 @@ export function PromotionCarousel({ promotions }: { promotions?: PublishedPromot
   return (
     <Section title="Current offers" description="Browse all active offers before you book.">
       <div className="promotion-carousel">
-        <Promotion force previewPromotion={promotion} />
+        <Promotion force previewPromotion={promotion} services={services} />
         {active.length > 1 && (
           <div className="actions">
             <button type="button" className="button secondary" onClick={() => setIndex((value) => (value - 1 + active.length) % active.length)}>

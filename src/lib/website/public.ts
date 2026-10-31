@@ -4,12 +4,14 @@ import type { ContentItem, PublishedPromotionRecord } from "@/lib/contracts";
 import { demoMode } from "@/lib/demo-mode";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { PromotionServiceOption } from "./promotion-view";
 import { defaultSettings, toContent, toPromotion, type PublicSettings } from "./types";
 
 export type PublicBranch = (typeof defaultBranches)[number];
 export type PublicService = (typeof defaultServices)[number];
 export type PublicWebsiteSnapshot = {
   services: PublicService[];
+  promotionServices: PromotionServiceOption[];
   branches: PublicBranch[];
   faqs: typeof defaultFaqs;
   gallery: Photo[];
@@ -26,8 +28,13 @@ type PublicContentRow = {
   published: boolean;
 };
 
+const demoPromotionServices = defaultServices
+  .filter((service) => service.bookable)
+  .map((service) => ({ slug: service.slug, name: service.title, bookable: true }));
+
 const emptyLiveSnapshot: PublicWebsiteSnapshot = {
   services: defaultServices,
+  promotionServices: [],
   branches: defaultBranches,
   faqs: [],
   gallery: [],
@@ -44,6 +51,7 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
   if (demoMode || !isSupabaseConfigured) {
     return {
       services: defaultServices,
+      promotionServices: demoPromotionServices,
       branches: defaultBranches,
       faqs: defaultFaqs,
       gallery: photos.batch_14_gallery ?? [],
@@ -66,6 +74,11 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
     db.from("booking_settings").select("accept_public_bookings,pickup_start,pickup_end,express_cutoff").eq("id", true).maybeSingle(),
   ]);
   const serviceRows = servicesResult.data ?? [];
+  const promotionServices = servicesResult.error
+    ? []
+    : serviceRows
+      .filter((service) => service.active && service.bookable)
+      .map((service) => ({ slug: service.slug, name: service.title, bookable: true }));
   const serviceBySlug = new Map(defaultServices.map(service => [service.slug, service]));
   const services = serviceRows.map(row => {
     const baseline = serviceBySlug.get(row.slug);
@@ -124,6 +137,7 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
   }));
   return {
     services: services.length ? services : defaultServices,
+    promotionServices,
     branches: branches.length ? branches : defaultBranches,
     faqs,
     gallery,

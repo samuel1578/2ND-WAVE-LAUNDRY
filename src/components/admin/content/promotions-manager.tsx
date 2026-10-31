@@ -12,12 +12,15 @@ import {
   useDemoStore,
   type PromotionAction,
 } from "@/lib/mock-store";
-import type { PromotionRecord } from "@/lib/contracts";
+import type { ContentItem, PromotionRecord } from "@/lib/contracts";
+import { services as defaultServices } from "@/lib/content";
 import { promotionBadge } from "@/lib/rules";
 import { ModuleShell } from "./shared/module-shell";
 import styles from "./content.module.css";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
+import { seededServices } from "@/lib/website/types";
+import type { PromotionServiceOption } from "@/lib/website/promotion-view";
 import { saveLivePromotion } from "@/lib/website/actions";
 import { promotionCtaError, promotionError } from "@/lib/rules";
 import { Promotion } from "@/components/published-content";
@@ -40,6 +43,11 @@ const blankPromotion: PromotionRecord = {
   status: "draft",
   version: 0,
 };
+
+function promotionStartsInFuture(start: string): boolean {
+  return Date.parse(start) > Date.now();
+}
+
 export function PromotionsManager({
   id,
   state,
@@ -108,6 +116,7 @@ export function PromotionsManager({
   );
 }
 function PromotionEditor({ record }: { record?: PromotionRecord }) {
+  const serviceData = useAdminWebsiteData<ContentItem>("services", seededServices);
   const [form, setForm] = useState<PromotionRecord>(() =>
     record ? structuredClone(record) : blankPromotion,
   );
@@ -123,6 +132,16 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
   const [deleted, setDeleted] = useState(false);
   const dirty = JSON.stringify(form) !== baseline;
   const saved = !!form.id;
+  const serviceOptions: PromotionServiceOption[] = demoMode
+    ? defaultServices
+      .filter((service) => service.bookable)
+      .map((service) => ({ slug: service.slug, name: service.title, bookable: true }))
+    : serviceData.items
+      .filter((service) => service.status === "Published" && service.extra.bookable === "true")
+      .map((service) => ({ slug: service.slug, name: service.title, bookable: true }));
+  const serviceOptionsReady = demoMode || (!serviceData.loading && !serviceData.error);
+  const attachedService = serviceOptions.find((service) => service.slug === form.serviceSlug);
+  const attachedServiceUnavailable = serviceOptionsReady && !!form.serviceSlug && !attachedService;
   function change(patch: Partial<PromotionRecord>) {
     setForm((f) => ({ ...f, ...patch }));
     setSuccess("");
@@ -130,6 +149,10 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
   async function save(e: FormEvent) {
     e.preventDefault();
     if (busy || uploadBusy) return;
+    if (!serviceOptionsReady) {
+      setError(serviceData.error || "Service options are still loading. Try again.");
+      return;
+    }
     if (form.imageUrl && !form.imageAlt?.trim()) {
       setError("Add alt text for the promotion image.");
       return;
@@ -139,11 +162,12 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
       setError(ctaError);
       return;
     }
+    const promotionToSave = { ...form, serviceSlug: attachedService?.slug };
     setBusy(true);
     setError("");
     setSuccess("");
     try {
-      const next = demoMode ? await savePromotion(form) : await saveLivePromotion(form);
+      const next = demoMode ? await savePromotion(promotionToSave) : await saveLivePromotion(promotionToSave);
       setForm(next);
       setBaseline(JSON.stringify(next));
       setSuccess("Changes saved.");
@@ -176,7 +200,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
     }
   }
   async function act(action: PromotionAction) {
-    if (busy || !saved) return;
+    if (busy || !saved || !serviceOptionsReady) return;
     setBusy(true);
     setError("");
     setSuccess("");
@@ -193,10 +217,10 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
             ? "paused"
             : action === "end"
               ? "ended"
-              : Date.parse(form.start) > Date.now()
+              : promotionStartsInFuture(form.start)
                 ? "scheduled"
                 : "active";
-        const next = await saveLivePromotion({ ...form, status: nextStatus });
+        const next = await saveLivePromotion({ ...form, serviceSlug: attachedService?.slug, status: nextStatus });
         setConfirm(null);
         setForm(next);
         setBaseline(JSON.stringify(next));
@@ -244,7 +268,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
       </Empty>
     );
   const status = form.status;
-  const lifecycleReady = saved && !dirty && !busy && !uploadBusy;
+  const lifecycleReady = saved && !dirty && !busy && !uploadBusy && serviceOptionsReady;
   return (
     <>
       <UnsavedGuard dirty={dirty} />
@@ -304,6 +328,26 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
               maxLength={4000}
               onChange={(e) => change({ exclusions: e.target.value })}
             />
+          </Field>
+          <Field id="promo-service" label="Attached service (optional)">
+            <select
+              id="promo-service"
+              value={attachedService?.slug ?? ""}
+              disabled={!demoMode && (serviceData.loading || !!serviceData.error)}
+              onChange={(e) => change({ serviceSlug: e.target.value || undefined })}
+            >
+              <option value="">No service</option>
+              {serviceOptions.map((service) => (
+                <option key={service.slug} value={service.slug}>{service.name}</option>
+              ))}
+            </select>
+            <small>Shows the service name on the offer and links the Book button to it.</small>
+            {attachedServiceUnavailable && (
+              <small className="field-error">The previously attached service is no longer available</small>
+            )}
+            {serviceData.error && (
+              <small className="field-error">{serviceData.error}</small>
+            )}
           </Field>
           <TextField
             id="promo-cta-label"
@@ -400,13 +444,13 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
               value={form.end}
               onChange={(e) => change({ end: e.target.value })}
             />
-              <TextField
-                id="promo-priority"
-                label="Order when several offers are active"
-                type="number"
-                step={1}
-                help="Lower numbers appear first in the About-page offer list."
-                value={form.priority}
+            <TextField
+              id="promo-priority"
+              label="Order when several offers are active"
+              type="number"
+              step={1}
+              help="Lower numbers appear first in the About-page offer list."
+              value={form.priority}
               onChange={(e) => change({ priority: Number(e.target.value) })}
             />
             <label className="checkbox">
@@ -428,7 +472,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
             <small>Confirm the dates before activating this offer.</small>
           </section>
           <section className="panel form-stack">
-            <Submit busy={busy || uploadBusy} label="Save Changes" />
+            <Submit busy={busy || uploadBusy || !serviceOptionsReady} label="Save Changes" />
             <button
               type="button"
               className="button secondary"
@@ -531,7 +575,7 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
       </Dialog>
       <section className="panel promotion-editor-preview">
         <h2>Customer preview</h2>
-        <Promotion force previewPromotion={form} />
+        <Promotion force previewPromotion={form} services={serviceOptions} />
       </section>
       <Dialog
         open={confirm === "delete"}

@@ -131,6 +131,7 @@ export type PromotionRecord = {
   version: number;
   imageUrl?: string;
   imageAlt?: string;
+  serviceSlug?: string;
 };
 export type PublishedPromotionRecord = PromotionRecord & { published: boolean };
 /** Admin-only demo records for Website Content (isolated from public pages). */

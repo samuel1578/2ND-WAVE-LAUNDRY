@@ -73,7 +73,10 @@ export function HomePage({ website }: { website?: PublicWebsiteSnapshot } = {}) 
             See How It Works
           </Action>
         </Section>
-        <PromotionPopup promotions={website?.promotions} />
+        <PromotionPopup
+          promotions={website?.promotions}
+          services={website?.promotionServices}
+        />
         <Section title="Find your nearest branch">
           <BranchCards branches={website?.branches} />
         </Section>

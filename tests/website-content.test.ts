@@ -37,6 +37,8 @@ import {
 import { adminNav, branches, publicNav, services } from "../src/lib/content";
 import type { FaqItem } from "../src/lib/contracts";
 import { toGallery, toPromotion } from "../src/lib/website/types";
+import { buildPromotionView, formatPromotionEndDate } from "../src/lib/website/promotion-view";
+import { validatePromotionServiceSlug } from "../src/lib/website/promotion-service-validation";
 import {
   detectPromotionImageMime,
   promotionImageError,
@@ -46,6 +48,19 @@ import { promotionLinkSelection } from "../src/lib/website/promotion-form";
 import { splitBranded } from "../src/lib/brand-highlight";
 import { readFileSync } from "node:fs";
 import { writeAndRevalidate } from "../src/lib/website/revalidation";
+
+function promotionFromPayload(payload: Record<string, unknown>) {
+  return toPromotion({
+    id: "promotion-test",
+    key: "promotion-test",
+    module: "promotion",
+    payload,
+    published: true,
+    sort_order: 1,
+    version: 1,
+  });
+}
+
 test("six modules, code-managed routes and review relocation", () => {
   assert.deepEqual(
     contentModules.map((m) => m.slug),
@@ -402,6 +417,7 @@ test("promotions preserve optional images while legacy records remain unchanged"
   });
   assert.equal(legacy.imageUrl, undefined);
   assert.equal(legacy.imageAlt, undefined);
+  assert.equal(legacy.serviceSlug, undefined);
   const live = toPromotion({
     id: "promotion-image",
     key: "promotion-image",
@@ -410,13 +426,126 @@ test("promotions preserve optional images while legacy records remain unchanged"
       heading: "Image offer",
       imageUrl: "https://project.supabase.co/storage/v1/object/public/marketing-assets/promotions/offer.jpg",
       imageAlt: "Folded laundry",
+      serviceSlug: "wash-ironing-fold",
     },
     published: true,
     sort_order: 1,
     version: 2,
   });
   assert.equal(live.imageAlt, "Folded laundry");
+  assert.equal(live.serviceSlug, "wash-ironing-fold");
   assert.match(readFileSync("src/components/published-content.tsx", "utf8"), /promotion-image/);
+});
+test("promotion card view omits empty live service, terms, exclusions and CTA", () => {
+  const view = buildPromotionView(
+    promotionFromPayload({
+      heading: "Offer headline",
+      body: "Offer body",
+      terms: "",
+      exclusions: "",
+      serviceSlug: "",
+      ctaLabel: "",
+      ctaHref: "",
+    }),
+    [],
+    false,
+  );
+  assert.equal(view.eyebrow, undefined);
+  assert.equal(view.terms, "");
+  assert.equal(view.exclusions, "");
+  assert.equal(view.showDetails, false);
+  assert.equal(view.cta, undefined);
+  assert.doesNotMatch(
+    [view.heading, view.body, view.terms, view.exclusions, view.eyebrow ?? ""].join("\n"),
+    /Wash, Ironing & Fold|Large items, bedding|Offer exclusions|40%|The team confirms whether/,
+  );
+  const source = readFileSync("src/components/published-content.tsx", "utf8");
+  assert.match(source, /view\.showDetails &&/);
+  assert.match(source, /title=\{view\.heading\}/);
+  assert.equal((source.match(/view\.cta &&/g) ?? []).length, 2);
+});
+test("promotion view resolves bookable services, custom CTAs and safe fallbacks", () => {
+  const service = { slug: "duvet-and-bedding-cleaning", name: "Duvet Care", bookable: true };
+  const base = {
+    heading: "Bedding offer",
+    body: "Clean bedding,\nfresh start.",
+    serviceSlug: service.slug,
+    ctaLabel: "",
+    ctaHref: "",
+    terms: "",
+    exclusions: "",
+  };
+  const attached = buildPromotionView(promotionFromPayload(base), [service], false);
+  assert.equal(attached.eyebrow, "Duvet Care");
+  assert.deepEqual(attached.cta, {
+    label: "Book Duvet Care",
+    href: "/book?service=duvet-and-bedding-cleaning",
+  });
+  assert.equal(attached.body, base.body);
+
+  const custom = buildPromotionView(
+    promotionFromPayload({ ...base, ctaLabel: "Claim offer", ctaHref: "/contact" }),
+    [service],
+    false,
+  );
+  assert.deepEqual(custom.cta, { label: "Claim offer", href: "/contact" });
+
+  const unavailable = buildPromotionView(promotionFromPayload(base), [], false);
+  assert.equal(unavailable.eyebrow, undefined);
+  assert.equal(unavailable.cta, undefined);
+  const unbookable = buildPromotionView(
+    promotionFromPayload(base),
+    [{ ...service, bookable: false }],
+    false,
+  );
+  assert.equal(unbookable.eyebrow, undefined);
+  assert.equal(unbookable.cta, undefined);
+});
+test("promotion dialog view uses the record's date, terms and exclusions", () => {
+  const record = promotionFromPayload({
+    heading: "Record-owned title",
+    body: "First line\nSecond line",
+    terms: "Terms from this offer",
+    exclusions: "Exclusions from this offer",
+    end: "2027-01-31T23:59",
+  });
+  const view = buildPromotionView(record, [], false);
+  assert.equal(view.heading, "Record-owned title");
+  assert.equal(view.body, "First line\nSecond line");
+  assert.equal(view.terms, "Terms from this offer");
+  assert.equal(view.exclusions, "Exclusions from this offer");
+  assert.equal(view.endDate, "31 January 2027");
+  assert.equal(view.showDetails, true);
+  assert.equal(formatPromotionEndDate(""), "");
+  const source = readFileSync("src/components/published-content.tsx", "utf8");
+  assert.match(source, /<h2>\{view\.heading\}<\/h2>/);
+  assert.match(source, /title=\{view\.heading\}/);
+});
+test("promotion service validation accepts empty, rejects unavailable and fails closed", async () => {
+  let lookups = 0;
+  assert.equal(await validatePromotionServiceSlug("", async () => {
+    lookups += 1;
+    return false;
+  }), undefined);
+  assert.equal(lookups, 0);
+  assert.equal(await validatePromotionServiceSlug(" bookable ", async (slug) => {
+    lookups += 1;
+    return slug === "bookable";
+  }), "bookable");
+  await assert.rejects(
+    validatePromotionServiceSlug("missing-service", async () => false),
+    /The attached service is no longer available\./,
+  );
+  await assert.rejects(
+    validatePromotionServiceSlug("lookup-error", async () => {
+      throw new Error("database unavailable");
+    }),
+    /The attached service is no longer available\./,
+  );
+  assert.match(
+    readFileSync("src/lib/website/actions.ts", "utf8"),
+    /validatePromotionServiceSlug\(item\.serviceSlug/,
+  );
 });
 test("promotion image save validation requires the project asset URL and alt text", () => {
   const base = {

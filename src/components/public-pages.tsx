@@ -464,7 +464,10 @@ export function AboutPage({ website }: { website?: PublicWebsiteSnapshot } = {})
       <Section title={copy("08", "Heading")} description={copy("08", "Text")}>
         <PickupChoice />
       </Section>
-      <PromotionCarousel promotions={website?.promotions} />
+      <PromotionCarousel
+        promotions={website?.promotions}
+        services={website?.promotionServices}
+      />
       <Closing />
     </>
   );

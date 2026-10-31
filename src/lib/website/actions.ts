@@ -7,6 +7,8 @@ import { checkRequestOrigin } from "@/lib/security/request-origin";
 import { writeFaqs, writeGallery, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia, deleteMedia as deleteMediaRecord } from "./repository";
 import type { MediaAsset } from "@/lib/contracts";
 import { supabaseConfig } from "@/lib/supabase/config";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { validatePromotionServiceSlug } from "./promotion-service-validation";
 import { assertWebsiteWritesEnabled, consumeWebsiteWrite } from "./write-guard";
 import { revalidatePublicPaths, writeAndRevalidate } from "./revalidation";
 
@@ -93,9 +95,21 @@ export async function saveLivePromotion(item: PromotionRecord) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
   if (!item || JSON.stringify(item).length > 20000) throw new Error("Promotion is invalid.");
+  const serviceSlug = await validatePromotionServiceSlug(item.serviceSlug, async (slug) => {
+    const client = createSupabaseAdminClient();
+    const { data, error } = await client
+      .from("services")
+      .select("slug")
+      .eq("slug", slug)
+      .eq("active", true)
+      .eq("bookable", true)
+      .maybeSingle();
+    return !error && !!data;
+  });
+  const promotion = { ...item, serviceSlug };
   consumeWebsiteWrite(admin.userId);
   return writeAndRevalidate(
-    () => writePromotion(admin.userId, item),
+    () => writePromotion(admin.userId, promotion),
     ["/", "/about", "/preview"],
   );
 }
