@@ -50,10 +50,15 @@ export const newsletterInterestTemplates = [
 export type NewsletterInterestTemplate =
   (typeof newsletterInterestTemplates)[number];
 
+/** Internal manager alert for a public general enquiry or commercial quote. */
+export const enquiryReceivedTemplates = ["enquiry_received"] as const;
+export type EnquiryReceivedTemplate = (typeof enquiryReceivedTemplates)[number];
+
 export type NotificationTemplate =
   | EmailTemplate
   | StaffOrderTemplate
-  | NewsletterInterestTemplate;
+  | NewsletterInterestTemplate
+  | EnquiryReceivedTemplate;
 
 export function isNewsletterInterestTemplate(
   value: unknown,
@@ -62,6 +67,10 @@ export function isNewsletterInterestTemplate(
     typeof value === "string" &&
     (newsletterInterestTemplates as readonly string[]).includes(value)
   );
+}
+
+export function isEnquiryReceivedTemplate(value: unknown): value is EnquiryReceivedTemplate {
+  return typeof value === "string" && (enquiryReceivedTemplates as readonly string[]).includes(value);
 }
 
 /** Required/optional params actually produced by the builders below. */
@@ -115,6 +124,10 @@ export const EMAIL_TEMPLATE_PARAM_CONTRACTS: Record<
   },
   newsletter_interest_received: {
     required: ["subscriberEmail", "submittedAt", "source", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    optional: [],
+  },
+  enquiry_received: {
+    required: ["kind", "name", "business", "phone", "topic", "enquiryUrl", "websiteUrl"],
     optional: [],
   },
 };
@@ -208,6 +221,14 @@ const HEADER_ALT: Record<EmailTemplate, string> = {
 };
 
 const collapse = (value: string): string => value.replace(/\s+/g, " ").trim();
+const escapeHtml = (value: string): string =>
+  value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]!);
 
 export function formatFee(amount: number | null, currency: string): string | null {
   if (amount === null || !Number.isFinite(amount) || amount < 0) return null;
@@ -517,5 +538,31 @@ export function buildNewsletterInterestParams(
     privacyUrl: `${siteUrl}/privacy`,
     headerImageUrl: `${siteUrl}/headers/${NEWSLETTER_HEADER_ASSET}`,
     headerImageAlt: "2nd Wave Laundry newsletter interest",
+  };
+}
+
+/** Minimal trusted render context; the public message body is never copied into email. */
+export type EnquiryReceivedContext = {
+  enquiryId: string;
+  kind: "general" | "commercial";
+  name: string;
+  business: string | null;
+  phone: string;
+  topic: string | null;
+};
+
+export function buildEnquiryReceivedParams(
+  context: EnquiryReceivedContext,
+  options: RenderEmailOptions,
+): BrevoBookingTemplateParams {
+  const siteUrl = options.siteUrl.replace(/\/+$/, "");
+  return {
+    kind: context.kind === "commercial" ? "Commercial quote request" : "General enquiry",
+    name: escapeHtml(collapse(context.name)),
+    business: escapeHtml(collapse(context.business ?? "") || "Not provided"),
+    phone: escapeHtml(collapse(context.phone)),
+    topic: escapeHtml(collapse(context.topic ?? "") || "Not provided"),
+    enquiryUrl: `${siteUrl}/admin/enquiries/${encodeURIComponent(context.enquiryId)}`,
+    websiteUrl: siteUrl,
   };
 }

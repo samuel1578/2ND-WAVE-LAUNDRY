@@ -5,7 +5,7 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
 } from "react";
-import { AlertCircle, CheckCircle2, LoaderCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, LoaderCircle, Phone } from "lucide-react";
 import { demoMode } from "@/lib/content";
 import { simulateNextFailure } from "@/lib/mock-store";
 export function Field({
@@ -66,6 +66,66 @@ export function TextField({
     </Field>
   );
 }
+function formatGhanaPhone(value: string): string {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10 && digits.startsWith("0")) {
+    return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  }
+  if (trimmed.startsWith("+") && digits.startsWith("233") && digits.length === 12) {
+    const local = digits.slice(3);
+    return `+233 ${local.slice(0, 2)} ${local.slice(2, 5)} ${local.slice(5)}`;
+  }
+  return value;
+}
+
+export function PhoneField({
+  label,
+  error,
+  id,
+  value,
+  onChange,
+  ...props
+}: {
+  label: string;
+  error?: string;
+  id: string;
+  value: string;
+  onChange(value: string): void;
+}) {
+  return (
+    <Field
+      label={label}
+      error={error}
+      help="Ghana numbers: 0XX XXX XXXX or +233…"
+      id={id}
+    >
+      <div className="phone-field__control">
+        <Phone size={18} aria-hidden="true" />
+        <input
+          {...props}
+          id={id}
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          placeholder="024 123 4567"
+          maxLength={20}
+          minLength={0}
+          value={value}
+          aria-invalid={!!error}
+          aria-describedby={`${id}-help${error ? ` ${id}-error` : ""}`}
+          onChange={(event) =>
+            onChange(event.currentTarget.value.replace(/[^0-9+ ()-]/g, ""))
+          }
+          onBlur={(event) => {
+            onChange(formatGhanaPhone(event.currentTarget.value));
+          }}
+        />
+      </div>
+    </Field>
+  );
+}
+
 export function Notice({
   children,
   error = false,

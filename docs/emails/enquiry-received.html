@@ -1,0 +1,46 @@
+<!--
+Brevo template draft: ENQUIRY RECEIVED — Internal team alert
+Suggested subject: New {{ params.kind }} received | 2nd Wave Laundry
+Suggested preview: A visitor submitted an enquiry or commercial quote request.
+Audience: internal manager only (manager@2ndwavelaundry.com).
+
+Required parameters: kind, name, business, phone, topic, enquiryUrl, websiteUrl
+The message body, submitter email, commercial item details and private admin notes
+are intentionally excluded from the alert. The manager can open the secured admin
+record from enquiryUrl. Dynamic text parameters are HTML-escaped by the server;
+use standard double-brace Brevo substitutions, never raw/triple-brace output.
+Subject and preview are configured in Brevo, not in this HTML.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>New enquiry | 2nd Wave Laundry Services</title>
+</head>
+<body style="margin:0;padding:24px;background:#FAFBFC;color:#091D2D;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #D9E7EF;border-radius:16px;">
+    <tr><td style="padding:32px 28px;">
+      <p style="margin:0 0 10px;color:#00609A;font-size:12px;font-weight:bold;letter-spacing:1.5px;text-transform:uppercase;">Internal manager alert</p>
+      <h1 style="margin:0 0 18px;color:#102B51;font-family:Georgia,'Times New Roman',serif;font-size:30px;font-weight:400;">New {{ params.kind }} received</h1>
+      <p style="margin:0 0 22px;color:#526477;font-size:15px;line-height:1.6;">A visitor sent a request through the public website. Follow up with them using the details below.</p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#EDF4FF;border:1px solid #D9E7EF;border-radius:12px;">
+        <tr><td style="padding:20px;">
+          <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong style="color:#102B51;">Contact name:</strong> {{ params.name }}</p>
+          <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong style="color:#102B51;">Business:</strong> {{ params.business }}</p>
+          <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong style="color:#102B51;">Phone:</strong> {{ params.phone }}</p>
+          <p style="margin:0;color:#526477;font-size:14px;line-height:1.9;"><strong style="color:#102B51;">Topic:</strong> {{ params.topic }}</p>
+        </td></tr>
+      </table>
+      <p style="margin:22px 0;color:#526477;font-size:13px;line-height:1.6;">The visitor's full message and requirements are available only in the secured administration console.</p>
+      <p style="margin:0 0 24px;"><a href="{{ params.enquiryUrl }}" style="display:inline-block;padding:12px 18px;background:#0B80CA;border-radius:8px;color:#fff;font-size:14px;font-weight:bold;text-decoration:none;">Open enquiry</a></p>
+      <p style="margin:0;color:#526477;font-size:12px;line-height:1.6;">Internal notification for 2nd Wave Laundry Services. Please do not forward it.</p>
+    </td></tr>
+    <tr><td style="padding:18px 24px;background:#EDF4FF;border-top:1px solid #D9E7EF;text-align:center;">
+      <a href="{{ params.websiteUrl }}" style="color:#00609A;font-size:13px;text-decoration:underline;">Visit our website</a>
+    </td></tr>
+  </table>
+</body>
+</html>

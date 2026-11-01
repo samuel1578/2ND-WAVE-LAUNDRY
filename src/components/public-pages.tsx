@@ -602,7 +602,10 @@ export function ContactPage({
           <div className="panel">
             <h2>{copy("09", "Form heading")}</h2>
             <p>{copy("09", "Form intro")}</p>
-            <PublicForm kind="general" />
+            <PublicForm
+              kind="general"
+              enquiriesEnabled={isSupabaseConfigured && isElevatedConfigured}
+            />
           </div>
         </div>
       </div>
@@ -679,7 +682,10 @@ export function QuotePage() {
         description={copy("10.02", "Intro")}
       />
       <div className="panel">
-        <PublicForm kind="commercial" />
+        <PublicForm
+          kind="commercial"
+          enquiriesEnabled={isSupabaseConfigured && isElevatedConfigured}
+        />
       </div>
     </div>
   );

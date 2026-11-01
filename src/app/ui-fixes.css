@@ -1,0 +1,103 @@
+.form-success {
+    scroll-margin-top: calc(var(--header) + 16px);
+}
+
+.phone-field__control {
+    position: relative;
+}
+
+.phone-field__control>svg {
+    position: absolute;
+    top: 50%;
+    left: 14px;
+    z-index: 1;
+    color: var(--muted);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.phone-field__control input {
+    min-height: 52px;
+    padding-left: 44px;
+    font-size: 16px;
+}
+
+.admin-content-stage {
+    --admin-logo-size: clamp(120px, 9vw, 150px);
+    --admin-logo-gap: 12px;
+    position: relative;
+}
+
+.admin-content-stage>.admin-logo-video {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 1;
+    isolation: isolate;
+    width: var(--admin-logo-size);
+    height: var(--admin-logo-size);
+    pointer-events: none;
+}
+
+.admin-content-stage>.admin-logo-video::before {
+    position: absolute;
+    inset: -20%;
+    z-index: 0;
+    background: radial-gradient(ellipse at center, rgba(0, 96, 154, 0.23) 0%, rgba(0, 96, 154, 0.12) 48%, transparent 76%);
+    content: "";
+    pointer-events: none;
+}
+
+.admin-logo-video__poster,
+.admin-logo-video__media {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.admin-logo-video__media {
+    background: transparent;
+}
+
+.admin-content-stage .page-heading {
+    flex-wrap: wrap;
+    align-items: center;
+    padding-right: calc(var(--admin-logo-size) + var(--admin-logo-gap));
+}
+
+.admin-content-stage .page-heading>div:first-child {
+    min-width: 0;
+}
+
+@media (max-width: 900px) {
+    .admin-content-stage {
+        --admin-logo-size: 80px;
+    }
+
+    .admin-content-stage .page-heading {
+        margin-bottom: 20px;
+    }
+
+    .admin-content-stage .page-heading>div:first-child {
+        flex: 0 1 100%;
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .admin-content-stage .page-heading>:not(:first-child) {
+        flex: 0 1 auto;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .admin-content-stage .page-heading h1 {
+        font-size: clamp(28px, 7.5vw, 34px);
+        overflow-wrap: anywhere;
+    }
+}

@@ -20,6 +20,7 @@ import {
   readTransactionalEmailConfig,
   readWorkerSecret,
   BREVO_NEWSLETTER_TEMPLATE_ID_VARS,
+  BREVO_ENQUIRY_TEMPLATE_ID_VARS,
 } from "../src/lib/email/config";
 import {
   formatFee,
@@ -177,8 +178,9 @@ test("template registry exposes configured, missing and invalid states without I
     [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_pending]: "501",
     [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_processing]: "bad",
   });
-  assert.equal(entries.length, 12);
+  assert.equal(entries.length, 13);
   assert.equal(entries.find((entry) => entry.template === "newsletter_interest_received")?.status, "missing");
+  assert.equal(entries.find((entry) => entry.template === "enquiry_received")?.status, "missing");
   assert.equal(entries.find((entry) => entry.template === "booking_created")?.status, "configured");
   assert.equal(entries.find((entry) => entry.template === "staff_order_pending")?.status, "configured");
   assert.equal(entries.find((entry) => entry.template === "staff_order_processing")?.status, "invalid");
@@ -192,6 +194,11 @@ test("template registry exposes configured, missing and invalid states without I
     withNewsletter.find((entry) => entry.template === "newsletter_interest_received")?.status,
     "configured",
   );
+  const withEnquiry = readEmailTemplateConfiguration({
+    ...VALID_ENV,
+    [BREVO_ENQUIRY_TEMPLATE_ID_VARS.enquiry_received]: "808",
+  });
+  assert.equal(withEnquiry.find((entry) => entry.template === "enquiry_received")?.status, "configured");
   assert.equal("id" in (entries[0] as object), false);
 });
 
@@ -601,13 +608,13 @@ function makeRepository(
     async markDead(input) {
       calls.dead.push({ id: input.id, error: input.error });
       return true;
-    },      async loadBookingContext() {
-        if (options.contextThrows) throw new Error("db unavailable");
-        return options.context === undefined ? CONTEXT : options.context;
-      },
-      async createTestSend() { return randomUUID(); },
-      async resend() { return randomUUID(); },
-    };
+    }, async loadBookingContext() {
+      if (options.contextThrows) throw new Error("db unavailable");
+      return options.context === undefined ? CONTEXT : options.context;
+    },
+    async createTestSend() { return randomUUID(); },
+    async resend() { return randomUUID(); },
+  };
 
   return { repository, calls };
 }
@@ -676,14 +683,16 @@ test("successful provider acceptance records the provider message id", async () 
 
 test("worker sends only the event's saved template ID and dynamic params", async () => {
   const { repository } = makeRepository({
-    rows: [row({ template: "booking_confirmed", payload: {
-      booking_reference: CONTEXT.reference,
-      status: "confirmed",
-    } })],
+    rows: [row({
+      template: "booking_confirmed", payload: {
+        booking_reference: CONTEXT.reference,
+        status: "confirmed",
+      }
+    })],
   });
   let sentInput:
     | {
-        templateId: number;
+      templateId: number;
       params: Record<string, string>;
       to: string;
       idempotencyKey: string;
@@ -876,6 +885,56 @@ test("backoff is exponential, jittered and capped", () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* Enquiry manager alert                                                       */
+/* -------------------------------------------------------------------------- */
+
+const ENQUIRY_CONTEXT = {
+  enquiryId: "123e4567-e89b-12d3-a456-426614174000",
+  kind: "general" as const,
+  name: "Ama Mensah",
+  business: null,
+  phone: "+233595224280",
+  topic: "Services",
+};
+
+function enquiryRow(overrides: Partial<ClaimedOutboxEmail> = {}): ClaimedOutboxEmail {
+  return {
+    id: randomUUID(),
+    bookingId: null,
+    template: "enquiry_received",
+    recipientEmail: "manager@2ndwavelaundry.com",
+    payload: { ...ENQUIRY_CONTEXT },
+    enquiry: { ...ENQUIRY_CONTEXT },
+    attemptCount: 1,
+    maxAttempts: 5,
+    ...overrides,
+  };
+}
+
+test("an unsaved enquiry template id keeps the alert retryable without sending", async () => {
+  const { repository, calls } = makeRepository({ rows: [enquiryRow()] });
+  let providerCalled = false;
+  const result = await runEmailWorker(
+    deps(repository, undefined, {
+      provider: {
+        send: async () => {
+          providerCalled = true;
+          return { ok: true, providerMessageId: null, duplicate: false };
+        },
+      },
+    }),
+    { workerId: "worker-enquiry" },
+  );
+
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.retried, 1);
+  assert.equal(providerCalled, false);
+  assert.equal(calls.sent.length, 0);
+  assert.equal(calls.retried[0].error, "email_template_not_configured");
+  assert.equal(calls.retried[0].delaySeconds, 900);
+});
+
+/* -------------------------------------------------------------------------- */
 /* Newsletter manager alert (Phase 5 MVP)                                      */
 /* -------------------------------------------------------------------------- */
 
@@ -911,11 +970,11 @@ test("the manager alert sends from its payload without any booking lookup", asyn
   };
   let sentInput:
     | {
-        templateId: number;
-        params: Record<string, string>;
-        to: string;
-        idempotencyKey: string;
-      }
+      templateId: number;
+      params: Record<string, string>;
+      to: string;
+      idempotencyKey: string;
+    }
     | undefined;
   const result = await runEmailWorker(
     deps(watched, undefined, {

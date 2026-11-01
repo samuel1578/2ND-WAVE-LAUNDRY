@@ -21,6 +21,9 @@ const STAFF_ALERTS_MIGRATION = "supabase/migrations/20261022120100_staff_order_e
 const PHASE4_MIGRATION = "supabase/migrations/20261027100000_email_phase4_operations.sql";
 const TABLE_MIGRATION = "supabase/migrations/20261027120000_newsletter_interest.sql";
 const FUNCTIONS_MIGRATION = "supabase/migrations/20261027120100_newsletter_interest_alerts.sql";
+const AUDIT_ACTION_MIGRATION = "supabase/migrations/20261101080200_correct_newsletter_audit_action.sql";
+const ENQUIRY_EMAIL_TYPE_MIGRATION = "supabase/migrations/20261101080000_enquiry_email_type.sql";
+const ENQUIRIES_MIGRATION = "supabase/migrations/20261101080100_enquiries.sql";
 
 const HARNESS = `
 CREATE ROLE anon NOLOGIN;
@@ -146,6 +149,9 @@ before(async () => {
     await db.exec(readFileSync(PHASE4_MIGRATION, "utf8"));
     await db.exec(readFileSync(TABLE_MIGRATION, "utf8"));
     await db.exec(readFileSync(FUNCTIONS_MIGRATION, "utf8"));
+    await db.exec(readFileSync(AUDIT_ACTION_MIGRATION, "utf8"));
+    await db.exec(readFileSync(ENQUIRY_EMAIL_TYPE_MIGRATION, "utf8"));
+    await db.exec(readFileSync(ENQUIRIES_MIGRATION, "utf8"));
 });
 
 after(async () => {
@@ -154,7 +160,7 @@ after(async () => {
 
 beforeEach(async () => {
     await db.exec(
-        "TRUNCATE TABLE public.newsletter_interest, public.email_outbox, public.audit_events RESTART IDENTITY CASCADE",
+        "TRUNCATE TABLE public.newsletter_interest, public.enquiries, public.email_outbox, public.audit_events RESTART IDENTITY CASCADE",
     );
 });
 
@@ -286,7 +292,7 @@ test("a first-time sign-up stores the row, queues exactly one manager alert and 
         action: string; entity_type: string; after_state: Record<string, unknown>; correlation_id: string;
     }>("SELECT action, entity_type, after_state, correlation_id FROM public.audit_events");
     assert.equal(audit.length, 1);
-    assert.equal(audit[0].action, "newsletter_interest.submitted");
+    assert.equal(audit[0].action, "newsletter.interest_submitted");
     assert.equal(audit[0].entity_type, "newsletter_interest");
     assert.equal(audit[0].correlation_id, correlation);
     assert.equal(audit[0].after_state.email_hash, digest);
@@ -456,6 +462,41 @@ test("the reference shape stays tolerant of booking-free newsletter rows", async
        AND NOT (payload ? 'booking_reference')`,
     );
     assert.equal(newsletterRows[0].count, 1);
+});
+
+test("enquiry migration stores public submissions and queues a minimal manager alert", async () => {
+    const correlation = randomUUID();
+    const key = "enquiry-db-submit-key-012345";
+    const { rows } = await db.query<{ result: { enquiry_id: string; is_new: boolean } }>(
+        `SELECT public.enquiry_submit(
+          $1::text, $2::text, $3::text, $4::text, $5::text, $6::text,
+          $7::text, $8::jsonb, $9::text, $10::text, $11::text, $12::uuid
+        ) AS result`,
+        [
+            "general", "Amina Mensah", null, "+233595224280", "amina@example.test",
+            "Services", "Please tell me about wash and fold.", JSON.stringify({}),
+            key, "b".repeat(32), MANAGER, correlation,
+        ],
+    );
+    assert.equal(rows[0].result.is_new, true);
+
+    const enquiryId = rows[0].result.enquiry_id;
+    const { rows: alertRows } = await db.query<{ template: string; payload: Record<string, unknown> }>(
+        "SELECT template::text, payload FROM public.email_outbox WHERE payload->>'enquiry_id' = $1",
+        [enquiryId],
+    );
+    assert.equal(alertRows.length, 1);
+    assert.equal(alertRows[0].template, "enquiry_received");
+    assert.deepEqual(Object.keys(alertRows[0].payload).sort(), ["business", "enquiry_id", "kind", "name", "phone", "topic"].sort());
+    assert.equal(JSON.stringify(alertRows[0].payload).includes("Please tell me"), false);
+    assert.equal(JSON.stringify(alertRows[0].payload).includes("amina@example.test"), false);
+
+    const { rows: auditRows } = await db.query<{ action: string; correlation_id: string }>(
+        "SELECT action, correlation_id FROM public.audit_events WHERE entity_type = 'enquiry' AND entity_id = $1",
+        [enquiryId],
+    );
+    assert.equal(auditRows[0].action, "enquiry.submitted");
+    assert.equal(auditRows[0].correlation_id, correlation);
 });
 
 test("browser roles hold no privilege and only the elevated role may submit", async () => {

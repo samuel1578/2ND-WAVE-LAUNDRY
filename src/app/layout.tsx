@@ -7,6 +7,7 @@ import { ScrollToTop } from "@/components/scroll-to-top";
 import { SiteSettingsProvider } from "@/components/site-settings-provider";
 import { getSiteSettings } from "@/lib/website/site-settings";
 import "./globals.css";
+import "./ui-fixes.css";
 const jakarta = localFont({
   src: "../../public/plus-jakarta-sans.woff2",
   display: "swap",

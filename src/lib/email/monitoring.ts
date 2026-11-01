@@ -5,13 +5,14 @@
 
 import { hasPermission } from "../auth/permissions";
 import type { AdminRole } from "../auth/roles";
-import { emailTemplates, newsletterInterestTemplates, staffOrderTemplates } from "./templates";
+import { emailTemplates, enquiryReceivedTemplates, newsletterInterestTemplates, staffOrderTemplates } from "./templates";
 
 /** Every audience shares one outbox, so the monitor must recognise all of them. */
 export const EMAIL_TEMPLATES = [
   ...emailTemplates,
   ...staffOrderTemplates,
   ...newsletterInterestTemplates,
+  ...enquiryReceivedTemplates,
 ] as const;
 
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
@@ -95,9 +96,9 @@ export function normaliseEmailMonitoringQuery(input: {
   const eventType = isEmailTemplate(input.eventType) ? input.eventType : "";
   const bookingId =
     typeof input.bookingId === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      input.bookingId,
-    )
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        input.bookingId,
+      )
       ? input.bookingId
       : "";
 
@@ -177,6 +178,7 @@ export function emailTemplateLabel(template: EmailTemplate): string {
     staff_order_completed: "Staff alert — completed",
     staff_order_cancelled: "Staff alert — cancelled",
     newsletter_interest_received: "Newsletter interest — new sign-up",
+    enquiry_received: "Enquiry — new submission",
   };
   return labels[template];
 }

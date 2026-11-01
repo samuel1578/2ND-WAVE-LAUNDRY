@@ -26,9 +26,11 @@ import type {
 } from "./outbox-repository";
 import {
   buildBrevoTemplateParams,
+  buildEnquiryReceivedParams,
   buildNewsletterInterestParams,
   buildStaffOrderTemplateParams,
   emailTemplates,
+  isEnquiryReceivedTemplate,
   isNewsletterInterestTemplate,
   isStaffOrderTemplate,
   validateEmailTemplateParams,
@@ -301,6 +303,55 @@ export async function runEmailWorker(
       try {
         if (!row.newsletter) throw new Error("Newsletter interest payload is missing.");
         params = buildNewsletterInterestParams(row.newsletter, {
+          siteUrl: deps.siteUrl,
+        });
+        validateEmailTemplateParams(row.template, params);
+      } catch {
+        try {
+          const marked = await deps.repository.markDead({
+            id: row.id,
+            workerId: options.workerId,
+            error: "email_template_params_failed",
+          });
+          if (marked) dead += 1;
+          else skipped += 1;
+        } catch {
+          failed += 1;
+        }
+        continue;
+      }
+
+      const templateId = deps.templateIds[row.template];
+      if (
+        typeof templateId !== "number" ||
+        !Number.isSafeInteger(templateId) ||
+        templateId < 1
+      ) {
+        try {
+          const status = await deps.repository.markRetry({
+            id: row.id,
+            workerId: options.workerId,
+            error: "email_template_not_configured",
+            delaySeconds: RETRY_CAP_SECONDS,
+          });
+          if (status === "dead") dead += 1;
+          else if (status === "retryable_failed") retried += 1;
+          else skipped += 1;
+        } catch {
+          failed += 1;
+        }
+        continue;
+      }
+
+      await deliverRow(row, templateId, params);
+      continue;
+    }
+
+    if (isEnquiryReceivedTemplate(row.template)) {
+      let params: Record<string, string>;
+      try {
+        if (!row.enquiry) throw new Error("Enquiry alert payload is missing.");
+        params = buildEnquiryReceivedParams(row.enquiry, {
           siteUrl: deps.siteUrl,
         });
         validateEmailTemplateParams(row.template, params);

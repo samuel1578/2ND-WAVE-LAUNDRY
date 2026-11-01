@@ -41,6 +41,7 @@ import { MediaAdmin } from "./media-admin";
 import { SettingsAdmin } from "./settings";
 import { StaffAdmin } from "./staff-manager";
 import { EmailDelivery } from "./email-delivery";
+import { AdminStaticLogo } from "./admin-logo-video";
 
 const AUTH_ROUTES = ["login", "reset-password", "set-password"];
 
@@ -176,7 +177,7 @@ export function AdminApp({
           emailMonitoring={hasPermission(session?.role, "email.manage")}
         />
       ) : route === "enquiries" ? (
-        <Enquiries id={segments[1]} state={state} />
+        <Enquiries id={segments[1]} state={state} demo={!session} />
       ) : route === "reviews" ? (
         // Sprint 3B. The route already inherits `reviews.read` via the prefix
         // match, so the detail view needs no extra registry entry. Override
@@ -306,7 +307,10 @@ export function AdminApp({
         </div>
         <PasswordUpdatedNotice notice={notice} />
         {dataNotice && <Notice>{dataNotice}</Notice>}
-        <Reveal>{content}</Reveal>
+        <div className="admin-content-stage">
+          <AdminStaticLogo />
+          <Reveal>{content}</Reveal>
+        </div>
       </div>
     </main>
   );
@@ -532,6 +536,10 @@ function Dashboard({
   const [livePendingReviews, setLivePendingReviews] = useState<number | null>(
     null,
   );
+  const [liveEnquiries, setLiveEnquiries] = useState<{
+    newCount: number;
+    recent: Array<{ id: string; kind: "general" | "commercial"; name: string; business: string | null; status: string }>;
+  } | null>(null);
   useEffect(() => {
     if (demo) return;
     let cancelled = false;
@@ -580,6 +588,20 @@ function Dashboard({
       } catch {
         // Leave the count unavailable; no sample value is substituted.
       }
+
+      try {
+        const response = await fetch("/api/admin/enquiries?view=summary", {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = await response.json() as {
+          newCount?: number;
+          recent?: Array<{ id: string; kind: "general" | "commercial"; name: string; business: string | null; status: string }>;
+        };
+        if (!cancelled) setLiveEnquiries({ newCount: data.newCount ?? 0, recent: data.recent ?? [] });
+      } catch {
+        // Keep the live count unavailable rather than substituting sample values.
+      }
     })();
     return () => {
       cancelled = true;
@@ -597,6 +619,15 @@ function Dashboard({
       subtitle: b.input.items,
     }))
     : (liveBookings?.recent ?? []);
+  const enquiryRows = demo
+    ? leads.filter((lead) => ["general", "commercial"].includes(lead.kind)).slice(0, 5).map((lead) => ({
+      id: lead.id,
+      kind: lead.kind,
+      name: lead.fields.name,
+      business: lead.fields.business || null,
+      status: lead.status,
+    }))
+    : (liveEnquiries?.recent ?? []);
   const pendingCount = demo
     ? demoBookings.filter((b) => b.status === "pending").length
     : liveBookings?.pendingCount;
@@ -614,12 +645,11 @@ function Dashboard({
         "New enquiries",
         demo
           ? leads.filter(
-            (l) =>
-              ["general", "commercial"].includes(l.kind) && l.status === "new",
+            (l) => ["general", "commercial"].includes(l.kind) && l.status === "new",
           ).length
-          : "—",
+          : (liveEnquiries?.newCount ?? "—"),
         MessageSquare,
-        "",
+        "/admin/enquiries",
       ],
       [
         "Reviews awaiting approval",
@@ -691,34 +721,22 @@ function Dashboard({
             <h2>Recent enquiries</h2>
             <Link href="/admin/enquiries">View All ↗</Link>
           </div>
-          {leads
-            .filter((l) => ["general", "commercial"].includes(l.kind))
-            .slice(0, 5)
-            .map((l) => (
-              <Link
-                className="record-row"
-                key={l.id}
-                href={`/admin/enquiries/${l.id}`}
-              >
-                <div>
-                  <small>
-                    {l.kind === "commercial"
-                      ? "Commercial quote"
-                      : "General enquiry"}
-                  </small>
-                  <h3>{l.fields.name}</h3>
-                </div>
-                <span className="badge">{statusLabel(l.status)}</span>
-              </Link>
-            ))}
-          {!demo ? (
-            // Honest state: enquiries are not connected in Sprint 2C, so sample
-            // records are never shown as if they were real.
-            <Empty
-              title="Enquiries are not connected yet."
-              body="Enquiry records remain sample data in this build."
-            />
-          ) : !leads.some((l) => ["general", "commercial"].includes(l.kind)) ? (
+          {enquiryRows.map((row) => (
+            <Link
+              className="record-row"
+              key={row.id}
+              href={`/admin/enquiries/${row.id}`}
+            >
+              <div>
+                <small>{row.kind === "commercial" ? "Commercial quote" : "General enquiry"}</small>
+                <h3>{row.business || row.name}</h3>
+              </div>
+              <span className="badge">{statusLabel(row.status)}</span>
+            </Link>
+          ))}
+          {!demo && liveEnquiries === null ? (
+            <Empty title="Enquiries could not be loaded." body="Reload the page and try again." />
+          ) : enquiryRows.length === 0 ? (
             <Empty title="No requests to show yet." />
           ) : null}
         </section>

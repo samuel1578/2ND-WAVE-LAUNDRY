@@ -90,9 +90,9 @@ export async function POST(request: NextRequest) {
 
   const template = (body as { template: NotificationTemplate }).template;
   if (!isEmailTemplate(template)) return json({ code: "invalid_request" }, 400);
-  // The newsletter manager alert renders from a committed sign-up payload; the
-  // controlled fixture path only knows booking contexts, so it is not testable.
-  if (template === "newsletter_interest_received")
+  // Internal alerts render from committed non-booking payloads; the controlled
+  // fixture path only knows booking contexts, so these cannot be test-sent.
+  if (template === "newsletter_interest_received" || template === "enquiry_received")
     return json({ code: "template_not_testable" }, 400);
   const recipient = readEmailTestRecipient();
   if (!recipient.ok)
@@ -111,19 +111,19 @@ export async function POST(request: NextRequest) {
   try {
     params = template.startsWith("staff_order_")
       ? buildStaffOrderTemplateParams(
-          template as Extract<NotificationTemplate, `staff_order_${string}`>,
-          TEST_CONTEXT,
-          TEST_STAFF,
-          { siteUrl: config.config.siteUrl },
-        )
+        template as Extract<NotificationTemplate, `staff_order_${string}`>,
+        TEST_CONTEXT,
+        TEST_STAFF,
+        { siteUrl: config.config.siteUrl },
+      )
       : buildBrevoTemplateParams(
-          template as Exclude<
-            NotificationTemplate,
-            `staff_order_${string}` | "newsletter_interest_received"
-          >,
-          TEST_CONTEXT,
-          { siteUrl: config.config.siteUrl },
-        );
+        template as Exclude<
+          NotificationTemplate,
+          `staff_order_${string}` | "newsletter_interest_received" | "enquiry_received"
+        >,
+        TEST_CONTEXT,
+        { siteUrl: config.config.siteUrl },
+      );
     validateEmailTemplateParams(template, params);
   } catch {
     return json({ code: "email_template_params_failed" }, 422);

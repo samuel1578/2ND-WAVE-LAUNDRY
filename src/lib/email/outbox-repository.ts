@@ -15,9 +15,11 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { bookingStatuses, type BookingStatus } from "@/lib/bookings/types";
 import {
+  isEnquiryReceivedTemplate,
   isNewsletterInterestTemplate,
   isStaffOrderTemplate,
   type BookingEmailContext,
+  type EnquiryReceivedContext,
   type NewsletterInterestContext,
   type NotificationTemplate,
   type StaffActorType,
@@ -30,11 +32,12 @@ export type ClaimedOutboxEmail = {
   template: NotificationTemplate;
   recipientEmail: string;
   payload:
-    | {
-        booking_reference: string;
-        status: string;
-      }
-    | NewsletterInterestContext;
+  | {
+    booking_reference: string;
+    status: string;
+  }
+  | NewsletterInterestContext
+  | EnquiryReceivedContext;
   testContext?: {
     booking: BookingEmailContext;
     staff?: StaffNotificationContext;
@@ -45,6 +48,8 @@ export type ClaimedOutboxEmail = {
   staff?: StaffNotificationContext;
   /** Present only for newsletter_interest_received rows. */
   newsletter?: NewsletterInterestContext;
+  /** Present only for enquiry_received rows; excludes message and private notes. */
+  enquiry?: EnquiryReceivedContext;
   attemptCount: number;
   maxAttempts: number;
 };
@@ -146,6 +151,7 @@ const TEMPLATE_SET = new Set<NotificationTemplate>([
   "staff_order_completed",
   "staff_order_cancelled",
   "newsletter_interest_received",
+  "enquiry_received",
 ]);
 
 const asBookingStatus = (value: unknown): BookingStatus | null =>
@@ -183,6 +189,31 @@ function asNewsletterContext(value: unknown): NewsletterInterestContext {
   };
 }
 
+function asEnquiryContext(value: unknown): EnquiryReceivedContext {
+  if (typeof value !== "object" || value === null)
+    throw new EmailRepositoryError();
+  const record = value as Record<string, unknown>;
+  if (
+    Object.keys(record).some((key) => !["enquiry_id", "kind", "name", "business", "phone", "topic"].includes(key)) ||
+    typeof record.enquiry_id !== "string" ||
+    !/^[0-9a-f-]{36}$/i.test(record.enquiry_id) ||
+    !(record.kind === "general" || record.kind === "commercial") ||
+    typeof record.name !== "string" || record.name.length < 1 || record.name.length > 120 ||
+    !(record.business === null || (typeof record.business === "string" && record.business.length <= 120)) ||
+    typeof record.phone !== "string" || record.phone.length < 1 || record.phone.length > 40 ||
+    !(record.topic === null || (typeof record.topic === "string" && record.topic.length <= 80))
+  )
+    throw new EmailRepositoryError();
+  return {
+    enquiryId: record.enquiry_id,
+    kind: record.kind,
+    name: record.name,
+    business: record.business,
+    phone: record.phone,
+    topic: record.topic,
+  };
+}
+
 /**
  * Parses the minimal render payload. Customer rows carry exactly two keys; staff
  * rows additionally carry the trusted event metadata written by the enqueue
@@ -196,13 +227,19 @@ function asPayload(
   payload: ClaimedOutboxEmail["payload"];
   staff?: StaffNotificationContext;
   newsletter?: NewsletterInterestContext;
+  enquiry?: EnquiryReceivedContext;
 } {
   if (typeof value !== "object" || value === null)
     throw new EmailRepositoryError();
   const record = value as Record<string, unknown>;
 
   if (isNewsletterInterestTemplate(template)) {
-    return { payload: asNewsletterContext(record), newsletter: asNewsletterContext(record) };
+    const newsletter = asNewsletterContext(record);
+    return { payload: newsletter, newsletter };
+  }
+  if (isEnquiryReceivedTemplate(template)) {
+    const enquiry = asEnquiryContext(record);
+    return { payload: enquiry, enquiry };
   }
 
   if (
@@ -286,7 +323,7 @@ function asTestContext(value: unknown): ClaimedOutboxEmail["testContext"] {
     currency: context.currency,
     branch:
       typeof context.branch === "object" && context.branch !== null &&
-      typeof (context.branch as Record<string, unknown>).title === "string"
+        typeof (context.branch as Record<string, unknown>).title === "string"
         ? { title: (context.branch as Record<string, string>).title }
         : null,
   };
@@ -337,6 +374,7 @@ function mapClaimed(row: OutboxRow): ClaimedOutboxEmail {
     payload: parsed.payload,
     ...(parsed.staff ? { staff: parsed.staff } : {}),
     ...(parsed.newsletter ? { newsletter: parsed.newsletter } : {}),
+    ...(parsed.enquiry ? { enquiry: parsed.enquiry } : {}),
     ...(testContext ? { testContext } : {}),
     isTest: row.is_test === true,
     ...(typeof row.resend_of === "string" ? { resendOf: row.resend_of } : {}),

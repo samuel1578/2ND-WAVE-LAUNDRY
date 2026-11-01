@@ -1,10 +1,10 @@
 "use client";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { branches, copy, demoMode } from "@/lib/content";
 import { repository } from "@/lib/mock-store";
 import { validEmail, validPhone } from "@/lib/rules";
-import { DemoFailure, Field, Notice, Submit, TextField } from "./controls";
+import { DemoFailure, Field, Notice, PhoneField, Submit, TextField } from "./controls";
 type Kind = "general" | "commercial" | "review" | "newsletter";
 type Definition = {
   name: string;
@@ -81,16 +81,20 @@ export function PublicForm({
   kind,
   reviewSubmissionsEnabled = false,
   newsletterInterestEnabled = false,
+  enquiriesEnabled = false,
 }: {
   kind: Kind;
   reviewSubmissionsEnabled?: boolean;
   newsletterInterestEnabled?: boolean;
+  enquiriesEnabled?: boolean;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const successRef = useRef<HTMLDivElement>(null);
+  const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const key = useRef("");
   const [consent, setConsent] = useState(false);
   const config = {
@@ -119,6 +123,16 @@ export function PublicForm({
       body: copy("16", "Success body"),
     },
   }[kind];
+  useEffect(() => {
+    if (!saved) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    successRef.current?.scrollIntoView({
+      block: kind === "newsletter" ? "nearest" : "start",
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
+    successHeadingRef.current?.focus({ preventScroll: true });
+  }, [saved, kind]);
+
   function change(name: string, value: string) {
     setValues((v) => ({ ...v, [name]: value }));
     key.current = "";
@@ -134,7 +148,9 @@ export function PublicForm({
       else if (value && field.type === "email" && !validEmail(value))
         next[field.name] = "Enter a valid email address.";
       else if (value && field.type === "tel" && !validPhone(value))
-        next[field.name] = "Enter a valid phone number.";
+        next[field.name] = "Enter a valid phone number, for example 024 123 4567.";
+      else if (value && field.max && value.length > field.max)
+        next[field.name] = `Use no more than ${field.max} characters.`;
     }
     if ((kind === "review" || kind === "newsletter") && !consent)
       next.consent = "Complete this field.";
@@ -147,33 +163,50 @@ export function PublicForm({
     setError("");
     try {
       key.current ||= crypto.randomUUID();
-      if ((kind === "review" || kind === "newsletter") && !demoMode) {
-        const response = await fetch(
-          kind === "review" ? "/api/reviews" : "/api/newsletter-interest",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": key.current,
-            },
-            body: JSON.stringify(
-              kind === "review"
-                ? {
-                    name: values.name,
-                    body: values.review,
-                    rating: values.rating ? Number(values.rating) : null,
-                    branch: values.branch || null,
-                    consent,
-                    website: values.website || "",
-                  }
-                : {
-                    email: values.email,
-                    consent,
-                    website: values.website || "",
-                  },
-            ),
+      if (
+        !demoMode &&
+        ((kind === "review") ||
+          (kind === "newsletter" && newsletterInterestEnabled) ||
+          ((kind === "general" || kind === "commercial") && enquiriesEnabled))
+      ) {
+        const endpoint = kind === "review"
+          ? "/api/reviews"
+          : kind === "newsletter"
+            ? "/api/newsletter-interest"
+            : "/api/enquiries";
+        const payload = kind === "review"
+          ? {
+            name: values.name,
+            body: values.review,
+            rating: values.rating ? Number(values.rating) : null,
+            branch: values.branch || null,
+            consent,
+            website: values.website || "",
+          }
+          : kind === "newsletter"
+            ? { email: values.email, consent, website: values.website || "" }
+            : {
+              kind,
+              name: values.name,
+              business: values.business || "",
+              phone: values.phone,
+              email: values.email || "",
+              topic: values.topic || "",
+              message: values.message || "",
+              items: values.items || "",
+              frequency: values.frequency || "",
+              location: values.location || "",
+              requirements: values.requirements || "",
+              website: values.website || "",
+            };
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": key.current,
           },
-        );
+          body: JSON.stringify(payload),
+        });
         const result = (await response.json()) as {
           ok?: boolean;
           message?: string;
@@ -183,9 +216,11 @@ export function PublicForm({
           if (result.fieldErrors) setErrors((current) => ({ ...current, ...result.fieldErrors }));
           throw new Error(
             result.message ||
-              (kind === "review"
-                ? "We couldn’t save your review. Please try again."
-                : "We couldn’t save your sign-up. Please try again."),
+            (kind === "review"
+              ? "We couldn’t save your review. Please try again."
+              : kind === "newsletter"
+                ? "We couldn’t save your sign-up. Please try again."
+                : "We couldn’t send your enquiry. Please try again."),
           );
         }
       } else {
@@ -213,9 +248,9 @@ export function PublicForm({
   }
   if (saved)
     return (
-      <div className="form-success">
+      <div className="form-success" ref={successRef}>
         <Notice success>
-          <h2>{config.heading}</h2>
+          <h2 ref={successHeadingRef} tabIndex={-1}>{config.heading}</h2>
           <p>{config.body}</p>
         </Notice>
         {kind === "commercial" && <p>{copy("10.03", "Supporting text")}</p>}
@@ -230,7 +265,9 @@ export function PublicForm({
       </div>
     );
   const liveFormActive =
-    kind === "review" || (kind === "newsletter" && newsletterInterestEnabled);
+    kind === "review" ||
+    (kind === "newsletter" && newsletterInterestEnabled) ||
+    ((kind === "general" || kind === "commercial") && enquiriesEnabled);
   if (!demoMode && !liveFormActive)
     return (
       <Notice>
@@ -242,7 +279,7 @@ export function PublicForm({
       <p className="muted">Fields marked * are required.</p>
       {error && <Notice error>{error}</Notice>}
       <div className={kind === "newsletter" ? "" : "form-grid"}>
-        {(kind === "review" || kind === "newsletter") && (
+        {(kind === "review" || kind === "newsletter" || kind === "general" || kind === "commercial") && (
           <input
             type="text"
             name="website"
@@ -305,6 +342,14 @@ export function PublicForm({
                     }
                   />
                 </Field>
+              ) : field.type === "tel" ? (
+                <PhoneField
+                  id={`${kind}-${field.name}`}
+                  label={label}
+                  value={value}
+                  onChange={(nextValue) => change(field.name, nextValue)}
+                  error={errors[field.name]}
+                />
               ) : (
                 <TextField
                   id={`${kind}-${field.name}`}
@@ -349,9 +394,9 @@ export function PublicForm({
       )}
       <p className="privacy">
         {kind === "commercial"
-          ? "We’ll use your details to respond to this enquiry."
+          ? "We’ll use your details to respond to and manage this quote enquiry. We keep enquiry records while needed to handle your request and applicable obligations; see our Privacy Policy."
           : kind === "general"
-            ? "We’ll use your details to respond to your enquiry."
+            ? "We’ll use your details to respond to and manage your enquiry. We keep enquiry records while needed to handle your request and applicable obligations; see our Privacy Policy."
             : kind === "review"
               ? "We’ll use your details to review your submission."
               : ""}{" "}

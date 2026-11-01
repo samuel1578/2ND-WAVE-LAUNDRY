@@ -13,9 +13,11 @@
 
 import {
   emailTemplates,
+  enquiryReceivedTemplates,
   newsletterInterestTemplates,
   staffOrderTemplates,
   type EmailTemplate,
+  type EnquiryReceivedTemplate,
   type NewsletterInterestTemplate,
   type NotificationTemplate,
   type StaffOrderTemplate,
@@ -74,6 +76,9 @@ export const BREVO_NEWSLETTER_TEMPLATE_ID_VARS: Record<
 > = {
   newsletter_interest_received: "BREVO_TEMPLATE_NEWSLETTER_INTEREST_ID",
 };
+export const BREVO_ENQUIRY_TEMPLATE_ID_VARS: Record<EnquiryReceivedTemplate, string> = {
+  enquiry_received: "BREVO_TEMPLATE_ENQUIRY_RECEIVED_ID",
+};
 
 export const MIN_WORKER_SECRET_LENGTH = 32;
 export const MIN_WEBHOOK_SECRET_LENGTH = 32;
@@ -92,9 +97,9 @@ export type EmailConfigReason =
 export type BrevoApiKeyResult =
   | { ok: true; apiKey: string }
   | {
-      ok: false;
-      reason: "disabled" | "missing-api-key" | "invalid-api-key";
-    };
+    ok: false;
+    reason: "disabled" | "missing-api-key" | "invalid-api-key";
+  };
 
 /** Validates the Brevo credentials used by saved-template delivery. */
 export function readBrevoApiKey(
@@ -122,11 +127,11 @@ export type TransactionalEmailConfig = {
 export type TransactionalEmailConfigResult =
   | { ok: true; enabled: true; config: TransactionalEmailConfig }
   | {
-      ok: false;
-      enabled: false;
-      reason: EmailConfigReason;
-      templateVariable?: string;
-    };
+    ok: false;
+    enabled: false;
+    reason: EmailConfigReason;
+    templateVariable?: string;
+  };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -249,11 +254,12 @@ export function readEmailTemplateConfiguration(
   const groups: Array<{
     templates: readonly NotificationTemplate[];
     variables: Record<string, string>;
-  }  > = [
-    { templates: emailTemplates, variables: BREVO_TEMPLATE_ID_VARS },
-    { templates: staffOrderTemplates, variables: BREVO_STAFF_TEMPLATE_ID_VARS },
-    { templates: newsletterInterestTemplates, variables: BREVO_NEWSLETTER_TEMPLATE_ID_VARS },
-  ];
+  }> = [
+      { templates: emailTemplates, variables: BREVO_TEMPLATE_ID_VARS },
+      { templates: staffOrderTemplates, variables: BREVO_STAFF_TEMPLATE_ID_VARS },
+      { templates: newsletterInterestTemplates, variables: BREVO_NEWSLETTER_TEMPLATE_ID_VARS },
+      { templates: enquiryReceivedTemplates, variables: BREVO_ENQUIRY_TEMPLATE_ID_VARS },
+    ];
 
   for (const { templates, variables } of groups) {
     const seen = new Set<number>();
@@ -305,10 +311,10 @@ export function readEmailOperationalConfiguration(
 export type StaffTemplateIdsResult =
   | { ok: true; templateIds: Record<StaffOrderTemplate, number> }
   | {
-      ok: false;
-      reason: "missing-template-id" | "invalid-template-id";
-      templateVariable: string;
-    };
+    ok: false;
+    reason: "missing-template-id" | "invalid-template-id";
+    templateVariable: string;
+  };
 
 /** Shared optional-ID reader for the non-customer template groups. */
 function readOptionalTemplateIds<T extends string>(
@@ -318,10 +324,10 @@ function readOptionalTemplateIds<T extends string>(
 ):
   | { ok: true; templateIds: Record<T, number> }
   | {
-      ok: false;
-      reason: "missing-template-id" | "invalid-template-id";
-      templateVariable: string;
-    } {
+    ok: false;
+    reason: "missing-template-id" | "invalid-template-id";
+    templateVariable: string;
+  } {
   const templateIds = {} as Record<T, number>;
   const configuredIds = new Set<number>();
 
@@ -363,10 +369,10 @@ export function readStaffEmailTemplateIds(
 export type NewsletterTemplateIdsResult =
   | { ok: true; templateIds: Record<NewsletterInterestTemplate, number> }
   | {
-      ok: false;
-      reason: "missing-template-id" | "invalid-template-id";
-      templateVariable: string;
-    };
+    ok: false;
+    reason: "missing-template-id" | "invalid-template-id";
+    templateVariable: string;
+  };
 
 /**
  * Reads the single optional manager alert template ID (Phase 5 MVP). Missing
@@ -380,6 +386,25 @@ export function readNewsletterTemplateIds(
     env,
     newsletterInterestTemplates,
     BREVO_NEWSLETTER_TEMPLATE_ID_VARS,
+  );
+}
+
+export type EnquiryTemplateIdsResult =
+  | { ok: true; templateIds: Record<EnquiryReceivedTemplate, number> }
+  | {
+    ok: false;
+    reason: "missing-template-id" | "invalid-template-id";
+    templateVariable: string;
+  };
+
+/** Missing enquiry alert configuration leaves its outbox row retryable. */
+export function readEnquiryTemplateIds(
+  env: Record<string, string | undefined> = process.env,
+): EnquiryTemplateIdsResult {
+  return readOptionalTemplateIds(
+    env,
+    enquiryReceivedTemplates,
+    BREVO_ENQUIRY_TEMPLATE_ID_VARS,
   );
 }
 
@@ -433,16 +458,20 @@ export function readDeliveryTemplateIds(
   newsletterConfigured: boolean;
   /** The first unconfigured newsletter variable, for operator messaging. */
   newsletterTemplateVariable: string | null;
+  enquiryConfigured: boolean;
+  enquiryTemplateVariable: string | null;
 } {
   const customer = readTransactionalEmailConfig(env);
   const staff = readStaffEmailTemplateIds(env);
   const newsletter = readNewsletterTemplateIds(env);
+  const enquiry = readEnquiryTemplateIds(env);
 
   return {
     templateIds: {
       ...(customer.ok ? customer.config.templateIds : {}),
       ...(staff.ok ? staff.templateIds : {}),
       ...(newsletter.ok ? newsletter.templateIds : {}),
+      ...(enquiry.ok ? enquiry.templateIds : {}),
     },
     staffConfigured: staff.ok,
     staffTemplateVariable: staff.ok ? null : staff.templateVariable,
@@ -450,6 +479,8 @@ export function readDeliveryTemplateIds(
     newsletterTemplateVariable: newsletter.ok
       ? null
       : newsletter.templateVariable,
+    enquiryConfigured: enquiry.ok,
+    enquiryTemplateVariable: enquiry.ok ? null : enquiry.templateVariable,
   };
 }
 

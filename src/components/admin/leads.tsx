@@ -6,21 +6,118 @@ import type { Lead } from "@/lib/contracts";
 import { Empty, Heading } from "@/components/ui";
 import { Dialog } from "@/components/dialog";
 import { Field, Notice, TextField } from "@/components/forms/controls";
-export function Enquiries({ id, state }: { id?: string; state?: string }) {
+type EnquiryView = {
+  id: string;
+  kind: "general" | "commercial";
+  status: "new" | "contacted" | "closed";
+  fields: Record<string, string>;
+  notes: string[];
+  version: number;
+};
+function liveEnquiryView(record: {
+  id: string;
+  kind: "general" | "commercial";
+  status: "new" | "contacted" | "closed";
+  name: string;
+  business: string | null;
+  phone: string;
+  email: string | null;
+  topic: string | null;
+  message: string | null;
+  details: Record<string, unknown>;
+  notes: Array<{ text: string }>;
+  version: number;
+}): EnquiryView {
+  return {
+    id: record.id,
+    kind: record.kind,
+    status: record.status,
+    fields: {
+      name: record.name,
+      business: record.business ?? "",
+      phone: record.phone,
+      email: record.email ?? "",
+      topic: record.topic ?? "",
+      message: record.message ?? "",
+      ...Object.fromEntries(Object.entries(record.details).map(([key, value]) => [key, typeof value === "string" ? value : ""])),
+    },
+    notes: record.notes.map((note) => note.text),
+    version: record.version,
+  };
+}
+export function Enquiries({ id, state, demo = false }: { id?: string; state?: string; demo?: boolean }) {
   const store = useDemoStore();
   const [tab, setTab] = useState<"general" | "commercial">("general");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(!demo);
+  const [records, setRecords] = useState<EnquiryView[] | null>(demo ? [] : null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [success, setSuccess] = useState("");
-  const item = store.leads.find((l) => l.id === id);
-  async function update(status: Lead["status"], withNote = false) {
+  const demoItem = demo ? store.leads.find((lead) => lead.id === id && ["general", "commercial"].includes(lead.kind)) : undefined;
+  const item: EnquiryView | undefined = demoItem
+    ? { id: demoItem.id, kind: demoItem.kind as EnquiryView["kind"], status: demoItem.status as EnquiryView["status"], fields: demoItem.fields, notes: demoItem.notes, version: 1 }
+    : records?.find((record) => record.id === id);
+
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError("");
+      try {
+        const response = await fetch(
+          id ? `/api/admin/enquiries/${encodeURIComponent(id)}` : `/api/admin/enquiries?kind=${tab}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) {
+          const message = response.status === 401
+            ? "Sign in with an administrator account."
+            : response.status === 403
+              ? "Your administrator role does not include enquiries."
+              : response.status === 404
+                ? "This enquiry is no longer available."
+                : "Enquiries could not be loaded. Reload the page and try again.";
+          if (!cancelled) { setLoadError(message); setRecords(null); }
+          return;
+        }
+        const payload = await response.json() as { record?: Parameters<typeof liveEnquiryView>[0]; records?: Parameters<typeof liveEnquiryView>[0][] };
+        if (!cancelled) {
+          setRecords(id ? (payload.record ? [liveEnquiryView(payload.record)] : []) : (payload.records ?? []).map(liveEnquiryView));
+          setLoadError("");
+        }
+      } catch {
+        if (!cancelled) { setLoadError("Enquiries could not be loaded. Reload the page and try again."); setRecords(null); }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [demo, id, tab]);
+
+  async function update(status: EnquiryView["status"], withNote = false) {
     if (!item || busy) return;
     setBusy(true);
     setError("");
     try {
-      await updateLead(item.id, status, withNote ? note : undefined);
+      if (demo) {
+        await updateLead(item.id, status, withNote ? note : undefined);
+      } else {
+        const response = await fetch(`/api/admin/enquiries/${encodeURIComponent(item.id)}/update`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedVersion: item.version, status, ...(withNote ? { note } : {}) }),
+        });
+        const result = await response.json() as { ok?: boolean; version?: number; message?: string };
+        if (!response.ok || result.ok !== true || typeof result.version !== "number")
+          throw new Error(result.message || "This enquiry could not be updated. Reload and try again.");
+        setRecords((current) => current?.map((record) => record.id === item.id
+          ? { ...record, status, version: result.version!, notes: withNote ? [...record.notes, note.trim()] : record.notes }
+          : record) ?? current);
+      }
       setNote("");
       setSuccess("Enquiry updated.");
     } catch (e) {
@@ -29,6 +126,8 @@ export function Enquiries({ id, state }: { id?: string; state?: string }) {
       setBusy(false);
     }
   }
+  if (loading && !records) return <Empty title="Loading enquiries…" />;
+  if (loadError && !records) return <Notice error>{loadError}</Notice>;
   if (id && !item) return <Empty title="Record not found" />;
   if (item)
     return (
@@ -97,19 +196,22 @@ export function Enquiries({ id, state }: { id?: string; state?: string }) {
         </div>
       </>
     );
-  const leads =
-    state === "empty"
-      ? []
-      : store.leads.filter(
-          (l) =>
-            l.kind === tab &&
-            JSON.stringify(l.fields)
-              .toLowerCase()
-              .includes(query.toLowerCase()),
-        );
+  const demoLeads: EnquiryView[] = store.leads
+    .filter((lead) => ["general", "commercial"].includes(lead.kind) && lead.kind === tab)
+    .map((lead) => ({
+      id: lead.id,
+      kind: lead.kind as EnquiryView["kind"],
+      status: lead.status as EnquiryView["status"],
+      fields: lead.fields,
+      notes: lead.notes,
+      version: 1,
+    }));
+  const leads = (demo ? (state === "empty" ? [] : demoLeads) : records ?? [])
+    .filter((lead) => lead.kind === tab && JSON.stringify(lead.fields).toLowerCase().includes(query.toLowerCase()));
   return (
     <>
       <Heading title="Enquiries" />
+      {loadError && <Notice error>{loadError}</Notice>}
       <div className="filters">
         {(["general", "commercial"] as const).map((kind) => (
           <button
@@ -129,7 +231,9 @@ export function Enquiries({ id, state }: { id?: string; state?: string }) {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      {leads.length ? (
+      {loading ? (
+        <Empty title="Loading enquiries…" />
+      ) : leads.length ? (
         <div className="panel">
           {leads.map((l) => (
             <Link
@@ -228,25 +332,25 @@ export function NewsletterAdmin({
 
   const rows = demo
     ? demoLeads.map((lead) => ({
-        key: lead.id,
-        email: lead.fields.email,
-        consent: lead.fields.consent === "yes" ? "Yes" : "No",
-        date: new Date(lead.createdAt).toLocaleDateString("en-GB"),
-        status: lead.status === "withdrawn" ? "Withdrawn" : "Interest recorded",
-        lead,
-        record: undefined,
-      }))
+      key: lead.id,
+      email: lead.fields.email,
+      consent: lead.fields.consent === "yes" ? "Yes" : "No",
+      date: new Date(lead.createdAt).toLocaleDateString("en-GB"),
+      status: lead.status === "withdrawn" ? "Withdrawn" : "Interest recorded",
+      lead,
+      record: undefined,
+    }))
     : (records ?? []).map((record) => ({
-        key: record.id,
-        email: record.email,
-        consent: record.consentVersion,
-        date: record.createdAt
-          ? new Date(record.createdAt).toLocaleDateString("en-GB")
-          : "—",
-        status: "Interest recorded",
-        lead: undefined,
-        record,
-      }));
+      key: record.id,
+      email: record.email,
+      consent: record.consentVersion,
+      date: record.createdAt
+        ? new Date(record.createdAt).toLocaleDateString("en-GB")
+        : "—",
+      status: "Interest recorded",
+      lead: undefined,
+      record,
+    }));
 
   return (
     <>

@@ -6,15 +6,16 @@ import { supabaseConfig } from "./supabase/config";
  *
  * Sprint 1B authenticated administrators for real but did not connect business
  * data; Sprint 2C connects the administrator **bookings** experience to Supabase
- * (reads under RLS, writes through the trusted lifecycle functions). Reviews,
- * enquiries, the CMS, media and settings remain sample data.
+ * (reads under RLS, writes through the trusted lifecycle functions). Public
+ * enquiries and commercial quote requests are also persisted with restricted
+ * administrator access; the CMS, media and settings remain sample data.
  *
  * This module is the single place that describes that mixed state so the
  * interface stays honest instead of scattering conditionals through the console.
  *
  * - `demo`: the isolated in-memory workspace (no verified session);
  * - `live`: a verified session on a Supabase-configured deployment, where
- *   bookings are persisted and every other module is still sample data;
+ *   bookings, enquiries, reviews and newsletter interest use persisted paths;
  * - `unconfigured`: no Supabase project, so no business data is reachable.
  */
 export type DataBackendState = "demo" | "live" | "unconfigured";
@@ -36,7 +37,7 @@ export const BUSINESS_DATA_NOTICE =
 
 /** Live persistence summary; public enquiries and quote requests remain unpersisted. */
 export const PARTIAL_DATA_NOTICE =
-  "Bookings, reviews, newsletter interest, website content, media and settings are stored in the live database. Public enquiries and commercial quote requests are not currently persisted.";
+  "Bookings, reviews, newsletter interest, public enquiries and commercial quote requests are stored in the live database. Website content, media and settings may still include preview data.";
 
 /** Notice to show above administrative content, or `null` when fully connected. */
 export function dataBackendNotice(
