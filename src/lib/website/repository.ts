@@ -306,9 +306,9 @@ export async function writePromotion(actor: string, item: PromotionRecord) {
 }
 export async function writeSettings(actor: string, settings: Settings) {
   const client = createSupabaseAdminClient();
-  const { data, error } = await client.rpc("phase6_settings_update", { p_actor: actor, p_site_version: settings.version, p_booking_version: settings.version, p_settings: { business_email: settings.email, phone: settings.phone, whatsapp: settings.whatsapp, instagram: settings.instagram, tiktok: settings.tiktok, facebook: settings.facebook, newsletter_visible: settings.newsletter, pickup_start: settings.start, pickup_end: settings.end, express_cutoff: settings.cutoff, accept_public_bookings: settings.acceptBookings } });
+  const { data, error } = await client.rpc("phase6_settings_update", { p_actor: actor, p_site_version: settings.version, p_booking_version: settings.bookingVersion ?? settings.version, p_settings: { business_email: settings.email, phone: settings.phone, whatsapp: settings.whatsapp, instagram: settings.instagram, tiktok: settings.tiktok, facebook: settings.facebook, newsletter_visible: settings.newsletter, pickup_start: settings.start, pickup_end: settings.end, express_cutoff: settings.cutoff, accept_public_bookings: settings.acceptBookings } });
   if (error) return fail("Settings could not be saved. Reload the latest values and try again.");
-  return mapSettings(data);
+  return { ...mapSettings(data), bookingVersion: (settings.bookingVersion ?? settings.version) + 1 };
 }
 export async function writeLocation(actor: string, location: LocationRecord) {
   const client = createSupabaseAdminClient();

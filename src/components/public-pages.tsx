@@ -31,6 +31,7 @@ import {
   commercial,
   branches as defaultBranches,
   photos,
+  type Photo,
   faqs,
   sections,
   contact,
@@ -38,7 +39,22 @@ import {
   relatedFor,
   serviceHref,
 } from "@/lib/content";
-import type { PublicWebsiteSnapshot } from "@/lib/website/public";
+import type {
+  PublicBlogPost,
+  PublicBlogSummary,
+  PublicBranch,
+  PublicFaq,
+  PublicService,
+} from "@/lib/website/public-queries";
+import type { PublicSiteSettings } from "@/lib/website/public";
+import type { PromotionServiceOption } from "@/lib/website/promotion-view";
+import type { PublishedPromotionRecord } from "@/lib/contracts";
+import {
+  resolveSiteSettings,
+  telHref,
+  whatsappHref,
+  type SiteSettings,
+} from "@/lib/contact-links";
 import {
   Action,
   Breadcrumb,
@@ -68,8 +84,7 @@ import {
   PublishedReviews,
   PromotionCarousel,
 } from "./published-content";
-export function ServicesPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
-  const services = website?.services ?? defaultServices;
+export function ServicesPage({ services = defaultServices }: { services?: PublicService[] }) {
   return (
     <>
       <section className="page-hero">
@@ -134,9 +149,17 @@ const relatedIcons: Record<string, LucideIcon> = {
   "express-same-day-laundry": Zap,
   "pickup-and-delivery": Truck,
 };
-export function ServiceDetail({ slug, website }: { slug: string; website?: PublicWebsiteSnapshot }) {
-  const services = website?.services ?? defaultServices;
+export function ServiceDetail({
+  slug,
+  services = defaultServices,
+  settings,
+}: {
+  slug: string;
+  services?: PublicService[];
+  settings?: SiteSettings;
+}) {
   const s = services.find((s) => s.slug === slug)!;
+  const site = settings ?? resolveSiteSettings(null);
   const id = s.section;
   const fields = sections[id].fields;
   const ctaLabel = copy(id, "CTA", copy(id, "Closing CTA", "Book a Pickup"));
@@ -241,7 +264,12 @@ export function ServiceDetail({ slug, website }: { slug: string; website?: Publi
       <Section
         title={copy(id, "Handover heading", copy("04.00", "Handover heading"))}
       >
-        <HandoverChoice slug={slug} cta={ctaLabel} />
+        <HandoverChoice
+          slug={slug}
+          cta={ctaLabel}
+          tel={telHref(site.phone)}
+          whatsapp={whatsappHref(site.whatsapp)}
+        />
       </Section>
       <Section title={copy(id, "FAQ heading", copy("04.00", "FAQ heading"))}>
         <FAQ
@@ -299,7 +327,7 @@ export function ServiceDetail({ slug, website }: { slug: string; website?: Publi
           <p className="closing-line">{copy("04.00", "Closing text")}</p>
           <div className="actions">
             <Action href={bookingHref(slug)}>{ctaLabel}</Action>
-            <a className="button whatsapp" href={contact.whatsapp}>
+            <a className="button whatsapp" href={whatsappHref(site.whatsapp)}>
               Chat on WhatsApp
             </a>
           </div>
@@ -363,7 +391,7 @@ export function HowPage() {
     </>
   );
 }
-export function LocationsPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
+export function LocationsPage({ branches = defaultBranches }: { branches?: PublicBranch[] }) {
   return (
     <>
       <section className="page-hero">
@@ -376,7 +404,7 @@ export function LocationsPage({ website }: { website?: PublicWebsiteSnapshot } =
         </div>
       </section>
       <div className="container">
-        <BranchCards branches={website?.branches} />
+        <BranchCards branches={branches} />
         <Section
           title={copy("07.01", "Pickup heading")}
           description={copy("07.01", "Pickup text")}
@@ -387,8 +415,8 @@ export function LocationsPage({ website }: { website?: PublicWebsiteSnapshot } =
     </>
   );
 }
-export function BranchPage({ slug, website }: { slug: string; website?: PublicWebsiteSnapshot }) {
-  const branch = (website?.branches ?? defaultBranches).find((b) => b.slug === slug)!;
+export function BranchPage({ slug, branches = defaultBranches }: { slug: string; branches?: PublicBranch[] }) {
+  const branch = branches.find((b) => b.slug === slug)!;
   return (
     <>
       <Link className="back-link" href="/locations">
@@ -449,7 +477,13 @@ export function BranchPage({ slug, website }: { slug: string; website?: PublicWe
     </>
   );
 }
-export function AboutPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
+export function AboutPage({
+  promotions,
+  promotionServices,
+}: {
+  promotions?: PublishedPromotionRecord[];
+  promotionServices?: PromotionServiceOption[];
+}) {
   return (
     <>
       <div className="detail-hero">
@@ -465,22 +499,24 @@ export function AboutPage({ website }: { website?: PublicWebsiteSnapshot } = {})
         <PickupChoice />
       </Section>
       <PromotionCarousel
-        promotions={website?.promotions}
-        services={website?.promotionServices}
+        promotions={promotions}
+        services={promotionServices}
       />
       <Closing />
     </>
   );
 }
-export function ContactPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
-  const branches = website?.branches ?? defaultBranches;
-  const phone = website?.settings.phone ?? contact.phone;
-  const tel = `tel:${phone.replace(/\D/g, "")}`;
-  const whatsapp = website?.settings.whatsapp.startsWith("http")
-    ? website.settings.whatsapp
-    : website?.settings.whatsapp
-      ? `https://wa.me/${website.settings.whatsapp.replace(/\D/g, "")}`
-      : contact.whatsapp;
+export function ContactPage({
+  branches = defaultBranches,
+  settings,
+}: {
+  branches?: PublicBranch[];
+  settings?: PublicSiteSettings;
+}) {
+  const site = resolveSiteSettings(settings ?? null);
+  const phone = site.phone;
+  const tel = telHref(site.phone);
+  const whatsapp = whatsappHref(site.whatsapp);
   const emailContacts = [
     {
       label: "Orders & scheduling",
@@ -495,7 +531,7 @@ export function ContactPage({ website }: { website?: PublicWebsiteSnapshot } = {
     {
       label: "Business & partnerships",
       purpose: "Commercial laundry enquiries, partnerships, and business opportunities.",
-      email: contact.emails.info,
+      email: site.email,
     },
     {
       label: "Billing",
@@ -573,7 +609,12 @@ export function ContactPage({ website }: { website?: PublicWebsiteSnapshot } = {
     </>
   );
 }
-export function CommercialPage() {
+export function CommercialPage({
+  settings,
+}: {
+  settings?: PublicSiteSettings;
+}) {
+  const site = resolveSiteSettings(settings ?? null);
   return (
     <>
       <Link className="back-link" href="/services">
@@ -593,8 +634,8 @@ export function CommercialPage() {
           </div>
           <p className="commercial-email-contact">
             Commercial enquiries?{" "}
-            <a href={`mailto:${contact.emails.info}`}>
-              <Glow>{contact.emails.info}</Glow>
+            <a href={`mailto:${site.email}`}>
+              <Glow>{site.email}</Glow>
             </a>
           </p>
         </div>
@@ -643,7 +684,7 @@ export function QuotePage() {
     </div>
   );
 }
-export function GalleryPage() {
+export function GalleryPage({ photos: galleryPhotos }: { photos?: Photo[] } = {}) {
   return (
     <>
       <section className="page-hero">
@@ -653,7 +694,7 @@ export function GalleryPage() {
         </div>
       </section>
       <div className="container">
-        <Gallery />
+        <Gallery photos={galleryPhotos} />
         <Section>
           <div className="actions">
             <Action href="/services">Explore Services</Action>
@@ -666,7 +707,7 @@ export function GalleryPage() {
     </>
   );
 }
-export function FAQPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
+export function FAQPage({ faqs: items = faqs }: { faqs?: PublicFaq[] } = {}) {
   return (
     <>
       <section className="page-hero">
@@ -676,7 +717,7 @@ export function FAQPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
         </div>
       </section>
       <div className="container narrow">
-        <FAQ items={website?.faqs ?? faqs} />
+        <FAQ items={items} />
         <Section title={copy("13", "Closing")}>
           <Action href="/contact">Contact the Team</Action>
         </Section>
@@ -684,7 +725,7 @@ export function FAQPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
     </>
   );
 }
-export function BlogPage({ website }: { website?: PublicWebsiteSnapshot } = {}) {
+export function BlogPage({ posts }: { posts?: PublicBlogSummary[] } = {}) {
   return (
     <>
       <section className="page-hero">
@@ -697,13 +738,13 @@ export function BlogPage({ website }: { website?: PublicWebsiteSnapshot } = {}) 
         </div>
       </section>
       <div className="container">
-        <PublishedBlog posts={website?.blog} />
+        <PublishedBlog posts={posts} />
       </div>
     </>
   );
 }
-export function ArticlePage({ slug }: { slug: string }) {
-  return <PublishedArticle slug={slug} />;
+export function ArticlePage({ slug, post }: { slug: string; post?: PublicBlogPost }) {
+  return <PublishedArticle slug={slug} post={post} />;
 }
 export function ReviewsPage({ form = false }: { form?: boolean }) {
   return (

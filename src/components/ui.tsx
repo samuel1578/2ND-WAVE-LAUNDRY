@@ -266,7 +266,17 @@ export function Breadcrumb({
     </nav>
   );
 }
-export function HandoverChoice({ slug, cta }: { slug: string; cta: string }) {
+export function HandoverChoice({
+  slug,
+  cta,
+  tel = contact.tel,
+  whatsapp = contact.whatsapp,
+}: {
+  slug: string;
+  cta: string;
+  tel?: string;
+  whatsapp?: string;
+}) {
   return (
     <>
       <div className="grid two choice-grid handover-grid">
@@ -299,8 +309,8 @@ export function HandoverChoice({ slug, cta }: { slug: string; cta: string }) {
           <p>{copy("04.00", "Handover note")}</p>
           <p>
             Our customer service team will contact you on{" "}
-            <a href={contact.whatsapp}>WhatsApp</a> or by{" "}
-            <a href={contact.tel}>mobile</a> to confirm your arrangements.
+            <a href={whatsapp}>WhatsApp</a> or by{" "}
+            <a href={tel}>mobile</a> to confirm your arrangements.
           </p>
         </div>
       </div>

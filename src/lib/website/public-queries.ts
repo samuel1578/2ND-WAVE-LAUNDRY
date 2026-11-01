@@ -1,0 +1,284 @@
+import type { Photo, branches, services } from "../content";
+import {
+  DEFAULT_PICKUP_END,
+  DEFAULT_PICKUP_START,
+  normalizePickupTime,
+} from "../pickup-time";
+
+/**
+ * Pure query shapes and mappers for the public site.
+ *
+ * Nothing here imports Next.js or Supabase, so the select lists and mapping
+ * rules can be unit tested without a running app. Column lists deliberately
+ * exclude `services.section` (no such column exists) and `services.public_body`
+ * (never rendered), and the blog list projects JSON subpaths so a post body is
+ * never transferred for an index page.
+ */
+
+export const SERVICES_COLUMNS =
+  "slug,title,summary,public_image,public_alt,bookable,sort_order";
+
+export const BRANCHES_COLUMNS =
+  "slug,title,label,phone,public_map_url,public_hours,sort_order";
+
+/** Full content row, used where the payload is actually rendered. */
+export const CONTENT_COLUMNS =
+  "id,record_key,payload,sort_order,version,published";
+
+/** Blog index: no `payload.body` and no full payload blob. */
+export const BLOG_LIST_COLUMNS =
+  "id,record_key,published,sort_order,version,title:payload->>title,slug:payload->>slug,summary:payload->>summary,image:payload->>image,alt:payload->>alt";
+
+/** Gallery media: only the columns a tile needs. Archived rows are filtered in SQL. */
+export const GALLERY_MEDIA_COLUMNS = "id,public_url,alt";
+
+/** Hard caps so one bad row set can never turn into an unbounded response. */
+export const PUBLIC_LIMITS = {
+  services: 50,
+  branches: 50,
+  faqs: 200,
+  gallery: 200,
+  blog: 50,
+  promotions: 20,
+} as const;
+
+export type PublicSiteSettings = {
+  email: string;
+  phone: string;
+  whatsapp: string;
+  instagram: string;
+  tiktok: string;
+  facebook: string;
+  newsletter: boolean;
+  pickupStart: string;
+  pickupEnd: string;
+};
+
+export type PublicSettingsSiteRow = {
+  business_email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  instagram: string | null;
+  tiktok: string | null;
+  facebook: string | null;
+  newsletter_visible: boolean | null;
+};
+
+export type PublicSettingsBookingRow = {
+  pickup_start: string | null;
+  pickup_end: string | null;
+};
+
+const text = (value: unknown): string =>
+  typeof value === "string" ? value : "";
+
+/** Maps the cached, public-display settings only; booking enforcement reads elsewhere. */
+export function mapPublicSiteSettings(
+  site: PublicSettingsSiteRow,
+  booking?: PublicSettingsBookingRow | null,
+): PublicSiteSettings {
+  return {
+    email: text(site.business_email),
+    phone: text(site.phone),
+    whatsapp: text(site.whatsapp),
+    instagram: text(site.instagram),
+    tiktok: text(site.tiktok),
+    facebook: text(site.facebook),
+    newsletter: site.newsletter_visible === true,
+    pickupStart: normalizePickupTime(
+      booking?.pickup_start,
+      DEFAULT_PICKUP_START,
+    ),
+    pickupEnd: normalizePickupTime(booking?.pickup_end, DEFAULT_PICKUP_END),
+  };
+}
+
+export type PublicService = (typeof services)[number];
+export type PublicBranch = (typeof branches)[number];
+
+export type ServiceRow = {
+  slug: string;
+  title: string;
+  summary: string;
+  public_image: string | null;
+  public_alt: string | null;
+  bookable: boolean;
+  sort_order: number;
+};
+
+export type BranchRow = {
+  slug: string;
+  title: string;
+  label: string | null;
+  phone: string;
+  public_map_url: string | null;
+  public_hours: unknown;
+  sort_order: number;
+};
+
+export type ContentRow = {
+  id: string;
+  record_key: string;
+  payload: Record<string, unknown>;
+  sort_order: number;
+  version: number;
+  published: boolean;
+};
+
+export type GalleryPlacementRow = Pick<
+  ContentRow,
+  "id" | "record_key" | "payload" | "sort_order"
+>;
+
+export type GalleryMediaRow = {
+  id: string;
+  public_url: string;
+  alt: string | null;
+};
+
+export type BlogListRow = {
+  id: string;
+  record_key: string;
+  published: boolean;
+  sort_order: number;
+  version: number;
+  title: string | null;
+  slug: string | null;
+  summary: string | null;
+  image: string | null;
+  alt: string | null;
+};
+
+/** A blog index card. Deliberately has no `body` property. */
+export type PublicBlogSummary = {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  image: string;
+  alt: string;
+  order: number;
+  version: number;
+};
+
+export type PublicBlogPost = PublicBlogSummary & { body: string };
+
+/**
+ * Map a services row to a public card.
+ *
+ * Service title/summary intentionally come from the built-in defaults until the
+ * admin Services editor is wired to public text (separate task). The database
+ * still decides which services exist, their order, and whether they are
+ * bookable; a service without a baseline falls back to its slug for `section`.
+ */
+export function mapServiceRow(
+  row: ServiceRow,
+  baseline?: PublicService,
+): PublicService {
+  const image = row.public_image
+    ? { src: row.public_image, alt: row.public_alt || baseline?.image?.alt || "" }
+    : baseline?.image;
+  return {
+    slug: row.slug,
+    section: baseline?.section ?? row.slug,
+    title: baseline?.title ?? row.title,
+    summary: baseline?.summary ?? row.summary,
+    image,
+    focal: baseline?.focal,
+    bookable: row.bookable,
+  } as PublicService;
+}
+
+export function mapBranchRow(
+  row: BranchRow,
+  baseline?: PublicBranch,
+): PublicBranch {
+  const hours =
+    Array.isArray(row.public_hours) && row.public_hours.length
+      ? (row.public_hours as [string, string][])
+      : (baseline?.hours ?? []);
+  return {
+    slug: row.slug,
+    section: baseline?.section ?? row.slug,
+    title: row.title,
+    label: row.label ?? "",
+    phone: row.phone,
+    tel: baseline?.tel ?? `tel:${row.phone.replace(/\D/g, "")}`,
+    hours,
+    map: row.public_map_url || baseline?.map || "",
+  } as PublicBranch;
+}
+
+export type PublicFaq = { q: string; a: string; glow?: string };
+
+export function mapFaqRow(row: Pick<ContentRow, "payload">): PublicFaq | null {
+  const question = text(row.payload.question);
+  const answer = text(row.payload.answer);
+  if (row.payload.enabled === false) return null;
+  if (!question.trim() || !answer.trim()) return null;
+  return {
+    q: question,
+    a: answer,
+    ...(typeof row.payload.glow === "string" ? { glow: row.payload.glow } : {}),
+  };
+}
+
+/** Media ids referenced by published gallery placements, in placement order. */
+export function referencedMediaIds(
+  placements: Pick<GalleryPlacementRow, "payload">[],
+): string[] {
+  const ids: string[] = [];
+  for (const placement of placements) {
+    const id = text(placement.payload.media_id);
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Gallery tiles in placement order. Media that is missing from the supplied
+ * (already filtered) rows is skipped, e.g. archived or deleted assets.
+ */
+export function buildGalleryPhotos(
+  placements: GalleryPlacementRow[],
+  media: GalleryMediaRow[],
+): Photo[] {
+  const byId = new Map(media.map((asset) => [asset.id, asset]));
+  const tiles: Photo[] = [];
+  for (const placement of placements) {
+    const asset = byId.get(text(placement.payload.media_id));
+    if (!asset) continue;
+    tiles.push({
+      src: asset.public_url,
+      alt: text(placement.payload.alt) || asset.alt || "",
+    });
+  }
+  return tiles;
+}
+
+export function summariseBlogRow(row: BlogListRow): PublicBlogSummary {
+  return {
+    id: row.record_key || row.id,
+    slug: row.slug || row.record_key,
+    title: row.title ?? "",
+    summary: row.summary ?? "",
+    image: row.image ?? "",
+    alt: row.alt ?? "",
+    order: row.sort_order,
+    version: row.version,
+  };
+}
+
+export function mapBlogPostRow(row: ContentRow): PublicBlogPost {
+  return {
+    id: row.record_key || row.id,
+    slug: text(row.payload.slug) || row.record_key,
+    title: text(row.payload.title),
+    summary: text(row.payload.summary),
+    image: text(row.payload.image),
+    alt: text(row.payload.alt),
+    body: text(row.payload.body),
+    order: row.sort_order,
+    version: row.version,
+  };
+}

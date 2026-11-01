@@ -206,6 +206,7 @@ let state: {
     cutoff: "11:00",
     newsletter: false,
     version: 1,
+    bookingVersion: 1,
   } satisfies Settings,
 };
 const serverSnapshot = state;
@@ -427,13 +428,13 @@ export async function saveContent(
     published:
       action === "publish"
         ? {
-            title: item.title,
-            slug: item.slug,
-            summary: item.summary,
-            body: item.body,
-            image: item.image,
-            alt: item.alt,
-          }
+          title: item.title,
+          slug: item.slug,
+          summary: item.summary,
+          body: item.body,
+          image: item.image,
+          alt: item.alt,
+        }
         : action === "unpublish" || action === "archive"
           ? undefined
           : previous?.published,
@@ -579,8 +580,8 @@ export async function savePromotion(next: PromotionRecord) {
     ...state.websiteContent,
     promotions: previous
       ? state.websiteContent.promotions.map((p) =>
-          p.id === saved.id ? saved : p,
-        )
+        p.id === saved.id ? saved : p,
+      )
       : [saved, ...state.websiteContent.promotions],
   };
   notify();

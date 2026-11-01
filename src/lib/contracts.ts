@@ -154,6 +154,7 @@ export type Settings = {
   cutoff: string;
   newsletter: boolean;
   version: number;
+  bookingVersion?: number;
 };
 export type Repository = {
   createBooking(input: BookingInput, key: string): Promise<Booking>;

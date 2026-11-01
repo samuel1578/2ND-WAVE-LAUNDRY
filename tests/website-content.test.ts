@@ -323,10 +323,13 @@ test("loaded FAQ saves its record key and version", () => {
     "src/components/admin/content/faq-manager.tsx",
     "utf8",
   );
-  assert.match(source, /record_key: string/);
+  // Admin editors must read the authenticated, no-store admin endpoint — never
+  // the CDN-cacheable public one — and consume the already-mapped FAQ shape.
+  assert.match(source, /\/api\/admin\/website\?module=faq/);
+  assert.doesNotMatch(source, /\/api\/website\?module=faq/);
   assert.match(
     source,
-    /id: row\.record_key,[\s\S]*order: row\.sort_order, version: row\.version/,
+    /id: String\(row\.id \?\? ""\),[\s\S]*order: Number\(row\.order \?\? 0\), version: Number\(row\.version \?\? 0\)/,
   );
   const loaded = {
     id: "database-uuid",

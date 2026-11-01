@@ -13,7 +13,14 @@ import {
 } from "lucide-react";
 import { BrandText } from "@/components/brand-text";
 import { Action } from "@/components/ui";
-import { heroContent, stageImages, stageOneTitle } from "./content";
+import {
+  heroContent,
+  heroFactsForPickupWindow,
+  stageImages,
+  stageOneTitle,
+} from "./content";
+import { whatsappHref } from "@/lib/contact-links";
+import { useSiteSettings } from "@/components/site-settings-provider";
 
 const SHOT_SIZES = "(max-width: 900px) calc(100vw - 40px), 44vw";
 const factIcons = { check: Check, pin: MapPin, clock: Clock };
@@ -28,13 +35,17 @@ function StaticCue({ label }: { label: string }) {
 }
 
 export function StaticHero() {
+  const settings = useSiteSettings();
   return (
     <section className="hero-static container">
       <div className="hero-static__stage hero-stage hero-stage--one">
         <div className="hero-stage__copy">
           <div className="hero-pill">
             <span className="hero-pill__inner">
-              {heroContent.facts.map((fact) => {
+              {heroFactsForPickupWindow(
+                settings.pickupStart,
+                settings.pickupEnd,
+              ).map((fact) => {
                 const Icon = factIcons[fact.icon];
                 return (
                   <span className="hero-pill__item" key={fact.text}>
@@ -67,7 +78,7 @@ export function StaticHero() {
             </Action>
           </div>
           <div className="hero-wa">
-            <a className="text-link" href={heroContent.whatsapp}>
+            <a className="text-link" href={whatsappHref(settings.whatsapp)}>
               {heroContent.whatsappLabel}
             </a>
           </div>

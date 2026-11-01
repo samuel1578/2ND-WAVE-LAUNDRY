@@ -123,7 +123,10 @@ export function HomePage({ website }: { website?: PublicWebsiteSnapshot } = {}) 
           </div>
         </Section>
         <Closing />
-        <Newsletter interestEnabled={newsletterInterestEnabled} />
+        <Newsletter
+          interestEnabled={newsletterInterestEnabled}
+          adminEnabled={website?.settings.newsletter ?? false}
+        />
       </div>
     </>
   );

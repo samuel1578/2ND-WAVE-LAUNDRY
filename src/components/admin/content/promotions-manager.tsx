@@ -23,6 +23,7 @@ import { seededServices } from "@/lib/website/types";
 import type { PromotionServiceOption } from "@/lib/website/promotion-view";
 import { saveLivePromotion } from "@/lib/website/actions";
 import { promotionCtaError, promotionError } from "@/lib/rules";
+import { optimizeImage } from "@/lib/images/optimize";
 import { Promotion } from "@/components/published-content";
 import { promotionLinkOptions, promotionLinkSelection } from "@/lib/website/promotion-form";
 const blankPromotion: PromotionRecord = {
@@ -183,8 +184,11 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
     setError("");
     setSuccess("");
     try {
+      // Shrink in the browser first. The route keeps its 2 MB cap and magic-byte
+      // check, but the stored object should never be a multi-megabyte original.
+      const optimized = await optimizeImage(file);
       const body = new FormData();
-      body.set("file", file);
+      body.set("file", optimized);
       const response = await fetch("/api/admin/promotion-image", {
         method: "POST",
         body,

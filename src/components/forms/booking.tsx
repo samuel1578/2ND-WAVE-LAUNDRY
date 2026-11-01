@@ -4,6 +4,8 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, ArrowRight, X, Upload } from "lucide-react";
 import { services, contact, copy, demoMode } from "@/lib/content";
+import { telHref, whatsappHref } from "@/lib/contact-links";
+import { useSiteSettings } from "../site-settings-provider";
 import { repository, useDemoStore } from "@/lib/mock-store";
 import {
   accraDate,
@@ -34,6 +36,7 @@ export function BookingForm({
   previewState?: string;
 }) {
   const store = useDemoStore();
+  const site = useSiteSettings();
   const [settings, setSettings] = useState({ ...store.settings });
   const [catalogue, setCatalogue] = useState(services);
   useEffect(() => {
@@ -375,7 +378,7 @@ export function BookingForm({
           <div className="actions">
             <a
               className="button whatsapp"
-              href={`${contact.whatsapp}?text=${encodeURIComponent(message)}`}
+              href={`${whatsappHref(site.whatsapp)}?text=${encodeURIComponent(message)}`}
               target="_blank"
               rel="noreferrer"
             >
@@ -402,10 +405,10 @@ export function BookingForm({
         <h1>{copy("06.06", "H1")}</h1>
         <p>{copy("06.06", "Body")}</p>
         <div className="actions">
-          <a className="button" href={contact.tel}>
+          <a className="button" href={telHref(site.phone)}>
             Call Us
           </a>
-          <a className="button secondary" href={contact.whatsapp}>
+          <a className="button secondary" href={whatsappHref(site.whatsapp)}>
             Chat on WhatsApp
           </a>
           <Link className="button secondary" href="/locations">

@@ -6,6 +6,7 @@ import { resolveAdminRouteAccess } from "@/lib/auth/permissions";
 import { isPublicAdminPath, safeAdminPath } from "@/lib/auth/redirect";
 import { demoMode } from "@/lib/demo-mode";
 import { supabaseConfig, supabaseConfigMessage } from "@/lib/supabase/config";
+import { readNewsletterInterestConfig } from "@/lib/newsletter/config";
 
 export const metadata: Metadata = {
   title: "Administration",
@@ -30,6 +31,7 @@ export default async function Page({
   const configError = supabaseConfig.ok
     ? null
     : supabaseConfigMessage(supabaseConfig.reason);
+  const newsletterInterestEnabled = readNewsletterInterestConfig().enabled;
 
   if (isPublicAdminPath(pathname)) {
     // A recovery session is only useful to an active administrator; anyone else
@@ -43,6 +45,7 @@ export default async function Page({
         state={demoMode ? query.state : undefined}
         next={safeAdminPath(query.next)}
         configError={configError}
+        newsletterInterestEnabled={newsletterInterestEnabled}
         recoveryReady={recoveryReady}
       />
     );
@@ -77,6 +80,7 @@ export default async function Page({
       next="/admin"
       notice={query.notice}
       configError={configError}
+      newsletterInterestEnabled={newsletterInterestEnabled}
       denial={denial}
     />
   );

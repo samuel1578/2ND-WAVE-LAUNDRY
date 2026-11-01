@@ -24,6 +24,8 @@ import {
   LogOut,
 } from "lucide-react";
 import { publicNav, contact, demoMode } from "@/lib/content";
+import { socialLinks, telHref, whatsappHref } from "@/lib/contact-links";
+import { useSiteSettings } from "./site-settings-provider";
 import { signOutAdmin } from "@/lib/auth/actions";
 import { isFrameworkNavigation } from "@/lib/auth/client-navigation";
 import { adminNavigationFor } from "@/lib/auth/permissions";
@@ -146,6 +148,7 @@ export function ThemeControl() {
 }
 export function Header() {
   const path = usePathname();
+  const settings = useSiteSettings();
   const admin = path.startsWith("/admin");
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -346,10 +349,10 @@ export function Header() {
             >
               Visit a Branch
             </Link>
-            <a className="button whatsapp" href={contact.whatsapp}>
+            <a className="button whatsapp" href={whatsappHref(settings.whatsapp)}>
               Chat on WhatsApp
             </a>
-            <a href={contact.tel}>{contact.phone}</a>
+            <a href={telHref(settings.phone)}>{settings.phone}</a>
           </div>
         ) : (
           <div className="menu-actions">
@@ -372,6 +375,7 @@ export function Header() {
 }
 export function Footer() {
   const path = usePathname();
+  const settings = useSiteSettings();
   if (path.startsWith("/admin"))
     return (
       <footer className="admin-footer">
@@ -389,8 +393,8 @@ export function Footer() {
           <p>
             <BrandText text="2nd Wave Laundry Services" />
           </p>
-          <a className="text-link" href={contact.tel}>
-            {contact.phone}
+          <a className="text-link" href={telHref(settings.phone)}>
+            {settings.phone}
           </a>
         </div>
         <div>
@@ -409,19 +413,23 @@ export function Footer() {
             </Link>
           ))}
           <Link href="/reviews">Customer Reviews</Link>
-          <a href={contact.whatsapp}>Chat on WhatsApp</a>
+          <a href={whatsappHref(settings.whatsapp)}>Chat on WhatsApp</a>
           <a href={`mailto:${contact.emails.support}`}>
             Customer support: <Glow>{contact.emails.support}</Glow>
           </a>
         </div>
         <div>
           <h3>Follow along</h3>
-          <a href={contact.instagram} target="_blank" rel="noreferrer">
-            Instagram ↗
-          </a>
-          <a href={contact.tiktok} target="_blank" rel="noreferrer">
-            TikTok ↗
-          </a>
+          {socialLinks(settings).map((link) => (
+            <a
+              key={link.label}
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {link.label} ↗
+            </a>
+          ))}
           <ThemeControl />
         </div>
       </div>

@@ -16,7 +16,14 @@ import { m, useSpring, useTransform, type MotionValue } from "motion/react";
 import type { ReactNode } from "react";
 import { BrandText } from "@/components/brand-text";
 import { Action } from "@/components/ui";
-import { heroContent, stageImages, stageOneTitle } from "./content";
+import {
+  heroContent,
+  heroFactsForPickupWindow,
+  stageImages,
+  stageOneTitle,
+} from "./content";
+import { whatsappHref } from "@/lib/contact-links";
+import { useSiteSettings } from "@/components/site-settings-provider";
 
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
 const SHOT_SIZES = "(max-width: 900px) calc(100vw - 40px), 44vw";
@@ -73,6 +80,7 @@ function Cue({
 }
 
 function StageOne({ progress, active }: StageProps) {
+  const settings = useSiteSettings();
   const envelope = useTransform(progress, [0.22, 0.4], [1, 0]);
   const pillOpacity = useTransform(progress, [0.14, 0.26], [1, 0]);
   const pillY = useTransform(progress, [0, 0.28], [0, -20]);
@@ -101,7 +109,10 @@ function StageOne({ progress, active }: StageProps) {
         <m.div className="hero-pill" style={{ opacity: pillOpacity, y: pillY }}>
           <Rise delay={0.05}>
             <span className="hero-pill__inner">
-              {heroContent.facts.map((fact) => {
+              {heroFactsForPickupWindow(
+                settings.pickupStart,
+                settings.pickupEnd,
+              ).map((fact) => {
                 const Icon = factIcons[fact.icon];
                 return (
                   <span className="hero-pill__item" key={fact.text}>
@@ -153,7 +164,7 @@ function StageOne({ progress, active }: StageProps) {
         </m.div>
         <m.div className="hero-wa" style={{ opacity: chatOpacity, y: actionsY }}>
           <Rise delay={0.42} y={14}>
-            <a className="text-link" href={heroContent.whatsapp}>
+            <a className="text-link" href={whatsappHref(settings.whatsapp)}>
               {heroContent.whatsappLabel}
             </a>
           </Rise>
@@ -392,6 +403,7 @@ function StageTwo({ progress, active }: StageProps) {
 }
 
 function StageThree({ progress, active }: StageProps) {
+  const settings = useSiteSettings();
   const envelope = useTransform(progress, [0.58, 0.76], [0, 1]);
   const clipPath = useTransform(
     progress,
@@ -428,7 +440,7 @@ function StageThree({ progress, active }: StageProps) {
           <Action href="/locations" secondary>
             Visit a Branch
           </Action>
-          <a className="button whatsapp" href={heroContent.whatsapp}>
+          <a className="button whatsapp" href={whatsappHref(settings.whatsapp)}>
             {heroContent.whatsappLabel}
           </a>
         </m.div>

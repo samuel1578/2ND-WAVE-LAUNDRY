@@ -1,4 +1,5 @@
 import { contact, copy, serviceHref, type Photo } from "@/lib/content";
+import { formatPickupWindow } from "@/lib/pickup-time";
 
 export const stageImages = {
   opening: {
@@ -75,3 +76,14 @@ export const heroContent = {
     dropoff: copy("02", "Drop-off text"),
   },
 };
+
+export function heroFactsForPickupWindow(
+  pickupStart: string | null | undefined,
+  pickupEnd: string | null | undefined,
+) {
+  return heroContent.facts.map((fact) =>
+    fact.icon === "clock"
+      ? { ...fact, text: `Pickup ${formatPickupWindow(pickupStart, pickupEnd)}` }
+      : fact,
+  );
+}

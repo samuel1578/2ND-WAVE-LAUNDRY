@@ -34,9 +34,9 @@ export const businessDataUnavailable = dataBackendState !== "live";
 export const BUSINESS_DATA_NOTICE =
   "Preview build: business data is not connected here. Sample records are shown for layout review only, and nothing is stored — saved bookings, reviews and content are not written anywhere yet.";
 
-/** Shown when bookings, reviews and newsletter interest are live but the remaining modules are sample data. */
+/** Live persistence summary; public enquiries and quote requests remain unpersisted. */
 export const PARTIAL_DATA_NOTICE =
-  "Bookings, reviews and newsletter interest are stored in the live database. Enquiries, website content, media and settings are still sample data and are not saved.";
+  "Bookings, reviews, newsletter interest, website content, media and settings are stored in the live database. Public enquiries and commercial quote requests are not currently persisted.";
 
 /** Notice to show above administrative content, or `null` when fully connected. */
 export function dataBackendNotice(

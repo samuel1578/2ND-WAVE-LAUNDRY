@@ -51,6 +51,7 @@ export function AdminApp({
   next = "/admin",
   notice,
   configError,
+  newsletterInterestEnabled = false,
   denial,
   recoveryReady = false,
 }: {
@@ -60,6 +61,7 @@ export function AdminApp({
   next?: string;
   notice?: string;
   configError: string | null;
+  newsletterInterestEnabled?: boolean;
   /** Server-side authorisation result for this route (Sprint 1B). */
   denial?: "forbidden" | "unknown";
   recoveryReady?: boolean;
@@ -198,7 +200,10 @@ export function AdminApp({
       ) : route === "settings" ? (
         // The recipient panel needs a verified session: demo mode shows an honest
         // unavailable state instead of a form that cannot persist.
-        <SettingsAdmin live={Boolean(session)} />
+        <SettingsAdmin
+          live={Boolean(session)}
+          newsletterInterestEnabled={newsletterInterestEnabled}
+        />
       ) : route === "staff" ? (
         // Sprint 1C. The server has already authorised this route through
         // `resolveAdminRouteAccess` (staff.manage), so an Operational Admin never
@@ -276,10 +281,10 @@ export function AdminApp({
         account={
           session
             ? {
-                identifier:
-                  session.displayName || session.email || session.userId,
-                role: roleLabel(session.role),
-              }
+              identifier:
+                session.displayName || session.email || session.userId,
+              role: roleLabel(session.role),
+            }
             : undefined
         }
       />
@@ -585,46 +590,46 @@ function Dashboard({
   const leads = demo ? (empty ? [] : store.leads) : [];
   const bookingRows: DashboardBookingRow[] = demo
     ? demoBookings.slice(0, 5).map((b) => ({
-        id: b.id,
-        reference: b.reference,
-        customerName: b.input.name,
-        status: b.status,
-        subtitle: b.input.items,
-      }))
+      id: b.id,
+      reference: b.reference,
+      customerName: b.input.name,
+      status: b.status,
+      subtitle: b.input.items,
+    }))
     : (liveBookings?.recent ?? []);
   const pendingCount = demo
     ? demoBookings.filter((b) => b.status === "pending").length
     : liveBookings?.pendingCount;
   const activeCount = demo
     ? demoBookings.filter(
-        (b) => !["pending", "completed", "cancelled"].includes(b.status),
-      ).length
+      (b) => !["pending", "completed", "cancelled"].includes(b.status),
+    ).length
     : liveBookings?.activeCount;
   const cards: Array<
     [string, number | string, typeof CalendarDays, string]
   > = [
-    ["Pending bookings", pendingCount ?? "—", CalendarDays, ""],
-    ["Active bookings", activeCount ?? "—", Clock, ""],
-    [
-      "New enquiries",
-      demo
-        ? leads.filter(
+      ["Pending bookings", pendingCount ?? "—", CalendarDays, ""],
+      ["Active bookings", activeCount ?? "—", Clock, ""],
+      [
+        "New enquiries",
+        demo
+          ? leads.filter(
             (l) =>
               ["general", "commercial"].includes(l.kind) && l.status === "new",
           ).length
-        : "—",
-      MessageSquare,
-      "",
-    ],
-    [
-      "Reviews awaiting approval",
-      demo
-        ? leads.filter((l) => l.kind === "review" && l.status === "new").length
-        : (livePendingReviews ?? "—"),
-      CheckCircle2,
-      "/admin/reviews",
-    ],
-  ];
+          : "—",
+        MessageSquare,
+        "",
+      ],
+      [
+        "Reviews awaiting approval",
+        demo
+          ? leads.filter((l) => l.kind === "review" && l.status === "new").length
+          : (livePendingReviews ?? "—"),
+        CheckCircle2,
+        "/admin/reviews",
+      ],
+    ];
   return (
     <>
       <Heading title="Dashboard" />

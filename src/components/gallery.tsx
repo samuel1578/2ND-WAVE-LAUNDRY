@@ -1,27 +1,25 @@
 "use client";
-import { useEffect, useState } from "react";
-import Image from "next/image";
+import { useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
-import { photos } from "@/lib/content";
+import Image from "next/image";
+import { photos, type Photo } from "@/lib/content";
 import { Picture, Empty } from "./ui";
 import { Dialog } from "./dialog";
 import { CascadeSlider } from "./cascade-slider";
 import { demoMode } from "@/lib/demo-mode";
-const gallery = (photos.batch_14_gallery || []).filter(
+
+const demoGallery = (photos.batch_14_gallery || []).filter(
   (p) => !/logo/i.test(p.alt),
 );
-export function Gallery() {
+
+/**
+ * Gallery grid. The server passes the published placements, so this component
+ * never fetches the gallery endpoint.
+ */
+export function Gallery({ photos: sourcePhotos }: { photos?: Photo[] } = {}) {
   const [filter, setFilter] = useState("All");
   const [index, setIndex] = useState<number | null>(null);
-  const [liveGallery, setLiveGallery] = useState<typeof gallery | null>(null);
-  useEffect(() => {
-    if (demoMode) return;
-    fetch("/api/website?module=gallery", { cache: "no-store" })
-      .then(response => response.ok ? response.json() : Promise.reject(new Error("Gallery unavailable")))
-      .then(body => setLiveGallery((body.items ?? []).map((item: { src: string; alt: string }) => ({ src: item.src, alt: item.alt }))))
-      .catch(() => setLiveGallery([]));
-  }, []);
-  const sourceGallery = demoMode ? gallery : (liveGallery ?? []);
+  const sourceGallery = demoMode ? demoGallery : (sourcePhotos ?? []);
   const filtered = sourceGallery.filter(
     (p) =>
       filter === "All" ||
@@ -32,19 +30,6 @@ export function Gallery() {
           : /branch|exterior|store/i.test(p.alt)),
   );
   const active = index !== null ? filtered[index] : undefined;
-  useEffect(() => {
-    if (index === null) return;
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight")
-        setIndex((i) => (i === null ? null : (i + 1) % filtered.length));
-      if (e.key === "ArrowLeft")
-        setIndex((i) =>
-          i === null ? null : (i - 1 + filtered.length) % filtered.length,
-        );
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [index, filtered.length]);
   return (
     <>
       <div className="filters" role="group" aria-label="Gallery category">
@@ -91,7 +76,13 @@ export function Gallery() {
         {active && (
           <>
             <div className="lightbox-image">
-              <Image src={active.src} fill alt={active.alt} sizes="90vw" quality={85} />
+              <Image
+                src={active.src}
+                fill
+                alt={active.alt}
+                sizes="90vw"
+                quality={85}
+              />
             </div>
             <p>{active.alt}</p>
             <div className="split">

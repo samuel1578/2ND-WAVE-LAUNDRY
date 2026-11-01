@@ -9,8 +9,10 @@ import type { MediaAsset } from "@/lib/contracts";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { validatePromotionServiceSlug } from "./promotion-service-validation";
+import { settingsForWrite } from "./settings-validation";
 import { assertWebsiteWritesEnabled, consumeWebsiteWrite } from "./write-guard";
 import { revalidatePublicPaths, writeAndRevalidate } from "./revalidation";
+import { PUBLIC_WRITE_TAGS } from "./revalidation-tags";
 
 function isMarketingAssetUrl(src: string, prefix: string): boolean {
   try {
@@ -48,6 +50,8 @@ export async function saveLiveFaqs(items: FaqItem[]) {
   return writeAndRevalidate(
     () => writeFaqs(admin.userId, items),
     ["/", "/faq"],
+    undefined,
+    PUBLIC_WRITE_TAGS.faqs,
   );
 }
 export async function saveLiveGallery(
@@ -80,6 +84,8 @@ export async function saveLiveGallery(
   return writeAndRevalidate(
     () => writeGallery(admin.userId, safeItems, safePreviousVersions),
     ["/", "/gallery"],
+    undefined,
+    PUBLIC_WRITE_TAGS.gallery,
   );
 }
 export async function saveLiveContent(item: ContentItem, action: "draft" | "publish" | "archive" | "unpublish") {
@@ -88,7 +94,10 @@ export async function saveLiveContent(item: ContentItem, action: "draft" | "publ
   if (!item || item.module !== "Blog" || item.body.length > 50000) throw new Error("Article is invalid.");
   consumeWebsiteWrite(admin.userId);
   const saved = await writeContent(admin.userId, item, action);
-  revalidatePublicPaths(["/", "/blog", `/blog/${saved.slug}`]);
+  revalidatePublicPaths(
+    ["/", "/blog", `/blog/${saved.slug}`],
+    PUBLIC_WRITE_TAGS.content,
+  );
   return saved;
 }
 export async function saveLivePromotion(item: PromotionRecord) {
@@ -111,21 +120,34 @@ export async function saveLivePromotion(item: PromotionRecord) {
   return writeAndRevalidate(
     () => writePromotion(admin.userId, promotion),
     ["/", "/about", "/preview"],
+    undefined,
+    PUBLIC_WRITE_TAGS.promotion,
   );
 }
 export async function saveLiveSettings(settings: Settings) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("settings.manage");
   if (!settings || JSON.stringify(settings).length > 5000) throw new Error("Settings are invalid.");
+  const safeSettings = settingsForWrite(settings);
   consumeWebsiteWrite(admin.userId);
-  return writeSettings(admin.userId, settings);
+  return writeAndRevalidate(
+    () => writeSettings(admin.userId, safeSettings),
+    [["/", "layout"]],
+    undefined,
+    PUBLIC_WRITE_TAGS.settings,
+  );
 }
 export async function saveLiveLocation(location: LocationRecord) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
   if (!location || location.hours.length > 14) throw new Error("Branch is invalid.");
   consumeWebsiteWrite(admin.userId);
-  return writeLocation(admin.userId, location);
+  return writeAndRevalidate(
+    () => writeLocation(admin.userId, location),
+    [],
+    undefined,
+    PUBLIC_WRITE_TAGS.location,
+  );
 }
 export async function saveLiveMedia(asset: MediaAsset, expectedVersion?: number) {
   await assertWebsiteWritesEnabled();
@@ -149,6 +171,8 @@ export async function saveLiveMedia(asset: MediaAsset, expectedVersion?: number)
   return writeAndRevalidate(
     () => writeMedia(admin.userId, asset, expectedVersion),
     ["/", "/gallery"],
+    undefined,
+    PUBLIC_WRITE_TAGS.media,
   );
 }
 
@@ -162,6 +186,8 @@ export async function deleteLiveMedia(id: string, uses: string[] = []) {
   return writeAndRevalidate(
     () => deleteMediaRecord(id, uses),
     ["/", "/gallery"],
+    undefined,
+    PUBLIC_WRITE_TAGS.media,
   );
 }
 export async function saveLiveService(item: ContentItem) {
@@ -169,5 +195,10 @@ export async function saveLiveService(item: ContentItem) {
   const admin = await actor("content.manage");
   if (!item || item.module !== "Services" || item.body.length > 50000) throw new Error("Service is invalid.");
   consumeWebsiteWrite(admin.userId);
-  return writeService(admin.userId, item);
+  return writeAndRevalidate(
+    () => writeService(admin.userId, item),
+    [],
+    undefined,
+    PUBLIC_WRITE_TAGS.service,
+  );
 }

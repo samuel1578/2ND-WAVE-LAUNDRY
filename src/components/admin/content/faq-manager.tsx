@@ -29,10 +29,12 @@ export function FaqManager({ state }: { state?: string }) {
   useEffect(() => {
     if (demoMode) return;
     let active = true;
-    fetch("/api/website?module=faq", { cache: "no-store" }).then(async r => {
+    // Admin editors read the authenticated, no-store admin endpoint — never the
+    // public (CDN-cacheable) /api/website used by the public booking form.
+    fetch("/api/admin/website?module=faq", { cache: "no-store" }).then(async r => {
       if (!r.ok) throw new Error("FAQs could not be loaded.");
       const data = await r.json();
-      const rows: FaqItem[] = (data.items ?? []).map((row: { id: string; record_key: string; payload: { question?: string; answer?: string; glow?: string; enabled?: boolean }; sort_order: number; version: number }) => ({ id: row.record_key, question: row.payload.question ?? "", answer: row.payload.answer ?? "", glow: row.payload.glow, enabled: row.payload.enabled !== false, order: row.sort_order, version: row.version }));
+      const rows: FaqItem[] = (data.items ?? []).map((row: Partial<FaqItem>) => ({ id: String(row.id ?? ""), question: row.question ?? "", answer: row.answer ?? "", glow: row.glow, enabled: row.enabled !== false, order: Number(row.order ?? 0), version: Number(row.version ?? 0) }));
       if (active) { setDraft(rows); setBaseline(JSON.stringify(rows)); setLoaded(true); }
     }).catch(err => { if (active) { setError(err.message); setLoaded(true); } });
     return () => { active = false; };

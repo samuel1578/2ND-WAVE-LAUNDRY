@@ -20,7 +20,18 @@ import {
 import { BookingForm } from "@/components/forms/booking";
 import { branches, demoMode, services } from "@/lib/content";
 import { PreviewPage } from "@/components/preview";
-import { getPublicWebsiteSnapshot } from "@/lib/website/public";
+import {
+  getPublicBlogList,
+  getPublicBlogPost,
+  getPublicBranches,
+  getPublicFaqs,
+  getPublicGallery,
+  getPublicPromotions,
+  getPublicServices,
+  getPublicSettings,
+} from "@/lib/website/public";
+import { getSiteSettings } from "@/lib/website/site-settings";
+
 const titles: Record<string, string> = {
   services: "Our Services",
   "how-it-works": "Laundry arrangements made clear",
@@ -40,6 +51,7 @@ const titles: Record<string, string> = {
   "laundry-care-terms": "Laundry Care Terms",
   preview: "Frontend review",
 };
+
 export async function generateMetadata({
   params,
 }: {
@@ -56,6 +68,7 @@ export async function generateMetadata({
     robots: { index: false, follow: false },
   };
 }
+
 const fullBleed = new Set([
   "how-it-works",
   "contact",
@@ -71,6 +84,11 @@ const fullBleed = new Set([
   "reviews/share",
   "preview",
 ]);
+
+/**
+ * Each arm loads only the loaders its page renders. Pages that show no website
+ * content (policies, how-it-works, commercial, book, reviews) read nothing.
+ */
 export default async function Page({
   params,
   searchParams,
@@ -79,48 +97,70 @@ export default async function Page({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
-  const query = await searchParams;
   const key = slug.join("/");
-  const website = await getPublicWebsiteSnapshot();
   let page: React.ReactNode;
+
   switch (key) {
-    case "services":
-      page = <ServicesPage website={website} />;
+    case "services": {
+      const serviceList = await getPublicServices();
+      page = <ServicesPage services={serviceList} />;
       break;
+    }
     case "how-it-works":
       page = <HowPage />;
       break;
-    case "locations":
-      page = <LocationsPage website={website} />;
+    case "locations": {
+      const branchList = await getPublicBranches();
+      page = <LocationsPage branches={branchList} />;
       break;
-    case "about":
-      page = <AboutPage website={website} />;
+    }
+    case "about": {
+      const { promotions, promotionServices } = await getPublicPromotions();
+      page = (
+        <AboutPage promotions={promotions} promotionServices={promotionServices} />
+      );
       break;
-    case "contact":
-      page = <ContactPage website={website} />;
+    }
+    case "contact": {
+      const [branchList, settings] = await Promise.all([
+        getPublicBranches(),
+        getPublicSettings(),
+      ]);
+      page = <ContactPage branches={branchList} settings={settings} />;
       break;
-    case "commercial-laundry":
-      page = <CommercialPage />;
+    }
+    case "commercial-laundry": {
+      const settings = await getPublicSettings();
+      page = <CommercialPage settings={settings} />;
       break;
+    }
     case "commercial-laundry/quote":
       page = <QuotePage />;
       break;
-    case "gallery":
-      page = <GalleryPage />;
+    case "gallery": {
+      const galleryPhotos = await getPublicGallery();
+      page = <GalleryPage photos={galleryPhotos} />;
       break;
-    case "faq":
-      page = <FAQPage website={website} />;
+    }
+    case "faq": {
+      const faqs = await getPublicFaqs();
+      page = <FAQPage faqs={faqs} />;
       break;
-    case "blog":
-      page = <BlogPage website={website} />;
+    }
+    case "blog": {
+      const posts = await getPublicBlogList();
+      page = <BlogPage posts={posts} />;
       break;
+    }
     case "reviews":
       page = <ReviewsPage />;
       break;
     case "reviews/share":
       page = <ReviewsPage form />;
       break;
-    case "book":
+    case "book": {
+      // Only this arm reads request query data.
+      const query = await searchParams;
       page = (
         <BookingForm
           preselect={
@@ -134,6 +174,7 @@ export default async function Page({
         />
       );
       break;
+    }
     case "privacy":
     case "terms":
     case "laundry-care-terms":
@@ -144,22 +185,32 @@ export default async function Page({
       page = <PreviewPage />;
       break;
     default:
-      if (
-        slug[0] === "services" &&
-        slug.length === 2 &&
-        website.services.some((s) => s.slug === slug[1])
-      )
-        page = <ServiceDetail slug={slug[1]} website={website} />;
-      else if (
-        slug[0] === "locations" &&
-        slug.length === 2 &&
-        website.branches.some((b) => b.slug === slug[1])
-      )
-        page = <BranchPage slug={slug[1]} website={website} />;
-      else if (slug[0] === "blog" && slug.length === 2)
-        page = <ArticlePage slug={slug[1]} />;
-      else notFound();
+      if (slug[0] === "services" && slug.length === 2) {
+        const [serviceList, settings] = await Promise.all([
+          getPublicServices(),
+          getSiteSettings(),
+        ]);
+        if (!serviceList.some((s) => s.slug === slug[1])) notFound();
+        page = (
+          <ServiceDetail
+            slug={slug[1]}
+            services={serviceList}
+            settings={settings}
+          />
+        );
+      } else if (slug[0] === "locations" && slug.length === 2) {
+        const branchList = await getPublicBranches();
+        if (!branchList.some((b) => b.slug === slug[1])) notFound();
+        page = <BranchPage slug={slug[1]} branches={branchList} />;
+      } else if (slug[0] === "blog" && slug.length === 2) {
+        const post = await getPublicBlogPost(slug[1]);
+        if (!post) notFound();
+        page = <ArticlePage slug={slug[1]} post={post} />;
+      } else {
+        notFound();
+      }
   }
+
   return (
     <main
       id="main"

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { copy, demoMode } from "@/lib/content";
 import { buildPromotionView, type PromotionServiceOption } from "@/lib/website/promotion-view";
@@ -14,43 +15,36 @@ import { Action, Empty, Picture, Section, Skeleton } from "./ui";
 import { BrandText } from "./brand-text";
 import { PublicForm } from "./forms/public-form";
 import { Dialog } from "./dialog";
+import type { PromotionRecord, PublishedPromotionRecord } from "@/lib/contracts";
 import type {
-  ContentItem,
-  PromotionRecord,
-  PublishedPromotionRecord,
-} from "@/lib/contracts";
+  PublicBlogPost,
+  PublicBlogSummary,
+} from "@/lib/website/public-queries";
 import { BrandedText } from "@/lib/brand-highlight";
-export function PublishedBlog({ posts: snapshotPosts }: { posts?: ContentItem[] } = {}) {
+/** Blog index. Posts are supplied by the server loader (no body field). */
+export function PublishedBlog({ posts = [] }: { posts?: PublicBlogSummary[] }) {
   const store = useDemoStore();
-  const [livePosts, setLivePosts] = useState<ContentItem[] | null>(null);
-  useEffect(() => {
-    if (demoMode) return;
-    fetch("/api/website?module=blog", { cache: "no-store" })
-      .then(response => response.ok ? response.json() : Promise.reject(new Error("Blog unavailable")))
-      .then(body => setLivePosts(body.items ?? []))
-      .catch(() => setLivePosts([]));
-  }, []);
-  const posts = demoMode
-    ? store.content.filter((c) => c.module === "Blog" && c.published)
-    : snapshotPosts ?? livePosts ?? [];
-  return posts.length ? (
+  const demoPosts: PublicBlogSummary[] = store.content
+    .filter((c) => c.module === "Blog" && c.published)
+    .map((c) => ({
+      id: c.id,
+      slug: c.published!.slug,
+      title: c.published!.title,
+      summary: c.published!.summary,
+      image: c.published!.image,
+      alt: c.published!.alt,
+      order: c.sort,
+      version: c.version,
+    }));
+  const list = demoMode ? demoPosts : posts;
+  return list.length ? (
     <div className="grid three">
-      {posts.map((p) => (
-        <Link
-          href={`/blog/${p.published!.slug}`}
-          className="service-card"
-          key={p.id}
-        >
-          <Picture
-            photo={
-              p.published!.image
-                ? { src: p.published!.image, alt: p.published!.alt }
-                : undefined
-            }
-          />
+      {list.map((p) => (
+        <Link href={`/blog/${p.slug}`} className="service-card" key={p.id}>
+          <Picture photo={p.image ? { src: p.image, alt: p.alt } : undefined} />
           <div className="card-body">
-            <h2>{p.published!.title}</h2>
-            <p>{p.published!.summary}</p>
+            <h2>{p.title}</h2>
+            <p>{p.summary}</p>
             <span className="text-link">Read Article ↗</span>
           </div>
         </Link>
@@ -67,19 +61,29 @@ export function PublishedBlog({ posts: snapshotPosts }: { posts?: ContentItem[] 
     </Empty>
   );
 }
-export function PublishedArticle({ slug }: { slug: string }) {
+/** Article page. The server loader supplies the single post, body included. */
+export function PublishedArticle({
+  slug,
+  post: loadedPost,
+}: {
+  slug: string;
+  post?: PublicBlogPost;
+}) {
   const store = useDemoStore();
-  const [livePost, setLivePost] = useState<ContentItem | null>(null);
-  useEffect(() => {
-    if (demoMode) return;
-    fetch("/api/website?module=blog", { cache: "no-store" })
-      .then(response => response.ok ? response.json() : Promise.reject(new Error("Article unavailable")))
-      .then(body => setLivePost((body.items ?? []).find((item: ContentItem) => item.slug === slug) ?? null))
-      .catch(() => setLivePost(null));
-  }, [slug]);
-  const post = demoMode
+  const demoPost = demoMode
     ? store.content.find((c) => c.module === "Blog" && c.published?.slug === slug)?.published
-    : livePost?.published;
+    : undefined;
+  const post =
+    loadedPost ??
+    (demoPost
+      ? {
+          title: demoPost.title,
+          summary: demoPost.summary,
+          image: demoPost.image,
+          alt: demoPost.alt,
+          body: demoPost.body,
+        }
+      : undefined);
   if (!post)
     return (
       <Empty
@@ -185,11 +189,19 @@ function LivePublishedReviews() {
 export function PublishedReviews() {
   return demoMode ? <DemoPublishedReviews /> : <LivePublishedReviews />;
 }
-export function Newsletter({ interestEnabled = false }: { interestEnabled?: boolean }) {
+export function Newsletter({
+  interestEnabled = false,
+  adminEnabled = false,
+}: {
+  interestEnabled?: boolean;
+  adminEnabled?: boolean;
+}) {
   const store = useDemoStore();
-  // Demo workspace keeps the settings toggle; the live site is gated by the
-  // server-read NEWSLETTER_INTEREST_ENABLED flag, never a NEXT_PUBLIC_* value.
-  const visible = demoMode ? store.settings.newsletter : interestEnabled;
+  // Demo workspace keeps the settings toggle; live sign-ups require both the
+  // persisted admin visibility toggle and the server-read feature flag.
+  const visible = demoMode
+    ? store.settings.newsletter
+    : interestEnabled && adminEnabled;
   if (!visible) return null;
   return (
     <Section
@@ -234,12 +246,14 @@ export function Promotion({
   return (
     <section className={`promotion${imageUrl ? " promotion-with-image" : ""}`}>
       {imageUrl && (
-        <img
+        <Image
           className="promotion-image"
           src={imageUrl}
           alt={imageAlt || ""}
           width={800}
           height={600}
+          sizes="(max-width: 900px) 100vw, 800px"
+          quality={82}
           loading="lazy"
         />
       )}

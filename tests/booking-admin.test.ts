@@ -412,10 +412,10 @@ test("demo mode shows no backend banner while other states stay honest", () => {
   // modules are called out — bookings are not sample data.
   const live = dataBackendNotice("live");
   assert.ok(live);
-  // Bookings, reviews and (since Phase 5A) newsletter interest are stated as
-  // persisted; only the remaining modules are sample data.
-  assert.match(live, /^Bookings, reviews and newsletter interest are stored in the live database\./);
-  assert.match(live, /Enquiries, website content, media and settings are still sample data/);
+  // Live persistence claims match the connected modules; enquiries remain the
+  // only public submission type that is not persisted yet.
+  assert.match(live, /^Bookings, reviews, newsletter interest, website content, media and settings are stored in the live database\./);
+  assert.match(live, /Public enquiries and commercial quote requests are not currently persisted/);
   const unconfigured = dataBackendNotice("unconfigured");
   assert.ok(unconfigured);
   assert.match(unconfigured, /not connected/);
