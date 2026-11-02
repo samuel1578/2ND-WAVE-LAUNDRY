@@ -1,0 +1,33 @@
+# 2nd Wave Laundry Services
+
+> Laundry and garment-care business in Ghana, trading as 2nd Wave Laundry Services (short form: 2nd Wave Laundry). Tagline: A Redefined Laundry Experience.
+
+## Facts
+
+- Branches: Ashaiman–Atadeka (main branch, 059 522 4280), Katamanso No. 1 (059 814 8620), Newland Katamanso (024 614 4412).
+- Main branch hours: Monday–Saturday 7am–8pm; Sunday 9am–7:30pm. Katamanso branches: 7am–8pm.
+- Pickup and delivery: requests are submitted online and confirmed by the team; pickup operates seven days a week from 7am to 5pm.
+- Services: wash, ironing and fold; wash and fold only; ironing; stain treatment; duvet and bedding cleaning; curtain cleaning; suit cleaning; shoe care; express/same-day laundry; commercial laundry enquiries.
+- Walk-ins and drop-offs are welcome at all three branches.
+- Fees and timing are confirmed with the team; submitting a request does not confirm a booking.
+- Contact: 059 522 4280 (+233 59 522 4280), support@2ndwavelaundry.com.
+
+## Key pages
+
+- Home: /
+- Services: /services
+- Locations: /locations
+- Branch: /locations/ashaiman-atadeka
+- Branch: /locations/katamanso-no-1
+- Branch: /locations/newland-katamanso
+- Commercial laundry: /commercial-laundry
+- How it works: /how-it-works
+- About: /about
+- Contact: /contact
+- FAQs: /faq
+- Blog: /blog
+
+## Notes
+
+- Street addresses and individual Google Business Profile URLs are not published on the site.
+- No prices are published; pricing is discussed with the team.

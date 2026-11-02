@@ -23,7 +23,12 @@ import {
   Users,
   LogOut,
 } from "lucide-react";
-import { publicNav, contact, demoMode } from "@/lib/content";
+import {
+  branches as publishedBranches,
+  publicNav,
+  contact,
+  demoMode,
+} from "@/lib/content";
 import { socialLinks, telHref, whatsappHref } from "@/lib/contact-links";
 import { useSiteSettings } from "./site-settings-provider";
 import { signOutAdmin } from "@/lib/auth/actions";
@@ -408,6 +413,15 @@ export function Footer() {
           <a className="text-link" href={telHref(settings.phone)}>
             {settings.phone}
           </a>
+          <div className="footer-branches">
+            <h3>Branches</h3>
+            {publishedBranches.map((branch) => (
+              <Link key={branch.slug} href={"/locations/" + branch.slug}>
+                {branch.title}
+              </Link>
+            ))}
+            <Link href="/locations">All locations</Link>
+          </div>
         </div>
         <div>
           <h3>Explore</h3>

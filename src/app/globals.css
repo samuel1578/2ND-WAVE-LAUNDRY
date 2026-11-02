@@ -1140,6 +1140,24 @@ strong {
   max-width: 280px;
   margin-top: 24px;
 }
+.footer-branches {
+  margin-top: 26px;
+}
+.footer-branches h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+}
+.footer-branches a {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.footer-branches a:hover {
+  color: var(--primary);
+}
 .footer-grid h3 {
   font-size: 12px;
   text-transform: uppercase;

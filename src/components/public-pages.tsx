@@ -47,6 +47,7 @@ import type {
   PublicService,
 } from "@/lib/website/public-queries";
 import type { PublicSiteSettings } from "@/lib/website/public";
+import type { BranchProfile } from "@/lib/locations";
 import type { PromotionServiceOption } from "@/lib/website/promotion-view";
 import type { PublishedPromotionRecord } from "@/lib/contracts";
 import {
@@ -87,6 +88,9 @@ import {
 export function ServicesPage({ services = defaultServices }: { services?: PublicService[] }) {
   return (
     <>
+      <Breadcrumb
+        items={[{ label: "Home", href: "/" }, { label: "Services" }]}
+      />
       <section className="page-hero">
         <DottedGlowBackground gap={14} radius={1.8} opacity={0.75} />
         <div className="page-hero__inner">
@@ -339,6 +343,9 @@ export function ServiceDetail({
 export function HowPage() {
   return (
     <>
+      <Breadcrumb
+        items={[{ label: "Home", href: "/" }, { label: "How it works" }]}
+      />
       <section className="page-hero">
         <DottedGlowBackground gap={14} radius={1.8} opacity={0.75} />
         <div className="page-hero__inner">
@@ -394,6 +401,9 @@ export function HowPage() {
 export function LocationsPage({ branches = defaultBranches }: { branches?: PublicBranch[] }) {
   return (
     <>
+      <Breadcrumb
+        items={[{ label: "Home", href: "/" }, { label: "Locations" }]}
+      />
       <section className="page-hero">
         <DottedGlowBackground gap={14} radius={1.8} opacity={0.75} />
         <div className="page-hero__inner">
@@ -415,25 +425,45 @@ export function LocationsPage({ branches = defaultBranches }: { branches?: Publi
     </>
   );
 }
-export function BranchPage({ slug, branches = defaultBranches }: { slug: string; branches?: PublicBranch[] }) {
+export function BranchPage({
+  slug,
+  branches = defaultBranches,
+  profile,
+}: {
+  slug: string;
+  branches?: PublicBranch[];
+  profile?: BranchProfile;
+}) {
   const branch = branches.find((b) => b.slug === slug)!;
+  const others = branches.filter((b) => b.slug !== slug);
   return (
     <>
-      <Link className="back-link" href="/locations">
-        â† View All Branches
-      </Link>
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/" },
+          { label: "Locations", href: "/locations" },
+          { label: branch.title },
+        ]}
+      />
       <Heading
         title={branch.title}
-        description={copy(branch.section, "Intro")}
+        description={profile?.intro ?? copy(branch.section, "Intro")}
         eyebrow={branch.label || "Our branches"}
       />
       <div className="grid two">
         <Reveal className="branch-feature">
           <MapPin size={38} />
-          <h2>{branch.title}</h2>
+          <h2>{branch.label || "Branch details"}</h2>
           <a className="branch-phone" href={branch.tel}>
             {branch.phone}
           </a>
+          <p>
+            {profile
+              ? "Drop-offs are welcome in " +
+                profile.locality +
+                ". Call the branch before travelling if you need directions."
+              : "Drop-offs are welcome during opening hours."}
+          </p>
           <div className="actions">
             <a className="button" href={branch.tel}>
               <Phone size={18} />
@@ -452,7 +482,7 @@ export function BranchPage({ slug, branches = defaultBranches }: { slug: string;
               <strong>{hours}</strong>
             </div>
           ))}
-          {branch.map && (
+          {branch.map ? (
             <>
               <h3>Find the main branch</h3>
               <a
@@ -465,9 +495,73 @@ export function BranchPage({ slug, branches = defaultBranches }: { slug: string;
               </a>
               <small>Opens your maps app</small>
             </>
+          ) : (
+            <>
+              <h3>Directions</h3>
+              <p>
+                Call {branch.phone} and the branch team will help you with
+                directions.
+              </p>
+            </>
           )}
         </Reveal>
       </div>
+      {profile && (
+        <Section title={"Visiting " + profile.locality}>
+          <div className="stack">
+            {profile.visiting.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+          </div>
+        </Section>
+      )}
+      <Section title="Services available at this branch">
+        <div className="related-list">
+          {defaultServices.map((service) => (
+            <Link
+              key={service.slug}
+              href={serviceHref(service.slug)}
+              className="related-row"
+            >
+              <span className="related-copy">
+                <strong>{service.title}</strong>
+                <span className="related-summary">{service.summary}</span>
+              </span>
+              <span className="related-action">
+                View Service
+                <ChevronRight size={16} aria-hidden="true" />
+              </span>
+            </Link>
+          ))}
+        </div>
+      </Section>
+      {profile?.faq.length ? (
+        <Section title={"Questions about the " + branch.title + " branch"}>
+          <FAQ items={profile.faq} />
+        </Section>
+      ) : null}
+      {others.length ? (
+        <Section title="Other branches">
+          <div className="related-list">
+            {others.map((other) => (
+              <Link
+                key={other.slug}
+                href={"/locations/" + other.slug}
+                className="related-row"
+              >
+                <span className="related-copy">
+                  <strong>{other.title}</strong>
+                  <span className="related-summary">{other.phone}</span>
+                </span>
+                <span className="related-action">
+                  View Branch
+                  <ChevronRight size={16} aria-hidden="true" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </Section>
+      ) : null}
       <Section
         title="Prefer collection?"
         description={copy("07.01", "Pickup text")}
@@ -477,6 +571,42 @@ export function BranchPage({ slug, branches = defaultBranches }: { slug: string;
     </>
   );
 }
+
+function FactsBlock() {
+  return (
+    <Section title="2nd Wave Laundry Services at a glance">
+      <div className="panel">
+        <div className="hours-row">
+          <span>Business name</span>
+          <strong>2nd Wave Laundry Services</strong>
+        </div>
+        <div className="hours-row">
+          <span>Short name</span>
+          <strong>2nd Wave Laundry</strong>
+        </div>
+        {defaultBranches.map((branch) => (
+          <div className="hours-row" key={branch.slug}>
+            <span>
+              <Link href={"/locations/" + branch.slug}>{branch.title}</Link>
+            </span>
+            <strong>
+              <a href={branch.tel}>{branch.phone}</a>
+            </strong>
+          </div>
+        ))}
+        <div className="hours-row">
+          <span>Pickup</span>
+          <strong>Seven days a week, 7am–5pm</strong>
+        </div>
+        <div className="hours-row">
+          <span>Fee and payment</span>
+          <strong>Discussed with the team</strong>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 export function AboutPage({
   promotions,
   promotionServices,
@@ -486,6 +616,9 @@ export function AboutPage({
 }) {
   return (
     <>
+      <Breadcrumb
+        items={[{ label: "Home", href: "/" }, { label: "About" }]}
+      />
       <div className="detail-hero">
         <Heading title={copy("08", "H1")} description={copy("08", "Tagline")} />
         <Picture photo={photos.batch_14_about?.[0]} priority />
@@ -494,7 +627,12 @@ export function AboutPage({
         <p className="large-copy">
           <BrandText text={copy("08", "Body")} />
         </p>
+        <p>
+          Some customers know us as Second Wave Laundry; our full trading name is
+          2nd Wave Laundry Services.
+        </p>
       </Section>
+      <FactsBlock />
       <Section title={copy("08", "Heading")} description={copy("08", "Text")}>
         <PickupChoice />
       </Section>
@@ -547,6 +685,9 @@ export function ContactPage({
 
   return (
     <>
+      <Breadcrumb
+        items={[{ label: "Home", href: "/" }, { label: "Contact" }]}
+      />
       <section className="page-hero">
         <DottedGlowBackground gap={14} radius={1.8} opacity={0.75} />
         <div className="page-hero__inner">
@@ -608,6 +749,7 @@ export function ContactPage({
             />
           </div>
         </div>
+        <FactsBlock />
       </div>
     </>
   );
@@ -716,6 +858,7 @@ export function GalleryPage({ photos: galleryPhotos }: { photos?: Photo[] } = {}
 export function FAQPage({ faqs: items = faqs }: { faqs?: PublicFaq[] } = {}) {
   return (
     <>
+      <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "FAQs" }]} />
       <section className="page-hero">
         <DottedGlowBackground gap={14} radius={1.8} opacity={0.75} />
         <div className="page-hero__inner narrow">
@@ -734,6 +877,7 @@ export function FAQPage({ faqs: items = faqs }: { faqs?: PublicFaq[] } = {}) {
 export function BlogPage({ posts }: { posts?: PublicBlogSummary[] } = {}) {
   return (
     <>
+      <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Blog" }]} />
       <section className="page-hero">
         <DottedGlowBackground gap={14} radius={1.8} opacity={0.75} />
         <div className="page-hero__inner">

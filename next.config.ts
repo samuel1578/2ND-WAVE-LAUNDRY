@@ -9,9 +9,15 @@ const supabaseHost = supabaseUrl
     }
   })()
   : "";
+// Vercel preview deployments must never be indexed. Evaluated at build time on
+// Vercel, where the header applies to every response.
+const isPreview = process.env.VERCEL_ENV === "preview";
 const config: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  // Canonical URLs never use a trailing slash. Next also redirects the
+  // trailing-slash variant, so there is one URL per page.
+  trailingSlash: false,
   images: {
     remotePatterns: supabaseHost
       ? [
@@ -28,15 +34,36 @@ const config: NextConfig = {
   },
   async headers() {
     return [
+      ...(isPreview
+        ? [
+            {
+              source: "/:path*",
+              headers: [
+                { key: "X-Robots-Tag", value: "noindex, nofollow" },
+              ],
+            },
+          ]
+        : []),
       {
-        // Authenticated administration HTML must never be cached or shared.
+        // Authenticated administration HTML must never be cached or shared,
+        // and must never be indexed.
         source: "/admin/:path*",
         headers: [
           {
             key: "Cache-Control",
             value: "private, no-store, max-age=0",
           },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
+      },
+      {
+        // Auth callbacks and API responses are never pages.
+        source: "/auth/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/api/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
       {
         source: "/:path*",
