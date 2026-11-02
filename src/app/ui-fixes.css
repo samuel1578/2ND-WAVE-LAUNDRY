@@ -36,7 +36,7 @@
     isolation: isolate;
     width: var(--admin-logo-size);
     height: var(--admin-logo-size);
-    pointer-events: none;
+    pointer-events: auto;
 }
 
 .admin-content-stage>.admin-logo-video::before {

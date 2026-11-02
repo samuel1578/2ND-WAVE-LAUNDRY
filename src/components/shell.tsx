@@ -28,7 +28,7 @@ import { socialLinks, telHref, whatsappHref } from "@/lib/contact-links";
 import { useSiteSettings } from "./site-settings-provider";
 import { signOutAdmin } from "@/lib/auth/actions";
 import { isFrameworkNavigation } from "@/lib/auth/client-navigation";
-import { adminNavigationFor } from "@/lib/auth/permissions";
+import { adminNavigationFor, defaultLandingFor } from "@/lib/auth/permissions";
 import { isAdminRole, type AdminRole } from "@/lib/auth/roles";
 import { BrandText, Glow } from "./brand-text";
 import { Dialog } from "./dialog";
@@ -96,15 +96,19 @@ const headerNav = headerNavLabels
 export function Logo({
   large = false,
   label,
+  href = "/",
+  ariaLabel,
 }: {
   large?: boolean;
   label?: boolean;
+  href?: string;
+  ariaLabel?: string;
 }) {
   const showLabel = label ?? !large;
   return (
     <Link
-      href="/"
-      aria-label="2nd Wave Laundry Services — Home"
+      href={href}
+      aria-label={ariaLabel ?? "2nd Wave Laundry Services — Home"}
       className={`logo ${large ? "large" : ""}`}
     >
       <Image
@@ -235,7 +239,10 @@ export function Header() {
     <>
       <header className="site-header">
         <div className="header-inner">
-          <Logo />
+          <Logo
+            href={admin ? (consoleRole ? defaultLandingFor(consoleRole) : "/admin") : "/"}
+            ariaLabel={admin ? "Admin overview" : undefined}
+          />
           <nav
             ref={navRef}
             className="desktop-nav"
@@ -293,7 +300,12 @@ export function Header() {
         title={admin ? "Console navigation" : "Menu"}
         className={`navigation-dialog ${admin ? "admin-menu" : ""}`}
       >
-        <Logo large={admin} label />
+        <Logo
+          large={admin}
+          label
+          href={admin ? (consoleRole ? defaultLandingFor(consoleRole) : "/admin") : "/"}
+          ariaLabel={admin ? "Admin overview" : undefined}
+        />
         {admin && (
           <>
             <p className="eyebrow centred">Operations & stewardship</p>
@@ -502,8 +514,11 @@ export function AdminSidebar({
         })}
       </nav>
       <ThemeControl />
-      <Link className="text-link" href="/">
-        Return Home ↗
+      <Link
+        className="text-link"
+        href={role ? defaultLandingFor(role) : "/admin"}
+      >
+        Admin Home ↗
       </Link>
       <SignOutButton className="text-link">Sign Out</SignOutButton>
     </aside>

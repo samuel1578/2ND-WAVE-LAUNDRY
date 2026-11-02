@@ -308,7 +308,7 @@ export function AdminApp({
         <PasswordUpdatedNotice notice={notice} />
         {dataNotice && <Notice>{dataNotice}</Notice>}
         <div className="admin-content-stage">
-          <AdminStaticLogo />
+          <AdminStaticLogo role={role ?? undefined} />
           <Reveal>{content}</Reveal>
         </div>
       </div>
@@ -405,7 +405,7 @@ function Auth({
     );
   return (
     <div className="auth-card">
-      <Logo large />
+      <Logo large href="/admin" ariaLabel="Admin overview" />
       <p className="eyebrow">Administration</p>
       <h1>{title}</h1>
       {sent ? (
