@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
-import { listAuditEvents, listStaffAccounts } from "@/lib/admin/staff-service";
+import {
+  listAuditEvents,
+  listStaffAccounts,
+  listStaffInvitations,
+} from "@/lib/admin/staff-service";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +40,16 @@ export async function GET(request: NextRequest) {
       { status: 403, headers: NO_STORE },
     );
 
+  if (request.nextUrl.searchParams.has("invitations")) {
+    const invitations = await listStaffInvitations();
+    if (!invitations.ok)
+      return NextResponse.json(
+        { code: invitations.code, message: "Invitations are unavailable." },
+        { status: 403, headers: NO_STORE },
+      );
+    return NextResponse.json({ invitations: invitations.data }, { headers: NO_STORE });
+  }
+
   if (request.nextUrl.searchParams.has("events")) {
     const requested = Number(request.nextUrl.searchParams.get("limit") ?? "50");
     const limit = Number.isFinite(requested) ? requested : 50;
@@ -58,7 +72,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       members: accounts.data.members,
-      invitations: accounts.data.invitations,
       activeFullAdmins: accounts.data.activeFullAdmins,
       // Display-only echo of the caller's own capability, already enforced above.
       canManage: true,

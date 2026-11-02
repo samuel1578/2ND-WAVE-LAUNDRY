@@ -45,7 +45,8 @@ export type StaffErrorCode =
   | "rate_limited"
   | "not_configured"
   | "invite_failed"
-  | "partial_failure";
+  | "partial_failure"
+  | "revoked_cleanup_failed";
 
 export const STAFF_ERROR_MESSAGES: Record<StaffErrorCode, string> = {
   permission_denied:
@@ -81,6 +82,8 @@ export const STAFF_ERROR_MESSAGES: Record<StaffErrorCode, string> = {
     "The invitation could not be sent. No account or access was created.",
   partial_failure:
     "The invitation email was sent, but the staff profile could not be created. Retry to reconcile the account.",
+  revoked_cleanup_failed:
+    "The invitation was revoked, but an unused authentication account could not be safely removed. Do not resend until the account is reviewed.",
 };
 
 /** Errors that are the caller's fault (4xx) versus our own infrastructure (5xx). */
@@ -94,6 +97,7 @@ export function staffErrorStatus(code: StaffErrorCode): number {
       return 404;
     case "invite_failed":
     case "partial_failure":
+    case "revoked_cleanup_failed":
       return 502;
     case "not_configured":
       return 503;
@@ -408,6 +412,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "staff.invited": "Invitation created",
   "staff.invitation_sent": "Invitation sent",
   "staff.invitation_failed": "Invitation failed",
+  "staff.invitation_revoked": "Invitation revoked",
   "staff.invitation_accepted": "Invitation accepted",
   "staff.provisioned": "Staff profile created",
   "staff.role_changed": "Role changed",

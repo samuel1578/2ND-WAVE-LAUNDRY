@@ -59,6 +59,28 @@ export function safeAdminPath(
   return `${pathname}${url.search}`;
 }
 
+/** Auth-confirm destinations accept only same-origin paths under /admin/. */
+export function safeAuthNext(value: unknown): string {
+  if (typeof value !== "string") return "/admin/set-password";
+  const candidate = value.trim();
+  if (
+    !candidate.startsWith("/admin/") ||
+    candidate.startsWith("//") ||
+    candidate.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(candidate)
+  )
+    return "/admin/set-password";
+
+  try {
+    const url = new URL(candidate, "https://admin.invalid");
+    if (url.origin !== "https://admin.invalid" || !url.pathname.startsWith("/admin/"))
+      return "/admin/set-password";
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return "/admin/set-password";
+  }
+}
+
 /**
  * Origins that may receive Supabase Auth redirect links.
  *

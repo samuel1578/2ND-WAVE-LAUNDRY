@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   CalendarDays,
@@ -25,6 +25,7 @@ import {
   type AdminRouteDefinition,
 } from "@/lib/auth/permissions";
 import { roleLabel, type AdminIdentity } from "@/lib/auth/roles";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { bookingsBackendConnected, dataBackendNotice } from "@/lib/features";
 import { useDemoStore } from "@/lib/mock-store";
 import { statusLabel } from "@/lib/rules";
@@ -41,7 +42,6 @@ import { MediaAdmin } from "./media-admin";
 import { SettingsAdmin } from "./settings";
 import { StaffAdmin } from "./staff-manager";
 import { EmailDelivery } from "./email-delivery";
-import { AdminStaticLogo } from "./admin-logo-video";
 
 const AUTH_ROUTES = ["login", "reset-password", "set-password"];
 
@@ -49,6 +49,7 @@ export function AdminApp({
   segments,
   session,
   state,
+  kind,
   next = "/admin",
   notice,
   configError,
@@ -59,6 +60,7 @@ export function AdminApp({
   segments: string[];
   session: AdminIdentity | null;
   state?: string;
+  kind?: string;
   next?: string;
   notice?: string;
   configError: string | null;
@@ -81,6 +83,7 @@ export function AdminApp({
         <Auth
           mode={route}
           state={state}
+          kind={kind}
           next={next}
           configError={configError}
           recoveryReady={recoveryReady}
@@ -307,10 +310,7 @@ export function AdminApp({
         </div>
         <PasswordUpdatedNotice notice={notice} />
         {dataNotice && <Notice>{dataNotice}</Notice>}
-        <div className="admin-content-stage">
-          <AdminStaticLogo role={role ?? undefined} />
-          <Reveal>{content}</Reveal>
-        </div>
+        <Reveal>{content}</Reveal>
       </div>
     </main>
   );
@@ -329,12 +329,14 @@ function PasswordUpdatedNotice({ notice }: { notice?: string }) {
 function Auth({
   mode,
   state,
+  kind,
   next,
   configError,
   recoveryReady,
 }: {
   mode: string;
   state?: string;
+  kind?: string;
   next: string;
   configError: string | null;
   recoveryReady: boolean;
@@ -348,15 +350,61 @@ function Auth({
   const [sent, setSent] = useState(false);
   const reset = mode === "reset-password",
     set = mode === "set-password";
+  const [linkState, setLinkState] = useState<"checking" | "ready" | "unavailable">(
+    set ? (recoveryReady ? "ready" : "checking") : "ready",
+  );
+  const processedFragment = useRef<string | null>(null);
+  const [isInvitation, setIsInvitation] = useState(kind === "invite");
+
+  useEffect(() => {
+    if (!set) return;
+    if (state === "unavailable") {
+      setLinkState("unavailable");
+      return;
+    }
+
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const accessToken = fragment.get("access_token");
+    const refreshToken = fragment.get("refresh_token");
+    const type = fragment.get("type");
+    if (accessToken && refreshToken && (type === "invite" || type === "recovery")) {
+      if (processedFragment.current === window.location.hash) return;
+      processedFragment.current = window.location.hash;
+      setIsInvitation(type === "invite");
+      setLinkState("checking");
+      void (async () => {
+        try {
+          const { error: sessionError } = await createSupabaseBrowserClient().auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (sessionError) {
+            setLinkState("unavailable");
+            return;
+          }
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          setLinkState("ready");
+        } catch {
+          setLinkState("unavailable");
+        }
+      })();
+      return;
+    }
+
+    setLinkState(recoveryReady ? "ready" : "unavailable");
+  }, [kind, recoveryReady, router, set, state]);
+
   const title = reset
     ? "Reset your password"
     : set
-      ? "Set new password"
+      ? isInvitation
+        ? "Accept invitation"
+        : "Set new password"
       : "Admin Sign In";
   // Fail closed: without production authentication configured and with demo
   // mode disabled, the form is not offered at all.
   const blocked = Boolean(configError) && !demoMode;
-  const linkUnavailable = set && (state === "unavailable" || !recoveryReady);
+  const linkUnavailable = set && linkState === "unavailable";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -390,16 +438,34 @@ function Auth({
     }
   }
 
+  if (set && linkState === "checking")
+    return (
+      <div className="auth-card" role="status">
+        <Skeleton />
+        <p>Checking your secure link…</p>
+      </div>
+    );
   if (linkUnavailable)
     return (
       <div className="auth-card">
         <Empty
-          title="Reset link unavailable"
-          body="This password reset link has expired, was already used, or the account is not an active administrator. Request a new link to continue."
+          title={isInvitation ? "Invitation link unavailable" : "Reset link unavailable"}
+          body={
+            isInvitation
+              ? "Link expired. Ask an admin to resend your invitation."
+              : "This password reset link has expired, was already used, or the account is not an active administrator. Request a new link to continue."
+          }
         >
-          <Link className="button" href="/admin/reset-password">
-            Reset your password
-          </Link>
+          {!isInvitation && (
+            <Link className="button" href="/admin/reset-password">
+              Reset your password
+            </Link>
+          )}
+          {isInvitation && (
+            <Link className="button" href="/admin/login">
+              Return to Sign In
+            </Link>
+          )}
         </Empty>
       </div>
     );
@@ -451,23 +517,26 @@ function Auth({
             />
           )}{" "}
           {set && (
-            <TextField
-              id="auth-confirm"
-              label="Confirm password"
-              type="password"
-              required
-              minLength={12}
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-            />
+            <>
+              <TextField
+                id="auth-confirm"
+                label="Confirm password"
+                type="password"
+                required
+                minLength={12}
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+              />
+              <p className="demo-caption">Use at least 12 characters. Your password must match the confirmation above.</p>
+            </>
           )}
           <Submit
             busy={busy}
             label={
-              reset ? "Send Reset Link" : set ? "Update Password" : "Sign In"
+              reset ? "Send Reset Link" : set ? "Save Password" : "Sign In"
             }
-            busyLabel={reset ? "Sending…" : "Signing in…"}
+            busyLabel={reset ? "Sending…" : set ? "Saving…" : "Signing in…"}
           />
           {!reset && !set && (
             <Link className="text-link" href="/admin/reset-password">

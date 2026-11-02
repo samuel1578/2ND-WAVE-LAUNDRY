@@ -1,9 +1,11 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Ban,
   History,
   KeyRound,
   LoaderCircle,
+  Mail,
   RefreshCw,
   ShieldCheck,
   ShieldOff,
@@ -14,8 +16,10 @@ import { Dialog } from "@/components/dialog";
 import { Empty, Heading, Skeleton } from "@/components/ui";
 import { Field, Notice, TextField } from "@/components/forms/controls";
 import {
+  cancelAdministratorInvitation,
   changeAdministratorRole,
   inviteAdministrator,
+  resendAdministratorInvitation,
   setAdministratorStatus,
 } from "@/lib/admin/staff-actions";
 import {
@@ -51,7 +55,6 @@ import {
 
 type Directory = {
   members: StaffAccount[];
-  invitations: StaffInvitation[];
   activeFullAdmins: number;
 };
 
@@ -79,6 +82,7 @@ function invitationStatusLabel(status: string): string {
       accepted: "Accepted",
       failed: "Failed",
       revoked: "Revoked",
+      expired: "Expired",
     }[status] ?? status
   );
 }
@@ -86,6 +90,13 @@ function invitationStatusLabel(status: string): string {
 export function StaffAdmin({ viewerId }: { viewerId?: string }) {
   const [directory, setDirectory] = useState<Directory | null>(null);
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
+  const [invitations, setInvitations] = useState<StaffInvitation[] | null>(null);
+  const [invitationsOpen, setInvitationsOpen] = useState(false);
+  const invitationsOpenRef = useRef(false);
+  const [invitationsLoading, setInvitationsLoading] = useState(false);
+  const [invitationsError, setInvitationsError] = useState("");
+  const invitationsStale = useRef(true);
+  const invitationsRequest = useRef(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -111,6 +122,7 @@ export function StaffAdmin({ viewerId }: { viewerId?: string }) {
     member: StaffAccount;
     disabled: boolean;
   } | null>(null);
+  const [cancelInvitation, setCancelInvitation] = useState<StaffInvitation | null>(null);
   const [statusReason, setStatusReason] = useState("");
   const [statusConfirmed, setStatusConfirmed] = useState(false);
   const [statusError, setStatusError] = useState("");
@@ -132,7 +144,6 @@ export function StaffAdmin({ viewerId }: { viewerId?: string }) {
       const payload = (await response.json()) as Directory;
       setDirectory({
         members: payload.members ?? [],
-        invitations: payload.invitations ?? [],
         activeFullAdmins: payload.activeFullAdmins ?? 0,
       });
       setLoadError("");
@@ -148,6 +159,38 @@ export function StaffAdmin({ viewerId }: { viewerId?: string }) {
   useEffect(() => {
     void load("initial");
   }, [load]);
+
+  const loadInvitations = useCallback(async (force = false) => {
+    if (invitationsRequest.current || (!force && invitations !== null && !invitationsStale.current))
+      return;
+    invitationsRequest.current = true;
+    setInvitationsLoading(true);
+    setInvitationsError("");
+    try {
+      const response = await fetch("/api/admin/staff?invitations=1", { cache: "no-store" });
+      if (!response.ok) throw new Error("Invitation request failed.");
+      const payload = (await response.json()) as { invitations?: StaffInvitation[] };
+      setInvitations(payload.invitations ?? []);
+      invitationsStale.current = false;
+    } catch {
+      setInvitationsError("Invitations could not be loaded.");
+    } finally {
+      invitationsRequest.current = false;
+      setInvitationsLoading(false);
+    }
+  }, [invitations]);
+
+  function toggleInvitations() {
+    const opening = !invitationsOpenRef.current;
+    invitationsOpenRef.current = opening;
+    setInvitationsOpen(opening);
+    if (opening) void loadInvitations();
+  }
+
+  function refreshInvitationsAfterMutation() {
+    invitationsStale.current = true;
+    if (invitationsOpenRef.current) void loadInvitations(true);
+  }
 
   const knownEmails = useMemo(
     () =>
@@ -219,7 +262,44 @@ export function StaffAdmin({ viewerId }: { viewerId?: string }) {
       setFeedback({ kind: "success", message: result.message });
       setInviteEmail("");
       setInviteRole("operational_admin");
-      await load("refresh");
+      refreshInvitationsAfterMutation();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmCancelInvitation() {
+    if (!cancelInvitation || busy) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const result = await cancelAdministratorInvitation({
+        invitationId: cancelInvitation.id,
+      });
+      if (!result.ok) {
+        setFeedback({ kind: "error", message: result.message });
+        return;
+      }
+      setFeedback({ kind: "success", message: result.message });
+      setCancelInvitation(null);
+      refreshInvitationsAfterMutation();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resendInvitation(invitation: StaffInvitation) {
+    if (busy) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const result = await resendAdministratorInvitation({ invitationId: invitation.id });
+      if (!result.ok) {
+        setFeedback({ kind: "error", message: result.message });
+        return;
+      }
+      setFeedback({ kind: "success", message: "Invite resent." });
+      refreshInvitationsAfterMutation();
     } finally {
       setBusy(false);
     }
@@ -244,34 +324,34 @@ export function StaffAdmin({ viewerId }: { viewerId?: string }) {
 
   const rolePlan = roleDialog
     ? planRoleChange({
-        actor: { canManageStaff: true },
-        actorId: viewerId ?? "",
-        targetId: roleDialog.userId,
-        currentRole: roleDialog.role === "full_admin" ? "full_admin" : "operational_admin",
-        nextRole: roleValue,
-        reason: roleReason,
-        activeFullAdmins: activeFullAdminsExcluding(
-          directory?.members ?? [],
-          roleDialog.userId,
-        ),
-      })
+      actor: { canManageStaff: true },
+      actorId: viewerId ?? "",
+      targetId: roleDialog.userId,
+      currentRole: roleDialog.role === "full_admin" ? "full_admin" : "operational_admin",
+      nextRole: roleValue,
+      reason: roleReason,
+      activeFullAdmins: activeFullAdminsExcluding(
+        directory?.members ?? [],
+        roleDialog.userId,
+      ),
+    })
     : null;
 
   const statusPlan = statusDialog
     ? planStatusChange({
-        actor: { canManageStaff: true },
-        actorId: viewerId ?? "",
-        targetId: statusDialog.member.userId,
-        targetRole:
-          statusDialog.member.role === "full_admin" ? "full_admin" : "operational_admin",
-        targetDisabled: Boolean(statusDialog.member.disabledAt),
-        desiredDisabled: statusDialog.disabled,
-        reason: statusReason,
-        activeFullAdmins: activeFullAdminsExcluding(
-          directory?.members ?? [],
-          statusDialog.member.userId,
-        ),
-      })
+      actor: { canManageStaff: true },
+      actorId: viewerId ?? "",
+      targetId: statusDialog.member.userId,
+      targetRole:
+        statusDialog.member.role === "full_admin" ? "full_admin" : "operational_admin",
+      targetDisabled: Boolean(statusDialog.member.disabledAt),
+      desiredDisabled: statusDialog.disabled,
+      reason: statusReason,
+      activeFullAdmins: activeFullAdminsExcluding(
+        directory?.members ?? [],
+        statusDialog.member.userId,
+      ),
+    })
     : null;
 
   async function confirmRoleChange() {
@@ -464,9 +544,8 @@ export function StaffAdmin({ viewerId }: { viewerId?: string }) {
                       <td>{ROLE_LABELS[member.role] ?? member.role}</td>
                       <td>
                         <span
-                          className={`badge ${
-                            status.label === "Disabled" ? "cancelled" : "completed"
-                          }`}
+                          className={`badge ${status.label === "Disabled" ? "cancelled" : "completed"
+                            }`}
                         >
                           {status.label}
                         </span>
@@ -521,32 +600,98 @@ export function StaffAdmin({ viewerId }: { viewerId?: string }) {
 
       <section className="panel">
         <div className="section-title">
-          <h2>Invitations</h2>
+          <h2 id="staff-invitations-heading">Invitations</h2>
+          <button
+            type="button"
+            className="text-link"
+            aria-expanded={invitationsOpen}
+            aria-controls="staff-invitations-content"
+            onClick={toggleInvitations}
+          >
+            {invitationsOpen ? "Hide invitations" : "Show invitations"}
+          </button>
         </div>
-        {directory && directory.invitations.length ? (
-          <div>
-            {directory.invitations.map((invitation) => (
-              <li className="record-row" key={invitation.id}>
-                <div>
-                  <small>{invitationStatusLabel(invitation.status)}</small>
-                  <h3>{invitation.email}</h3>
-                  <p>
-                    {ROLE_LABELS[invitation.role] ?? invitation.role} · invited{" "}
-                    {formatDate(invitation.createdAt)}
-                    {invitation.failureReason ? ` · ${invitation.failureReason}` : ""}
-                  </p>
-                </div>
-                <span
-                  className={`badge ${invitation.status === "failed" ? "cancelled" : ""}`}
-                >
-                  {invitation.status === "accepted" ? "Active" : "Pending"}
-                </span>
-              </li>
-            ))}
-          </div>
-        ) : (
-          <p>No invitations have been recorded yet.</p>
-        )}
+        <div
+          id="staff-invitations-content"
+          aria-labelledby="staff-invitations-heading"
+          aria-busy={invitationsLoading}
+          hidden={!invitationsOpen}
+        >
+          {invitationsLoading && invitations === null ? (
+            <Skeleton count={2} />
+          ) : invitationsError ? (
+            <div className="form-stack">
+              <Notice error>{invitationsError}</Notice>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => void loadInvitations(true)}
+                disabled={invitationsLoading}
+              >
+                {invitationsLoading ? "Loading…" : "Try again"}
+              </button>
+            </div>
+          ) : invitations?.length ? (
+            <div>
+              {invitations.map((invitation) => {
+                const awaiting = invitation.status === "pending" || invitation.status === "sent";
+                const invitationTone =
+                  invitation.status === "failed" || invitation.status === "revoked"
+                    ? "cancelled"
+                    : invitation.status === "accepted"
+                      ? "completed"
+                      : "";
+                return (
+                  <div className="record-row" key={invitation.id}>
+                    <div>
+                      <small>{invitationStatusLabel(invitation.status)}</small>
+                      <h3>{invitation.email}</h3>
+                      <p>
+                        {ROLE_LABELS[invitation.role] ?? invitation.role} · invited{" "}
+                        {formatDate(invitation.createdAt)}
+                        {invitation.failureReason ? ` · ${invitation.failureReason}` : ""}
+                      </p>
+                    </div>
+                    <div className="actions">
+                      <span className={`badge ${invitationTone}`}>
+                        {invitation.status === "accepted"
+                          ? "Active"
+                          : invitationStatusLabel(invitation.status)}
+                      </span>
+                      {awaiting && (
+                        <>
+                          <button
+                            type="button"
+                            className="button secondary small"
+                            disabled={busy}
+                            onClick={() => void resendInvitation(invitation)}
+                            aria-label={`Resend invitation to ${invitation.email}`}
+                          >
+                            <Mail size={15} aria-hidden="true" /> Resend
+                          </button>
+                          <button
+                            type="button"
+                            className="button danger small"
+                            disabled={busy}
+                            onClick={() => {
+                              setFeedback(null);
+                              setCancelInvitation(invitation);
+                            }}
+                            aria-label={`Cancel invitation to ${invitation.email}`}
+                          >
+                            <Ban size={15} aria-hidden="true" /> Cancel
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : invitations ? (
+            <p>No invitations have been recorded yet.</p>
+          ) : null}
+        </div>
       </section>
 
       <section className="panel">
@@ -734,6 +879,40 @@ export function StaffAdmin({ viewerId }: { viewerId?: string }) {
                   : statusDialog.disabled
                     ? "Disable Account"
                     : "Restore Account"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      <Dialog
+        open={cancelInvitation !== null}
+        onClose={() => setCancelInvitation(null)}
+        title={`Cancel invitation${cancelInvitation ? ` for ${cancelInvitation.email}` : ""}?`}
+      >
+        {cancelInvitation && (
+          <div className="form-stack">
+            <p>
+              This will mark the invitation revoked. An Auth user is deleted only if
+              the server confirms it is unconfirmed, has never signed in, and has no
+              administrator profile. Confirmed or active accounts are never deleted.
+            </p>
+            <div className="actions">
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => setCancelInvitation(null)}
+                disabled={busy}
+              >
+                Keep Invitation
+              </button>
+              <button
+                type="button"
+                className="button danger"
+                onClick={() => void confirmCancelInvitation()}
+                disabled={busy}
+              >
+                {busy ? "Cancelling…" : "Cancel Invitation"}
               </button>
             </div>
           </div>

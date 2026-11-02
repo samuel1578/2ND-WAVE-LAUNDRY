@@ -42,7 +42,8 @@ export default async function Page({
       <AdminApp
         segments={segments}
         session={null}
-        state={demoMode ? query.state : undefined}
+        state={query.state}
+        kind={query.kind}
         next={safeAdminPath(query.next)}
         configError={configError}
         newsletterInterestEnabled={newsletterInterestEnabled}

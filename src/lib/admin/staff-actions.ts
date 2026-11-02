@@ -8,8 +8,10 @@ import { AdminAuthorisationError } from "@/lib/auth/roles";
 import { checkRequestOrigin } from "@/lib/security/request-origin";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import {
+  cancelStaffInvitation,
   changeStaffRole,
   inviteStaff,
+  resendStaffInvitation,
   setStaffDisabled,
 } from "./staff-service";
 import {
@@ -89,7 +91,7 @@ async function guard(
     origin: requestHeaders.get("origin"),
     host: requestHeaders.get("host"),
     forwardedHost: requestHeaders.get("x-forwarded-host"),
-    siteUrl: process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? null,
+    siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? process.env.SITE_URL ?? null,
   });
   if (!origin.ok) return failure("permission_denied");
 
@@ -119,13 +121,12 @@ export async function inviteAdministrator(input: {
   if (email === guardResult.actor.email.trim().toLowerCase())
     return failure("self_action");
 
-  const requestHeaders = await headers();
-  const callbackOrigin = resolveCallbackOrigin({
-    host: requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host"),
-    protocol: requestHeaders.get("x-forwarded-proto"),
-    siteUrl: process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? null,
-  });
-  if (!callbackOrigin) return failure("not_configured");
+  // Invite links must be rooted at the configured public site origin. Do not
+  // derive this from request headers or fall back to a guessed localhost/domain.
+  const siteUrl = resolveCallbackOrigin(
+    process.env.NEXT_PUBLIC_SITE_URL ?? process.env.SITE_URL ?? null,
+  );
+  if (!siteUrl) return failure("not_configured");
 
   const result = await inviteStaff({
     actor: {
@@ -136,7 +137,7 @@ export async function inviteAdministrator(input: {
     },
     email,
     role,
-    callbackUrl: `${callbackOrigin}/admin/auth/callback`,
+    redirectTo: `${siteUrl}/admin/set-password`,
     correlationId: crypto.randomUUID(),
   });
 
@@ -145,9 +146,73 @@ export async function inviteAdministrator(input: {
   revalidatePath("/admin/staff");
   return {
     ok: true,
-    message: `Invitation sent to ${result.data.email} as ${
-      result.data.role === "full_admin" ? "Full Admin" : "Operational Admin"
-    }. Access starts only after they accept it.`,
+    message: `Invitation sent to ${result.data.email} as ${result.data.role === "full_admin" ? "Full Admin" : "Operational Admin"
+      }. Access starts only after they accept it.`,
+    data: { email: result.data.email, role: result.data.role },
+  };
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Cancel an outstanding invitation after a second confirmation in the UI. */
+export async function cancelAdministratorInvitation(input: {
+  invitationId: string;
+}): Promise<StaffActionResult> {
+  const guardResult = await guard("change");
+  if (!guardResult.ok) return guardResult;
+  if (!UUID_PATTERN.test(input.invitationId)) return failure("invalid_request");
+
+  const result = await cancelStaffInvitation({
+    actor: {
+      userId: guardResult.actor.userId,
+      email: guardResult.actor.email,
+      role: "full_admin",
+      displayName: "",
+    },
+    invitationId: input.invitationId,
+    correlationId: crypto.randomUUID(),
+  });
+  if (!result.ok) return failure(result.code);
+
+  revalidatePath("/admin/staff");
+  return {
+    ok: true,
+    message: result.data.preservedAccount
+      ? `Invitation cancelled for ${result.data.email}. A confirmed or active account was preserved.`
+      : `Invitation cancelled for ${result.data.email}.`,
+  };
+}
+
+/** Resend using the invitation's stored email and role, never client role input. */
+export async function resendAdministratorInvitation(input: {
+  invitationId: string;
+}): Promise<StaffActionResult<{ email: string; role: AssignableRole }>> {
+  const guardResult = await guard("invite");
+  if (!guardResult.ok) return guardResult;
+  if (!UUID_PATTERN.test(input.invitationId)) return failure("invalid_request");
+
+  const siteUrl = resolveCallbackOrigin(
+    process.env.NEXT_PUBLIC_SITE_URL ?? process.env.SITE_URL ?? null,
+  );
+  if (!siteUrl) return failure("not_configured");
+
+  const result = await resendStaffInvitation({
+    actor: {
+      userId: guardResult.actor.userId,
+      email: guardResult.actor.email,
+      role: "full_admin",
+      displayName: "",
+    },
+    invitationId: input.invitationId,
+    redirectTo: `${siteUrl}/admin/set-password`,
+    correlationId: crypto.randomUUID(),
+  });
+  if (!result.ok) return failure(result.code);
+
+  revalidatePath("/admin/staff");
+  return {
+    ok: true,
+    message: `Invite resent to ${result.data.email}.`,
     data: { email: result.data.email, role: result.data.role },
   };
 }
@@ -211,9 +276,8 @@ export async function changeAdministratorRole(input: {
   revalidatePath("/admin/staff");
   return {
     ok: true,
-    message: `Role updated to ${
-      result.data.role === "full_admin" ? "Full Admin" : "Operational Admin"
-    }. The change applies to their next verified request.`,
+    message: `Role updated to ${result.data.role === "full_admin" ? "Full Admin" : "Operational Admin"
+      }. The change applies to their next verified request.`,
   };
 }
 
@@ -267,25 +331,9 @@ export async function setAdministratorStatus(input: {
   };
 }
 
-/**
- * Origin used for the invitation link. Recentred on the same trusted-origin rules
- * as password recovery: loopback for local development, otherwise `SITE_URL`, so
- * an invitation link can never be delivered to an attacker-controlled host.
- */
-function resolveCallbackOrigin(input: {
-  host?: string | null;
-  protocol?: string | null;
-  siteUrl?: string | null;
-}): string | null {
-  const configured = normaliseOrigin(input.siteUrl);
-  if (configured) return configured;
-
-  const host = (input.host ?? "").trim().toLowerCase();
-  if (!host || /[\s/\\]/.test(host)) return null;
-  const [hostname] = host.split(":");
-  if (hostname !== "localhost" && hostname !== "127.0.0.1") return null;
-  const protocol = (input.protocol ?? "").trim().toLowerCase() || "http";
-  return protocol === "http" ? `http://${host}` : null;
+/** Returns only an explicitly configured site origin; request hosts are never used. */
+function resolveCallbackOrigin(value: string | null): string | null {
+  return normaliseOrigin(value);
 }
 
 function normaliseOrigin(value?: string | null): string | null {

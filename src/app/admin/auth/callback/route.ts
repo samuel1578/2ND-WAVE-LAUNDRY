@@ -26,7 +26,11 @@ export async function GET(request: NextRequest) {
   const target = (state?: string) => {
     const url = request.nextUrl.clone();
     url.pathname = "/admin/set-password";
-    url.search = state ? `?state=${state}` : "";
+    const params = new URLSearchParams();
+    if (state) params.set("state", state);
+    if (request.nextUrl.searchParams.get("type") === "invite")
+      params.set("kind", "invite");
+    url.search = params.toString() ? `?${params.toString()}` : "";
     return NextResponse.redirect(url, { headers: PRIVATE_HEADERS });
   };
 

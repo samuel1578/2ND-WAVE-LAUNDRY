@@ -10,7 +10,7 @@ import {
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { reconcileInvitationForUser } from "@/lib/admin/staff-service";
 import { getCurrentAdmin } from "./admin";
-import { resolveLoginDestination } from "./permissions";
+import { defaultLandingFor, resolveLoginDestination } from "./permissions";
 import { resolveAuthOrigin } from "./redirect";
 import { MIN_ADMIN_PASSWORD_LENGTH } from "./roles";
 
@@ -196,12 +196,20 @@ export async function updateAdminPassword(input: {
     return { error: RESET_LINK_INVALID };
   }
 
-  // The account must already be an active administrator. Recovery never grants
-  // access, and never creates a profile.
+  // Invite acceptance may not yet have a profile. Reconcile using the verified
+  // session's email and the trusted invitation row; this can only assign the
+  // role recorded by the inviting administrator. Password recovery for an
+  // existing account remains unchanged.
+  await reconcileInvitationForUser({
+    id: user.id,
+    email: user.email,
+    correlationId: crypto.randomUUID(),
+  }).catch(() => undefined);
+
   const admin = await getCurrentAdmin();
   if (!admin) {
     console.warn(
-      "[auth] password_update rejected: the recovered session has no active administrator profile.",
+      "[auth] password_update rejected: the verified session has no active administrator profile.",
     );
     return { error: RESET_LINK_INVALID };
   }
@@ -212,5 +220,5 @@ export async function updateAdminPassword(input: {
     return { error: RESET_LINK_INVALID };
   }
 
-  redirect("/admin?notice=password-updated");
+  redirect(defaultLandingFor(admin.role));
 }

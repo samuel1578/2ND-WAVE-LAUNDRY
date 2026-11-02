@@ -12,6 +12,7 @@ import {
   protectedAdminPath,
   resolveAuthOrigin,
   safeAdminPath,
+  safeAuthNext,
 } from "../src/lib/auth/redirect";
 import {
   readSupabaseConfig,
@@ -183,6 +184,22 @@ test("safe return destinations reject open redirects", () => {
     "/admin/boo\u0000king",
   ])
     assert.equal(safeAdminPath(hostile), "/admin", JSON.stringify(hostile));
+});
+
+test("auth confirmation next paths only accept same-origin admin destinations", () => {
+  assert.equal(safeAuthNext("/admin/set-password"), "/admin/set-password");
+  assert.equal(safeAuthNext("/admin/bookings?from=invite"), "/admin/bookings?from=invite");
+  for (const hostile of [
+    "https://evil.test/admin/set-password",
+    "//evil.test/admin/set-password",
+    "/\\evil.test/admin/set-password",
+    "/auth/confirm",
+    "/admin",
+    "admin/set-password",
+    null,
+    undefined,
+  ])
+    assert.equal(safeAuthNext(hostile), "/admin/set-password", String(hostile));
 });
 
 test("auth redirect origins come from an explicit allow-list", () => {

@@ -54,37 +54,18 @@ const INVITATION_COLUMNS =
 const AUDIT_COLUMNS =
   "id, actor_id, action, entity_type, entity_id, before_state, after_state, reason, correlation_id, created_at";
 
-/**
- * Current administrator accounts and outstanding invitations.
- *
- * Deliberately built from two bounded queries rather than a join: the account list
- * is small, and keeping them separate means a missing invitation row can never
- * hide an administrator.
- */
+/** Current administrator accounts. Does not query invitation history. */
 export async function listStaffAccounts(): Promise<
-  StaffResult<{
-    members: StaffAccount[];
-    invitations: StaffInvitation[];
-    activeFullAdmins: number;
-  }>
+  StaffResult<{ members: StaffAccount[]; activeFullAdmins: number }>
 > {
   const supabase = await createSupabaseServerClient();
-
-  const { data: profiles, error: profileError } = await supabase
+  const { data: profiles, error } = await supabase
     .from("admin_profiles")
     .select(PROFILE_COLUMNS)
     .order("created_at", { ascending: true });
 
   // A policy denial, a missing table or a transport error all fail closed.
-  if (profileError) return fail("permission_denied");
-
-  const { data: invitations, error: invitationError } = await supabase
-    .from("admin_invitations")
-    .select(INVITATION_COLUMNS)
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (invitationError) return fail("permission_denied");
+  if (error) return fail("permission_denied");
 
   const members: StaffAccount[] = (
     (profiles ?? []) as Array<{
@@ -106,8 +87,29 @@ export async function listStaffAccounts(): Promise<
     updatedAt: row.updated_at,
   }));
 
-  const invitationRows: StaffInvitation[] = (
-    (invitations ?? []) as Array<{
+  return {
+    ok: true,
+    data: {
+      members,
+      activeFullAdmins: members.filter(
+        (member) => member.role === "full_admin" && !member.disabledAt,
+      ).length,
+    },
+  };
+}
+
+/** Invitation history, queried only when the authorised disclosure is opened. */
+export async function listStaffInvitations(): Promise<StaffResult<StaffInvitation[]>> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("admin_invitations")
+    .select(INVITATION_COLUMNS)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) return fail("permission_denied");
+
+  const invitations: StaffInvitation[] = (
+    (data ?? []) as Array<{
       id: string;
       email: string;
       role: string;
@@ -128,16 +130,7 @@ export async function listStaffAccounts(): Promise<
     failureReason: row.failure_reason,
   }));
 
-  return {
-    ok: true,
-    data: {
-      members,
-      invitations: invitationRows,
-      activeFullAdmins: members.filter(
-        (member) => member.role === "full_admin" && !member.disabledAt,
-      ).length,
-    },
-  };
+  return { ok: true, data: invitations };
 }
 
 /** Recent audit history, newest first. Full Admins only (enforced by policy). */
@@ -215,7 +208,7 @@ export async function inviteStaff(input: {
   actor: AdminIdentity;
   email: string;
   role: AssignableRole;
-  callbackUrl: string;
+  redirectTo: string;
   correlationId: string;
 }): Promise<StaffResult<InvitationOutcome>> {
   const created = await callStaffRpc<{
@@ -253,21 +246,28 @@ export async function inviteStaff(input: {
 
   const { data: invited, error: inviteError } = await client.auth.admin.inviteUserByEmail(
     input.email,
-    { redirectTo: input.callbackUrl },
+    { redirectTo: input.redirectTo },
   );
 
   if (inviteError || !invited?.user?.id) {
-    // The provider message is not forwarded: it can disclose whether an account
-    // exists. Only a short, non-sensitive reason is stored.
+    // Do not expose raw provider text, but classify its duplicate-account case
+    // so an administrator gets an actionable message instead of a silent failure.
+    const providerText = `${inviteError?.code ?? ""} ${inviteError?.message ?? ""}`.toLowerCase();
+    const alreadyRegistered =
+      providerText.includes("email_exists") ||
+      providerText.includes("already registered") ||
+      providerText.includes("user already exists");
     await callStaffRpc("staff_mark_invitation", {
       p_actor: input.actor.userId,
       p_invitation: invitationId,
       p_status: "failed",
       p_auth_user_id: null,
-      p_failure_reason: "The authentication provider rejected the invitation.",
+      p_failure_reason: alreadyRegistered
+        ? "An authentication account already exists for this address."
+        : "The authentication provider rejected the invitation.",
       p_correlation: input.correlationId,
     });
-    return fail("invite_failed");
+    return fail(alreadyRegistered ? "account_exists" : "invite_failed");
   }
 
   const marked = await callStaffRpc("staff_mark_invitation", {
@@ -289,6 +289,162 @@ export async function inviteStaff(input: {
       status: "sent",
     },
   };
+}
+
+type RevokedInvitation = {
+  invitation_id: string;
+  email: string;
+  role: AssignableRole;
+  status: "revoked";
+  auth_user_id: string | null;
+};
+
+async function revokeInvitation(input: {
+  actor: AdminIdentity;
+  invitationId: string;
+  correlationId: string;
+}): Promise<StaffResult<RevokedInvitation>> {
+  return callStaffRpc<RevokedInvitation>("staff_revoke_invitation", {
+    p_actor: input.actor.userId,
+    p_invitation: input.invitationId,
+    p_correlation: input.correlationId,
+  });
+}
+
+type AuthAdminUser = {
+  id: string;
+  email?: string;
+  email_confirmed_at?: string | null;
+  last_sign_in_at?: string | null;
+};
+
+/** Find the Auth account for an invitation without trusting a client-supplied ID. */
+async function findAuthUserForInvitation(
+  client: ReturnType<typeof createSupabaseAdminClient>,
+  email: string,
+  linkedUserId: string | null,
+): Promise<StaffResult<{ user: AuthAdminUser | null }>> {
+  const normalized = email.trim().toLowerCase();
+  if (linkedUserId) {
+    const linked = await client.auth.admin.getUserById(linkedUserId);
+    if (!linked.error && linked.data.user?.email?.trim().toLowerCase() === normalized)
+      return { ok: true, data: { user: linked.data.user } };
+  }
+
+  // The invitation may have created an Auth user before delivery-state recording
+  // failed, leaving auth_user_id empty. Auth Admin has no email-specific lookup,
+  // so scan bounded pages and compare the exact normalised address.
+  const perPage = 1000;
+  for (let page = 1; page <= 100; page += 1) {
+    const { data, error } = await client.auth.admin.listUsers({ page, perPage });
+    if (error) return fail("conflict");
+    const user = data.users.find((candidate) => candidate.email?.trim().toLowerCase() === normalized);
+    if (user) return { ok: true, data: { user } };
+    if (data.users.length < perPage) break;
+  }
+  return { ok: true, data: { user: null } };
+}
+
+/**
+ * Remove only a never-confirmed, never-used Auth user with no staff profile.
+ * Confirmed, signed-in, or provisioned users are deliberately preserved.
+ */
+async function clearUnconfirmedAuthUser(input: {
+  email: string;
+  linkedUserId: string | null;
+}): Promise<StaffResult<{ deleted: boolean; protected: boolean }>> {
+  let client;
+  try {
+    client = createSupabaseAdminClient();
+  } catch (error) {
+    return fail(error instanceof SupabaseElevatedConfigError ? "not_configured" : "conflict");
+  }
+
+  const found = await findAuthUserForInvitation(client, input.email, input.linkedUserId);
+  if (!found.ok) return found;
+  const user = found.data.user;
+  if (!user) return { ok: true, data: { deleted: false, protected: false } };
+
+  const { data: profile, error: profileError } = await client
+    .from("admin_profiles")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (profileError) return fail("conflict");
+
+  if (user.email_confirmed_at || user.last_sign_in_at || profile)
+    return { ok: true, data: { deleted: false, protected: true } };
+
+  // Re-read immediately before deletion so the decision is based on current Auth
+  // state, not a stale invitation-list result.
+  const latest = await client.auth.admin.getUserById(user.id);
+  if (latest.error || !latest.data.user) return fail("revoked_cleanup_failed");
+  if (
+    latest.data.user.email?.trim().toLowerCase() !== input.email.trim().toLowerCase() ||
+    latest.data.user.email_confirmed_at ||
+    latest.data.user.last_sign_in_at
+  )
+    return { ok: true, data: { deleted: false, protected: true } };
+
+  const { data: latestProfile, error: latestProfileError } = await client
+    .from("admin_profiles")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (latestProfileError) return fail("revoked_cleanup_failed");
+  if (latestProfile) return { ok: true, data: { deleted: false, protected: true } };
+
+  const { error: deleteError } = await client.auth.admin.deleteUser(user.id);
+  if (deleteError) return fail("revoked_cleanup_failed");
+  return { ok: true, data: { deleted: true, protected: false } };
+}
+
+/** Revoke an invitation; never delete a confirmed, active, or profiled user. */
+export async function cancelStaffInvitation(input: {
+  actor: AdminIdentity;
+  invitationId: string;
+  correlationId: string;
+}): Promise<StaffResult<{ email: string; preservedAccount: boolean }>> {
+  const revoked = await revokeInvitation(input);
+  if (!revoked.ok) return revoked;
+  const cleared = await clearUnconfirmedAuthUser({
+    email: revoked.data.email,
+    linkedUserId: revoked.data.auth_user_id,
+  });
+  if (!cleared.ok) return cleared;
+  return {
+    ok: true,
+    data: {
+      email: revoked.data.email,
+      preservedAccount: cleared.data.protected,
+    },
+  };
+}
+
+/** Revoke, safely clear an unused Auth user, then send a replacement invite. */
+export async function resendStaffInvitation(input: {
+  actor: AdminIdentity;
+  invitationId: string;
+  redirectTo: string;
+  correlationId: string;
+}): Promise<StaffResult<InvitationOutcome>> {
+  const revoked = await revokeInvitation(input);
+  if (!revoked.ok) return revoked;
+
+  const cleared = await clearUnconfirmedAuthUser({
+    email: revoked.data.email,
+    linkedUserId: revoked.data.auth_user_id,
+  });
+  if (!cleared.ok) return cleared;
+  if (cleared.data.protected) return fail("account_exists");
+
+  return inviteStaff({
+    actor: input.actor,
+    email: revoked.data.email,
+    role: revoked.data.role,
+    redirectTo: input.redirectTo,
+    correlationId: input.correlationId,
+  });
 }
 
 export async function changeStaffRole(input: {
