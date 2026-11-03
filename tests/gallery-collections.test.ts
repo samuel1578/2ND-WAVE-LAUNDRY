@@ -11,6 +11,7 @@ import {
   assignImagesToCategory,
   galleryCollectionDeletionError,
   galleryCollectionError,
+  galleryWorkspaceDataReady,
   galleryWorkspaceError,
   groupGalleryImages,
   moveGalleryImage,
@@ -72,6 +73,24 @@ test("collection validation rejects missing, duplicate and malformed records", (
   assert.match(
     galleryCollectionError(collection({ description: "x".repeat(301) }), []),
     /description/,
+  );
+});
+
+test("gallery cannot save until both collection and placement versions are loaded", () => {
+  const categoriesReady = {
+    categoriesLoading: false,
+    placementsLoading: true,
+    categoriesError: "",
+    placementsError: "",
+  };
+  assert.equal(galleryWorkspaceDataReady(categoriesReady), false);
+  assert.equal(
+    galleryWorkspaceDataReady({ ...categoriesReady, placementsLoading: false }),
+    true,
+  );
+  assert.equal(
+    galleryWorkspaceDataReady({ ...categoriesReady, placementsError: "unavailable" }),
+    false,
   );
 });
 
@@ -237,8 +256,8 @@ test("removing an image from one category keeps its other categories", () => {
 
 test("deleting a category moves its images to Needs a Category", () => {
   const rows = [
-    placement({ id: "p1", collectionKey: "shoe-care", order: 1 }),
-    placement({ id: "p2", collectionKey: "laundry", order: 2 }),
+    placement({ id: "p1", mediaId: "media-1", collectionKey: "shoe-care", order: 1 }),
+    placement({ id: "p2", mediaId: "media-2", collectionKey: "laundry", order: 2 }),
   ];
   const moved = unassignCategory(rows, "shoe-care");
   assert.deepEqual(moved.map((row) => row.collectionKey), ["", "laundry"]);

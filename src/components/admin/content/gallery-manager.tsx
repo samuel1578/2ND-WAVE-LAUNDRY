@@ -21,6 +21,7 @@ import { saveLiveGalleryWorkspace } from "@/lib/website/actions";
 import { seededGallery, seededGalleryCollections, seededMedia } from "@/lib/website/types";
 import {
   assignImagesToCategory,
+  galleryWorkspaceDataReady,
   galleryWorkspaceError,
   groupGalleryImages,
   nextCategorySlug,
@@ -51,7 +52,6 @@ export function GalleryManager({ state }: { state?: string }) {
   const liveGallery = useAdminWebsiteData<GalleryPlacement & { asset?: MediaAsset }>(
     "gallery",
     demoMode ? seededGallery : [],
-    { enabled: demoMode },
   );
   const liveMedia = useAdminWebsiteData<MediaAsset>(
     "media",
@@ -83,9 +83,22 @@ export function GalleryManager({ state }: { state?: string }) {
   const [busy, setBusy] = useState(false);
 
   const dirty = snapshot(orderCategories(categories), orderedPlacements(placements)) !== baseline;
-  const loading = !demoMode && liveCategories.loading;
-  const fetchError = !demoMode && liveCategories.error ? `Categories: ${liveCategories.error}` : "";
-  const canWrite = demoMode || (hydrated && !loading && !fetchError);
+  const loading = !demoMode && (liveCategories.loading || liveGallery.loading);
+  const fetchError = !demoMode
+    ? [
+      liveCategories.error ? `Categories: ${liveCategories.error}` : "",
+      liveGallery.error ? `Images: ${liveGallery.error}` : "",
+    ].filter(Boolean).join(" ")
+    : "";
+  const canWrite = demoMode || (
+    hydrated &&
+    galleryWorkspaceDataReady({
+      categoriesLoading: liveCategories.loading,
+      placementsLoading: liveGallery.loading,
+      categoriesError: liveCategories.error,
+      placementsError: liveGallery.error,
+    })
+  );
   const groups = groupGalleryImages(placements);
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const activeCategoryRecord = activeCategory ? categoriesById.get(activeCategory) ?? null : null;
@@ -111,8 +124,12 @@ export function GalleryManager({ state }: { state?: string }) {
   useEffect(() => {
     if (
       demoMode ||
-      liveCategories.loading ||
-      liveCategories.error ||
+      !galleryWorkspaceDataReady({
+        categoriesLoading: liveCategories.loading,
+        placementsLoading: liveGallery.loading,
+        categoriesError: liveCategories.error,
+        placementsError: liveGallery.error,
+      }) ||
       dirty
     ) return;
     const nextCategories = structuredClone(liveCategories.items);
@@ -130,7 +147,15 @@ export function GalleryManager({ state }: { state?: string }) {
     setPlacements(nextPlacements);
     setBaseline(snapshot(nextCategories, nextPlacements));
     setHydrated(true);
-  }, [dirty, liveCategories.error, liveCategories.items, liveCategories.loading, liveGallery.items]);
+  }, [
+    dirty,
+    liveCategories.error,
+    liveCategories.items,
+    liveCategories.loading,
+    liveGallery.error,
+    liveGallery.items,
+    liveGallery.loading,
+  ]);
 
   function change() {
     setError("");
@@ -354,7 +379,12 @@ export function GalleryManager({ state }: { state?: string }) {
           badge={
             <div className={styles.cardActions}>
               {fetchError && (
-                <button type="button" className="button secondary" disabled={loading} onClick={() => void liveCategories.refetch()}>
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={loading}
+                  onClick={() => void Promise.all([liveCategories.refetch(), liveGallery.refetch()])}
+                >
                   Retry loading
                 </button>
               )}
@@ -381,9 +411,9 @@ export function GalleryManager({ state }: { state?: string }) {
           error={[error, fetchError].filter(Boolean).join(" ")}
           success={success}
         />
-        {!demoMode && loading && <div className="panel" role="status">Loading gallery categories…</div>}
+        {!demoMode && loading && <div className="panel" role="status">Loading gallery data…</div>}
         {!demoMode && !hydrated && !loading && fetchError && (
-          <div className="panel" role="status">Gallery categories are unavailable. Retry loading before making changes.</div>
+          <div className="panel" role="status">Gallery data is unavailable. Retry loading before making changes.</div>
         )}
         {(hydrated || demoMode) && !activeCategory && (
           <section className="panel form-stack" aria-labelledby="gallery-categories-heading">

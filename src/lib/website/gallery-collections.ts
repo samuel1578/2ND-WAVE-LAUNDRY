@@ -17,6 +17,21 @@ export const GALLERY_COLLECTION_LIMITS = {
 
 export const GALLERY_COLLECTION_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+/** The admin workspace is writable only after both versioned datasets are loaded. */
+export function galleryWorkspaceDataReady(input: {
+  categoriesLoading: boolean;
+  placementsLoading: boolean;
+  categoriesError: string;
+  placementsError: string;
+}): boolean {
+  return (
+    !input.categoriesLoading &&
+    !input.placementsLoading &&
+    !input.categoriesError &&
+    !input.placementsError
+  );
+}
+
 /** Stable, URL-safe identifier derived from a display name. */
 export function normalizeGallerySlug(value: string): string {
   return value

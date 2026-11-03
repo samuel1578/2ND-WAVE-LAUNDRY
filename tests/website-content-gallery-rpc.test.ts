@@ -88,6 +88,45 @@ test("gallery RPC supports reorder, hide, canonical versions, archived placement
     );
     assert.deepEqual(saved.map((item) => item.version), [1, 1]);
 
+    // The admin UI must not save a partial snapshot when its gallery query has
+    // not loaded. The atomic RPC correctly treats omitted current placements as
+    // deletions and rejects the missing optimistic versions with PT409.
+    const { rows: collectionRows } = await db.query<{
+        record_key: string;
+        payload: Record<string, unknown>;
+        published: boolean;
+        sort_order: number;
+        version: number;
+    }>(
+        "SELECT record_key,payload,published,sort_order,version FROM public.website_content WHERE module='gallery_collection'",
+    );
+    const rpcCollections = collectionRows.map((item) => ({
+        key: item.record_key,
+        payload: item.payload,
+        published: item.published,
+        sort_order: item.sort_order,
+    }));
+    const expectedCollectionVersions = Object.fromEntries(
+        collectionRows.map((item) => [item.record_key, item.version]),
+    );
+    await assert.rejects(
+        db.query(
+            "SELECT public.website_gallery_save($1::uuid,$2::jsonb,$3::jsonb,$4::jsonb,$5::jsonb)",
+            [
+                actor,
+                JSON.stringify(rpcCollections),
+                JSON.stringify(expectedCollectionVersions),
+                JSON.stringify([]),
+                JSON.stringify({}),
+            ],
+        ),
+        (error: unknown) => {
+            assert.match((error as Error).message, /CONTENT_CONFLICT/);
+            assert.equal((error as { code?: string }).code, "PT409");
+            return true;
+        },
+    );
+
     // Reproduce the prior mapper bug: the table UUID is not record_key, so the
     // RPC treats both placements as deleted without their baseline versions.
     const { rows: databaseIds } = await db.query<{ record_key: string; id: string; version: number }>(
