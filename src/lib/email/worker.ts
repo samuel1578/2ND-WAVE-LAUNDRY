@@ -128,7 +128,11 @@ const asResult = (
 
 export async function runEmailWorker(
   deps: EmailWorkerDeps,
-  options: { workerId: string },
+  options: {
+    workerId: string;
+    /** Restricts a post-commit kick to the event family that created it. */
+    templates?: readonly NotificationTemplate[];
+  },
 ): Promise<EmailWorkerResult> {
   const started = Date.now();
 
@@ -164,6 +168,7 @@ export async function runEmailWorker(
       workerId: options.workerId,
       limit: boundedBatch(deps.batchSize),
       leaseSeconds: boundedLease(deps.leaseSeconds),
+      templates: options.templates,
     });
   } catch {
     return {

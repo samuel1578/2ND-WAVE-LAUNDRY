@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   BLOG_LIST_COLUMNS,
   buildGalleryPhotos,
+  dedupeGalleryPhotos,
   mapBlogPostRow,
+  mapGalleryCollectionRows,
   mapPublicSiteSettings,
   mapServiceRow,
   referencedMediaIds,
@@ -98,10 +100,10 @@ test("blog list summary has no body property", () => {
 
 test("gallery only keeps referenced, supplied (non-archived) media in placement order", () => {
   const placements: GalleryPlacementRow[] = [
-    { id: "1", record_key: "p1", payload: { media_id: "b", alt: "Second" }, sort_order: 1 },
+    { id: "1", record_key: "p1", payload: { media_id: "b", alt: "Second", collection_key: "pressing" }, sort_order: 1 },
     { id: "2", record_key: "p2", payload: { media_id: "a", alt: "" }, sort_order: 2 },
     { id: "3", record_key: "p3", payload: { media_id: "archived", alt: "Gone" }, sort_order: 3 },
-    { id: "4", record_key: "p4", payload: { media_id: "a", alt: "Duplicate" }, sort_order: 4 },
+    { id: "4", record_key: "p4", payload: { media_id: "a", alt: "Duplicate", collection_key: "folding" }, sort_order: 4 },
   ];
   assert.deepEqual(referencedMediaIds(placements), ["b", "a", "archived"]);
 
@@ -110,10 +112,29 @@ test("gallery only keeps referenced, supplied (non-archived) media in placement 
     { id: "b", public_url: "https://example.test/b.jpg", alt: "Asset B" },
   ]);
 
+  // Collection membership comes from the stored collection_key, never alt text.
   assert.deepEqual(tiles, [
-    { src: "https://example.test/b.jpg", alt: "Second" },
-    { src: "https://example.test/a.jpg", alt: "Asset A" },
-    { src: "https://example.test/a.jpg", alt: "Duplicate" },
+    { src: "https://example.test/b.jpg", alt: "Second", mediaId: "b", collections: ["pressing"] },
+    { src: "https://example.test/a.jpg", alt: "Asset A", mediaId: "a", collections: [] },
+    { src: "https://example.test/a.jpg", alt: "Duplicate", mediaId: "a", collections: ["folding"] },
+  ]);
+
+  // The same asset placed in two collections must appear once in the All view.
+  assert.deepEqual(
+    dedupeGalleryPhotos(tiles).map((tile) => tile.mediaId),
+    ["b", "a"],
+  );
+});
+
+test("public collections keep configured order and ignore unnamed rows", () => {
+  const collections = mapGalleryCollectionRows([
+    { id: "1", record_key: "laundry", payload: { name: "Laundry", description: "Everyday wash" }, sort_order: 1, version: 1, published: true },
+    { id: "2", record_key: "blank", payload: { name: "   " }, sort_order: 2, version: 1, published: true },
+    { id: "3", record_key: "shoe-care", payload: { name: "Shoe Care" }, sort_order: 3, version: 1, published: true },
+  ]);
+  assert.deepEqual(collections, [
+    { id: "laundry", name: "Laundry", description: "Everyday wash" },
+    { id: "shoe-care", name: "Shoe Care", description: "" },
   ]);
 });
 

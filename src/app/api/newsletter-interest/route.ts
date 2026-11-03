@@ -8,6 +8,7 @@ import { resolveNewsletterRateLimiter } from "@/lib/newsletter/rate-limit";
 import { submitNewsletterInterest } from "@/lib/newsletter/repository";
 import { handleNewsletterInterestSubmission } from "@/lib/newsletter/submission";
 import { dispatchPendingEmails } from "@/lib/email/dispatch";
+import { newsletterInterestTemplates } from "@/lib/email/templates";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
     // Best-effort post-commit delivery: the outbox row is already committed, so
     // a lost kick only delays the alert until the scheduled worker picks it up.
     if (response.body.ok === true) {
-        after(() => dispatchPendingEmails("newsletter_interest_submit"));
+        after(() => dispatchPendingEmails("newsletter_interest_submit", newsletterInterestTemplates));
     }
 
     return NextResponse.json(response.body, {

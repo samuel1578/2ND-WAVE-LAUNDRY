@@ -2,9 +2,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { demoMode } from "@/lib/demo-mode";
 
-export function useAdminWebsiteData<T>(module: string, demoItems: T[]) {
+export function useAdminWebsiteData<T>(
+  module: string,
+  demoItems: T[],
+  options: { enabled?: boolean; query?: string } = {},
+) {
+  const enabled = options.enabled ?? true;
+  const query = options.query ?? "";
   const [items, setItems] = useState<T[]>(() => (demoMode ? demoItems : []));
-  const [loading, setLoading] = useState(!demoMode);
+  const [loading, setLoading] = useState(!demoMode && enabled);
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);
 
@@ -17,7 +23,7 @@ export function useAdminWebsiteData<T>(module: string, demoItems: T[]) {
     setError("");
     try {
       const response = await fetch(
-        `/api/admin/website?module=${encodeURIComponent(module)}`,
+        `/api/admin/website?module=${encodeURIComponent(module)}${query ? `&${query}` : ""}`,
         { cache: "no-store", signal: controller.signal },
       );
       if (!response.ok) {
@@ -43,15 +49,16 @@ export function useAdminWebsiteData<T>(module: string, demoItems: T[]) {
         setLoading(false);
       }
     }
-  }, [module]);
+  }, [module, query]);
 
   useEffect(() => {
+    if (!enabled) return;
     void refetch();
     return () => {
       request.current?.abort();
       request.current = null;
     };
-  }, [refetch]);
+  }, [enabled, refetch]);
 
   return { items, loading, error, setItems, refetch };
 }

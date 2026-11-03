@@ -60,6 +60,8 @@ export type EmailOutboxRepository = {
     workerId: string;
     limit: number;
     leaseSeconds: number;
+    /** Optional allowlist; absent means the scheduled worker may drain all rows. */
+    templates?: readonly NotificationTemplate[];
   }): Promise<ClaimedOutboxEmail[]>;
   markSent(input: {
     id: string;
@@ -407,6 +409,7 @@ export function createEmailOutboxRepository(): EmailOutboxRepository {
         p_worker_id: input.workerId,
         p_limit: input.limit,
         p_lease_seconds: input.leaseSeconds,
+        p_templates: input.templates ?? null,
       });
       if (error) throw new EmailRepositoryError();
       if (!Array.isArray(data)) throw new EmailRepositoryError();

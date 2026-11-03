@@ -127,8 +127,10 @@ export const EMAIL_TEMPLATE_PARAM_CONTRACTS: Record<
     optional: [],
   },
   enquiry_received: {
-    required: ["kind", "name", "business", "phone", "topic", "enquiryUrl", "websiteUrl"],
-    optional: [],
+    // `topic` only exists for general enquiries. Commercial quote alerts omit it
+    // entirely so the message never presents a workflow-inapplicable field.
+    required: ["kind", "name", "business", "phone", "enquiryUrl", "websiteUrl"],
+    optional: ["topic"],
   },
 };
 
@@ -548,6 +550,7 @@ export type EnquiryReceivedContext = {
   name: string;
   business: string | null;
   phone: string;
+  /** Only general enquiries carry a topic; commercial quotes always omit it. */
   topic: string | null;
 };
 
@@ -556,13 +559,19 @@ export function buildEnquiryReceivedParams(
   options: RenderEmailOptions,
 ): BrevoBookingTemplateParams {
   const siteUrl = options.siteUrl.replace(/\/+$/, "");
-  return {
+  const params: BrevoBookingTemplateParams = {
     kind: context.kind === "commercial" ? "Commercial quote request" : "General enquiry",
     name: escapeHtml(collapse(context.name)),
     business: escapeHtml(collapse(context.business ?? "") || "Not provided"),
     phone: escapeHtml(collapse(context.phone)),
-    topic: escapeHtml(collapse(context.topic ?? "") || "Not provided"),
     enquiryUrl: `${siteUrl}/admin/enquiries/${encodeURIComponent(context.enquiryId)}`,
     websiteUrl: siteUrl,
   };
+  // Topic belongs to the general enquiry workflow only. Omitting the parameter
+  // (rather than sending "Not provided") keeps the commercial alert relevant;
+  // the Brevo body must render the topic block conditionally on `params.topic`.
+  const topic = collapse(context.topic ?? "");
+  if (context.kind !== "commercial" && topic)
+    params.topic = escapeHtml(topic);
+  return params;
 }

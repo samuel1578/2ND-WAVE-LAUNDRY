@@ -337,8 +337,8 @@ export default async function Page({
       page = <QuotePage />;
       break;
     case "gallery": {
-      const galleryPhotos = await getPublicGallery();
-      page = <GalleryPage photos={galleryPhotos} />;
+      const gallery = await getPublicGallery();
+      page = <GalleryPage gallery={gallery} />;
       jsonLd = [
         breadcrumbSchema([
           ...HOME_BREADCRUMB,

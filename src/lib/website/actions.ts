@@ -2,9 +2,11 @@
 import { headers } from "next/headers";
 import { getCurrentAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
-import type { ContentItem, FaqItem, GalleryPlacement, LocationRecord, PromotionRecord, Settings } from "@/lib/contracts";
+import type { ContentItem, FaqItem, GalleryCollection, GalleryPlacement, LocationRecord, PromotionRecord, Settings } from "@/lib/contracts";
 import { checkRequestOrigin } from "@/lib/security/request-origin";
-import { writeFaqs, writeGallery, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia, deleteMedia as deleteMediaRecord } from "./repository";
+import { writeFaqs, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia, deleteMedia as deleteMediaRecord } from "./repository";
+import { writeGalleryWorkspace } from "./gallery-write";
+import { galleryWorkspaceError } from "./gallery-collections";
 import type { MediaAsset } from "@/lib/contracts";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -54,35 +56,67 @@ export async function saveLiveFaqs(items: FaqItem[]) {
     PUBLIC_WRITE_TAGS.faqs,
   );
 }
-export async function saveLiveGallery(
-  items: GalleryPlacement[],
-  previousVersions: Record<string, number> = {},
+export async function saveLiveGalleryWorkspace(
+  input: { collections: GalleryCollection[]; placements: GalleryPlacement[] },
+  previousVersions: {
+    collections?: Record<string, number>;
+    placements?: Record<string, number>;
+  } = {},
 ) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
-  if (!Array.isArray(items) || items.length > 200) throw new Error("Gallery is too large.");
-  if (!previousVersions || typeof previousVersions !== "object" || Array.isArray(previousVersions) || Object.keys(previousVersions).length > 400) {
-    throw new Error("Gallery version data is invalid. Reload and try again.");
+  if (!input || !Array.isArray(input.collections) || !Array.isArray(input.placements)) {
+    throw new Error("Gallery is invalid. Reload and try again.");
   }
-  const safeItems = items.map((item) => ({
-    id: item.id,
-    mediaId: item.mediaId,
-    alt: item.alt,
-    caption: item.caption,
-    order: item.order,
-    visible: item.visible,
-    version: item.version,
-  }));
-  const safePreviousVersions: Record<string, number> = {};
-  for (const [id, version] of Object.entries(previousVersions)) {
-    if (!id || !Number.isSafeInteger(version) || version < 0) {
+  if (input.collections.length > 100 || input.placements.length > 500) {
+    throw new Error("Gallery is too large.");
+  }
+  const versionMap = (value: Record<string, number> | undefined) => {
+    if (value && (typeof value !== "object" || Array.isArray(value))) {
       throw new Error("Gallery version data is invalid. Reload and try again.");
     }
-    safePreviousVersions[id] = version;
-  }
+    const map: Record<string, number> = {};
+    for (const [id, version] of Object.entries(value ?? {})) {
+      if (!id || !Number.isSafeInteger(version) || version < 0) {
+        throw new Error("Gallery version data is invalid. Reload and try again.");
+      }
+      map[id] = version;
+    }
+    return map;
+  };
+  const safeCollections: GalleryCollection[] = input.collections.map((collection) => ({
+    id: String(collection.id ?? ""),
+    name: String(collection.name ?? ""),
+    description: String(collection.description ?? ""),
+    order: Number(collection.order),
+    visible: collection.visible === true,
+    version: Number(collection.version),
+  }));
+  const safePlacements: GalleryPlacement[] = input.placements.map((placement) => ({
+    id: String(placement.id ?? ""),
+    mediaId: String(placement.mediaId ?? ""),
+    alt: String(placement.alt ?? ""),
+    caption: String(placement.caption ?? ""),
+    order: Number(placement.order),
+    visible: placement.visible === true,
+    version: Number(placement.version),
+    collectionKey: String(placement.collectionKey ?? ""),
+  }));
+  const validation = galleryWorkspaceError(safeCollections, safePlacements);
+  if (validation) throw new Error(validation);
+  const safePrevious = {
+    collections: versionMap(previousVersions.collections),
+    placements: versionMap(previousVersions.placements),
+  };
   consumeWebsiteWrite(admin.userId);
   return writeAndRevalidate(
-    () => writeGallery(admin.userId, safeItems, safePreviousVersions),
+    () =>
+      writeGalleryWorkspace(admin.userId, {
+        collections: safeCollections,
+        placements: safePlacements,
+        previousCollectionVersions: safePrevious.collections,
+        previousPlacementVersions: safePrevious.placements,
+      }),
     ["/", "/gallery"],
     undefined,
     PUBLIC_WRITE_TAGS.gallery,

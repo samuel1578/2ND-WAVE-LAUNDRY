@@ -7,6 +7,7 @@ import { databaseEnquiryRateLimiter } from "@/lib/enquiries/rate-limit";
 import { submitEnquiry } from "@/lib/enquiries/repository";
 import { handleEnquirySubmission } from "@/lib/enquiries/submission";
 import { dispatchPendingEmails } from "@/lib/email/dispatch";
+import { enquiryReceivedTemplates } from "@/lib/email/templates";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -69,7 +70,8 @@ export async function POST(request: NextRequest) {
             return { ok: true, enquiryId: result.data.enquiryId, isNew: result.data.isNew };
         },
     });
-    if (response.body.ok === true) after(() => dispatchPendingEmails("enquiry_submit"));
+    if (response.body.ok === true)
+        after(() => dispatchPendingEmails("enquiry_submit", enquiryReceivedTemplates));
     return NextResponse.json(response.body, { status: response.status, headers: response.headers });
 }
 export function GET() {

@@ -10,8 +10,10 @@ import {
   TRANSACTIONAL_EMAILS_ENABLED_VAR,
   readBrevoApiKey,
   readBrevoWebhookConfig,
+  readEnquiryTemplateIds,
   readEmailOperationalConfiguration,
   readEmailTemplateConfiguration,
+  readDeliveryTemplateIds,
   readEmailTestRecipient,
   BREVO_STAFF_TEMPLATE_ID_VARS,
   EMAIL_TEST_RECIPIENT_VAR,
@@ -22,6 +24,7 @@ import {
   BREVO_NEWSLETTER_TEMPLATE_ID_VARS,
   BREVO_ENQUIRY_TEMPLATE_ID_VARS,
 } from "../src/lib/email/config";
+import { resolveDispatchTemplates } from "../src/lib/email/dispatch-scope";
 import {
   formatFee,
   buildBrevoTemplateParams,
@@ -200,6 +203,47 @@ test("template registry exposes configured, missing and invalid states without I
   });
   assert.equal(withEnquiry.find((entry) => entry.template === "enquiry_received")?.status, "configured");
   assert.equal("id" in (entries[0] as object), false);
+});
+
+test("an enquiry template ID cannot alias any booking, order-status or newsletter template", () => {
+  const collidingEnv = {
+    ...VALID_ENV,
+    [BREVO_ENQUIRY_TEMPLATE_ID_VARS.enquiry_received]: "104",
+    [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_pending]: "801",
+    [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_processing]: "802",
+    [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_ready]: "805",
+    [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_completed]: "803",
+    [BREVO_STAFF_TEMPLATE_ID_VARS.staff_order_cancelled]: "804",
+    [BREVO_NEWSLETTER_TEMPLATE_ID_VARS.newsletter_interest_received]: "707",
+  };
+
+  assert.deepEqual(readDeliveryTemplateIds(collidingEnv).templateIds, {
+    booking_created: 101,
+    booking_confirmed: 102,
+    booking_processing_started: 103,
+    booking_ready: 104,
+    booking_completed: 105,
+    booking_cancelled: 106,
+    staff_order_pending: 801,
+    staff_order_processing: 802,
+    staff_order_ready: 805,
+    staff_order_completed: 803,
+    staff_order_cancelled: 804,
+    newsletter_interest_received: 707,
+  });
+  assert.equal(readDeliveryTemplateIds(collidingEnv).enquiryConfigured, false);
+  assert.equal(
+    readEmailTemplateConfiguration(collidingEnv).find((entry) => entry.template === "enquiry_received")?.status,
+    "invalid",
+  );
+  assert.deepEqual(readEnquiryTemplateIds({
+    ...VALID_ENV,
+    [BREVO_ENQUIRY_TEMPLATE_ID_VARS.enquiry_received]: "104",
+  }), {
+    ok: false,
+    reason: "invalid-template-id",
+    templateVariable: BREVO_ENQUIRY_TEMPLATE_ID_VARS.enquiry_received,
+  });
 });
 
 test("test recipient is server-read, normalised and validated", () => {
@@ -548,6 +592,7 @@ test("an invalid saved-template ID is rejected without calling Brevo", async () 
 
 type RepositoryCalls = {
   claimed: boolean;
+  claimTemplates: readonly ClaimedOutboxEmail["template"][] | undefined;
   sent: Array<{ id: string; providerMessageId: string | null }>;
   retried: Array<{ id: string; delaySeconds: number; error: string }>;
   dead: Array<{ id: string; error: string }>;
@@ -577,6 +622,7 @@ function makeRepository(
 ): { repository: EmailOutboxRepository; calls: RepositoryCalls } {
   const calls: RepositoryCalls = {
     claimed: false,
+    claimTemplates: undefined,
     sent: [],
     retried: [],
     dead: [],
@@ -586,8 +632,9 @@ function makeRepository(
     async reap() {
       return 0;
     },
-    async claim() {
+    async claim(input) {
       calls.claimed = true;
+      calls.claimTemplates = input.templates;
       return options.rows ?? [row()];
     },
     async markSent(input) {
@@ -902,7 +949,7 @@ function enquiryRow(overrides: Partial<ClaimedOutboxEmail> = {}): ClaimedOutboxE
     id: randomUUID(),
     bookingId: null,
     template: "enquiry_received",
-    recipientEmail: "manager@2ndwavelaundry.com",
+    recipientEmail: "ops@2ndwave.example",
     payload: { ...ENQUIRY_CONTEXT },
     enquiry: { ...ENQUIRY_CONTEXT },
     attemptCount: 1,
@@ -910,6 +957,36 @@ function enquiryRow(overrides: Partial<ClaimedOutboxEmail> = {}): ClaimedOutboxE
     ...overrides,
   };
 }
+
+test("public form dispatch sources are pinned to their own template families", () => {
+  assert.deepEqual(
+    resolveDispatchTemplates("enquiry_submit", ["newsletter_interest_received"]),
+    ["enquiry_received"],
+  );
+  assert.deepEqual(
+    resolveDispatchTemplates("newsletter_interest_submit", ["enquiry_received"]),
+    ["newsletter_interest_received"],
+  );
+  assert.equal(resolveDispatchTemplates("scheduled_email_worker"), undefined);
+});
+
+test("an enquiry post-commit kick scopes its queue claim to enquiry_received", async () => {
+  const { repository, calls } = makeRepository({ rows: [] });
+  await runEmailWorker(deps(repository), {
+    workerId: "worker-enquiry-scope",
+    templates: resolveDispatchTemplates("enquiry_submit"),
+  });
+  assert.deepEqual(calls.claimTemplates, ["enquiry_received"]);
+});
+
+test("a newsletter post-commit kick scopes its queue claim to newsletter_interest_received", async () => {
+  const { repository, calls } = makeRepository({ rows: [] });
+  await runEmailWorker(deps(repository), {
+    workerId: "worker-newsletter-scope",
+    templates: resolveDispatchTemplates("newsletter_interest_submit", ["enquiry_received"]),
+  });
+  assert.deepEqual(calls.claimTemplates, ["newsletter_interest_received"]);
+});
 
 test("an unsaved enquiry template id keeps the alert retryable without sending", async () => {
   const { repository, calls } = makeRepository({ rows: [enquiryRow()] });
@@ -932,6 +1009,121 @@ test("an unsaved enquiry template id keeps the alert retryable without sending",
   assert.equal(calls.sent.length, 0);
   assert.equal(calls.retried[0].error, "email_template_not_configured");
   assert.equal(calls.retried[0].delaySeconds, 900);
+});
+
+test("a configured enquiry alert renders from its payload and retries a transient failure", async () => {
+  const { repository, calls } = makeRepository({ rows: [enquiryRow()] });
+  let contextLoads = 0;
+  const watched: EmailOutboxRepository = {
+    ...repository,
+    async loadBookingContext(bookingId) {
+      contextLoads += 1;
+      return repository.loadBookingContext(bookingId);
+    },
+  };
+  let sentInput:
+    | { templateId: number; to: string; params: Record<string, string> }
+    | undefined;
+  const result = await runEmailWorker(
+    deps(watched, undefined, {
+      templateIds: { enquiry_received: 808 },
+      provider: {
+        send: async (input) => {
+          sentInput = input;
+          return {
+            ok: false,
+            classification: "retryable",
+            reason: "brevo_http_503_unavailable",
+          };
+        },
+      },
+    }),
+    { workerId: "worker-enquiry-failure" },
+  );
+
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.retried, 1);
+  // An enquiry alert never reads a booking record.
+  assert.equal(contextLoads, 0);
+  assert.equal(calls.sent.length, 0);
+  assert.equal(calls.retried.length, 1);
+  assert.equal(calls.retried[0].error, "brevo_http_503_unavailable");
+  assert.equal(sentInput?.templateId, 808);
+  assert.equal(sentInput?.to, "ops@2ndwave.example");
+  assert.equal(sentInput?.params.kind, "General enquiry");
+  assert.equal(sentInput?.params.topic, "Services");
+});
+
+test("a permanent enquiry alert failure is dead-lettered", async () => {
+  const { repository, calls } = makeRepository({ rows: [enquiryRow()] });
+  const result = await runEmailWorker(
+    deps(
+      repository,
+      {
+        ok: false,
+        classification: "permanent",
+        reason: "brevo_http_400_bad_request",
+      },
+      { templateIds: { enquiry_received: 808 } },
+    ),
+    { workerId: "worker-enquiry-permanent" },
+  );
+
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.dead, 1);
+  assert.equal(calls.retried.length, 0);
+  assert.deepEqual(calls.dead.map((entry) => entry.error), [
+    "brevo_http_400_bad_request",
+  ]);
+});
+
+test("a configured enquiry alert is sent and recorded once", async () => {
+  const { repository, calls } = makeRepository({ rows: [enquiryRow()] });
+  const result = await runEmailWorker(
+    deps(repository, undefined, { templateIds: { enquiry_received: 808 } }),
+    { workerId: "worker-enquiry-sent" },
+  );
+
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.sent, 1);
+    assert.equal(result.claimed, 1);
+  }
+  assert.equal(calls.sent.length, 1);
+});
+
+test("general and commercial enquiries always dispatch their own template ID", async () => {
+  for (const kind of ["general", "commercial"] as const) {
+    const context = {
+      ...ENQUIRY_CONTEXT,
+      kind,
+      business: kind === "commercial" ? "Sample Business" : null,
+      topic: kind === "general" ? "Services" : null,
+    };
+    const { repository } = makeRepository({
+      rows: [enquiryRow({ enquiry: context, payload: { ...context } })],
+    });
+    const calls: Array<{ template: string; templateId: number }> = [];
+    const result = await runEmailWorker(
+      deps(repository, undefined, {
+        templateIds: {
+          enquiry_received: 808,
+          booking_ready: 104,
+          newsletter_interest_received: 707,
+        },
+        provider: {
+          send: async (input) => {
+            calls.push({ template: input.template, templateId: input.templateId });
+            return { ok: true, providerMessageId: null, duplicate: false };
+          },
+        },
+      }),
+      { workerId: `worker-enquiry-${kind}` },
+    );
+
+    assert.equal(result.ok, true, kind);
+    assert.deepEqual(calls, [{ template: "enquiry_received", templateId: 808 }], kind);
+  }
 });
 
 /* -------------------------------------------------------------------------- */
@@ -970,6 +1162,7 @@ test("the manager alert sends from its payload without any booking lookup", asyn
   };
   let sentInput:
     | {
+      template: string;
       templateId: number;
       params: Record<string, string>;
       to: string;
@@ -978,7 +1171,11 @@ test("the manager alert sends from its payload without any booking lookup", asyn
     | undefined;
   const result = await runEmailWorker(
     deps(watched, undefined, {
-      templateIds: { newsletter_interest_received: 707 },
+      templateIds: {
+        enquiry_received: 13,
+        newsletter_interest_received: 707,
+        booking_ready: 104,
+      },
       provider: {
         send: async (input) => {
           sentInput = input;
@@ -996,6 +1193,7 @@ test("the manager alert sends from its payload without any booking lookup", asyn
   }
   assert.equal(contextLoads, 0);
   assert.equal(calls.sent.length, 1);
+  assert.equal(sentInput?.template, "newsletter_interest_received");
   assert.equal(sentInput?.templateId, 707);
   assert.equal(sentInput?.to, "manager@2ndwavelaundry.com");
   assert.equal(sentInput?.params.subscriberEmail, "ama@example.test");

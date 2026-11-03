@@ -94,6 +94,20 @@ export type GalleryPlacement = {
   order: number;
   visible: boolean;
   version: number;
+  /** Stable slug of the collection this placement belongs to; empty = unassigned. */
+  collectionKey: string;
+};
+/** Admin Website Content — an explicit, admin-managed gallery collection. */
+export type GalleryCollection = {
+  /** Stable slug (the website_content record_key), never derived from alt text. */
+  id: string;
+  name: string;
+  description: string;
+  order: number;
+  visible: boolean;
+  version: number;
+  /** Count of assigned placements, populated by the admin overview query. */
+  imageCount?: number;
 };
 /** Admin Website Content — structured question/answer record. */
 export type FaqItem = {
@@ -138,6 +152,7 @@ export type PublishedPromotionRecord = PromotionRecord & { published: boolean };
 export type WebsiteContentState = {
   locations: LocationRecord[];
   gallery: GalleryPlacement[];
+  collections: GalleryCollection[];
   faqs: FaqItem[];
   promotions: PromotionRecord[];
 };

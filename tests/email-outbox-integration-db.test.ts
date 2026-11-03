@@ -254,6 +254,62 @@ test("the trusted lifecycle functions queue each supported status event", async 
   ]);
 });
 
+test("an enquiry-scoped worker claim leaves separate booking status emails queued", async () => {
+  const created = await submit(payload(), randomUUID());
+  const id = created.booking_id;
+  let version = await arrange(id, 1);
+  version = await transition(id, version, "confirmed");
+  version = await transition(id, version, "picked_up");
+  version = await transition(id, version, "processing");
+  await transition(id, version, "ready");
+
+  const enquiryId = randomUUID();
+  await db.query(
+    `INSERT INTO public.email_outbox (idempotency_key, template, recipient_email, payload)
+     VALUES ($1, 'enquiry_received', 'ops@example.test', $2::jsonb)`,
+    [
+      `enquiry:${enquiryId}:received:test`,
+      JSON.stringify({
+        enquiry_id: enquiryId,
+        kind: "general",
+        name: "Test Contact",
+        business: null,
+        phone: "+233000000000",
+        topic: "Services",
+      }),
+    ],
+  );
+
+  const { rows: claimed } = await db.query<{ id: string; template: string }>(
+    `SELECT id, template::text
+     FROM public.email_outbox_claim(
+       $1, 10, 300, ARRAY['enquiry_received'::public.email_template]
+     )`,
+    ["enquiry-worker"],
+  );
+  assert.deepEqual(claimed.map((row) => row.template), ["enquiry_received"]);
+  assert.equal(claimed[0].id, (await db.query<{ id: string }>(
+    "SELECT id FROM public.email_outbox WHERE idempotency_key = $1",
+    [`enquiry:${enquiryId}:received:test`],
+  )).rows[0].id);
+
+  const { rows: orderRows } = await db.query<{ template: string; status: string; attempt_count: number }>(
+    `SELECT template::text, status::text, attempt_count
+     FROM public.email_outbox WHERE booking_id = $1 ORDER BY template::text`,
+    [id],
+  );
+  assert.ok(orderRows.some((row) => row.template === "booking_ready"));
+  assert.ok(orderRows.every((row) => row.status === "pending" && row.attempt_count === 0));
+
+  const { rows: privileges } = await db.query<Record<string, boolean>>(
+    `SELECT
+       has_function_privilege('anon', 'public.email_outbox_claim(text,integer,integer,public.email_template[])', 'EXECUTE') AS anon_exec,
+       has_function_privilege('service_role', 'public.email_outbox_claim(text,integer,integer,public.email_template[])', 'EXECUTE') AS service_exec`,
+  );
+  assert.equal(privileges[0].anon_exec, false);
+  assert.equal(privileges[0].service_exec, true);
+});
+
 test("cancellation is queued atomically through booking_transition", async () => {
   const created = await submit(payload(), randomUUID());
   const { rows } = await db.query<{ result: { version: number } }>(

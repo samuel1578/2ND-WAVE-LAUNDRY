@@ -2,56 +2,76 @@
 import { useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Image from "next/image";
-import { photos, type Photo } from "@/lib/content";
+import { photos } from "@/lib/content";
 import { Picture, Empty } from "./ui";
 import { Dialog } from "./dialog";
 import { CascadeSlider } from "./cascade-slider";
 import { demoMode } from "@/lib/demo-mode";
+import {
+  dedupeGalleryPhotos,
+  type PublicGallery,
+  type PublicGalleryPhoto,
+} from "@/lib/website/public-queries";
 
-const demoGallery = (photos.batch_14_gallery || []).filter(
-  (p) => !/logo/i.test(p.alt),
-);
+const demoGallery: PublicGalleryPhoto[] = (photos.batch_14_gallery || [])
+  .filter((p) => !/logo/i.test(p.alt))
+  .map((photo) => ({ ...photo, mediaId: photo.src, collections: [] }));
+
+const emptyGallery: PublicGallery = { collections: [], photos: [] };
 
 /**
- * Gallery grid. The server passes the published placements, so this component
- * never fetches the gallery endpoint.
+ * Gallery grid. The server passes published collections and their placements,
+ * so this component never fetches the gallery endpoint and never infers a
+ * category from alt text: filters are built from stored collection records.
  */
-export function Gallery({ photos: sourcePhotos }: { photos?: Photo[] } = {}) {
-  const [filter, setFilter] = useState("All");
+export function Gallery({ gallery }: { gallery?: PublicGallery } = {}) {
+  const source = demoMode
+    ? { collections: [], photos: demoGallery }
+    : (gallery ?? emptyGallery);
+  const [active, setActive] = useState("all");
   const [index, setIndex] = useState<number | null>(null);
-  const sourceGallery = demoMode ? demoGallery : (sourcePhotos ?? []);
-  const filtered = sourceGallery.filter(
-    (p) =>
-      filter === "All" ||
-      (filter === "Garments"
-        ? /shirt|suit|garment|shoe/i.test(p.alt)
-        : filter === "Laundry"
-          ? !/branch|exterior|store/i.test(p.alt)
-          : /branch|exterior|store/i.test(p.alt)),
+  const filters = [
+    { id: "all", name: "All" },
+    ...source.collections.map((collection) => ({
+      id: collection.id,
+      name: collection.name,
+    })),
+  ];
+  const filtered = dedupeGalleryPhotos(
+    active === "all"
+      ? source.photos
+      : source.photos.filter((photo) => photo.collections.includes(active)),
   );
-  const active = index !== null ? filtered[index] : undefined;
+  const activeFilter =
+    active === "all"
+      ? undefined
+      : source.collections.find((collection) => collection.id === active);
+  const current = index !== null ? filtered[index] : undefined;
   return (
     <>
       <div className="filters" role="group" aria-label="Gallery category">
-        {["All", "Laundry", "Garments", "Branches"].map((f) => (
+        {filters.map((filter) => (
           <button
-            className={filter === f ? "active" : ""}
-            aria-pressed={filter === f}
-            key={f}
+            className={active === filter.id ? "active" : ""}
+            aria-pressed={active === filter.id}
+            key={filter.id}
             onClick={() => {
-              setFilter(f);
+              setActive(filter.id);
               setIndex(null);
             }}
           >
-            {f}
+            {filter.name}
           </button>
         ))}
       </div>
+      {activeFilter?.description ? (
+        <p className="muted">{activeFilter.description}</p>
+      ) : null}
       {filtered.length ? (
-        <CascadeSlider key={filter} label="Gallery images">
+        <CascadeSlider key={active} label="Gallery images">
           {filtered.map((photo, i) => (
             <button
-              key={photo.src + i}
+              key={photo.mediaId + i}
               type="button"
               className="gallery-slide"
               onClick={() => setIndex(i)}
@@ -73,18 +93,18 @@ export function Gallery({ photos: sourcePhotos }: { photos?: Photo[] } = {}) {
         onClose={() => setIndex(null)}
         className="lightbox"
       >
-        {active && (
+        {current && (
           <>
             <div className="lightbox-image">
               <Image
-                src={active.src}
+                src={current.src}
                 fill
-                alt={active.alt}
+                alt={current.alt}
                 sizes="90vw"
                 quality={85}
               />
             </div>
-            <p>{active.alt}</p>
+            <p>{current.alt}</p>
             <div className="split">
               <button
                 className="icon-button"

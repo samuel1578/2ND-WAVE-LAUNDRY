@@ -238,6 +238,7 @@ test("gallery saves normalise order and reject unavailable assets", async () => 
         order: 1,
         visible: true,
         version: 0,
+        collectionKey: "",
       },
     ]),
     /unavailable/,

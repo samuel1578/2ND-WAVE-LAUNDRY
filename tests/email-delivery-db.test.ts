@@ -150,7 +150,7 @@ async function claim(worker: string, limit = 10) {
     lease_expires_at: string;
     last_attempt_at: string | null;
   }>(
-    "SELECT id, status::text, attempt_count, locked_by, lease_expires_at::text, last_attempt_at::text FROM public.email_outbox_claim($1, $2, 120)",
+    "SELECT id, status::text, attempt_count, locked_by, lease_expires_at::text, last_attempt_at::text FROM public.email_outbox_claim($1, $2, 120, NULL::public.email_template[])",
     [worker, limit],
   );
   return rows;
@@ -322,15 +322,15 @@ test("reap dead-letters an abandoned row at its attempt limit", async () => {
 
 test("claim arguments are bounded and a worker id is required", async () => {
   await assert.rejects(
-    db.query("SELECT public.email_outbox_claim('', 10, 120)"),
+    db.query("SELECT public.email_outbox_claim('', 10, 120, NULL::public.email_template[])"),
     /EMAIL_WORKER_ID/,
   );
   await assert.rejects(
-    db.query("SELECT public.email_outbox_claim('worker', 0, 120)"),
+    db.query("SELECT public.email_outbox_claim('worker', 0, 120, NULL::public.email_template[])"),
     /EMAIL_WORKER_LIMIT/,
   );
   await assert.rejects(
-    db.query("SELECT public.email_outbox_claim('worker', 10, 5)"),
+    db.query("SELECT public.email_outbox_claim('worker', 10, 5, NULL::public.email_template[])"),
     /EMAIL_WORKER_LEASE/,
   );
 });
@@ -419,9 +419,10 @@ test("delivery tables and functions stay outside the client boundary", async () 
         has_table_privilege('authenticated', 'public.email_delivery_events', 'INSERT') AS auth_insert,
         has_table_privilege('service_role', 'public.email_delivery_events', 'SELECT') AS service_select,
         has_table_privilege('service_role', 'public.email_delivery_events', 'INSERT') AS service_insert,
-        has_function_privilege('anon', 'public.email_outbox_claim(text,integer,integer)', 'EXECUTE') AS anon_claim,
-        has_function_privilege('authenticated', 'public.email_outbox_claim(text,integer,integer)', 'EXECUTE') AS auth_claim,
-        has_function_privilege('service_role', 'public.email_outbox_claim(text,integer,integer)', 'EXECUTE') AS service_claim,
+        has_function_privilege('anon', 'public.email_outbox_claim(text,integer,integer,public.email_template[])', 'EXECUTE') AS anon_claim,
+        has_function_privilege('authenticated', 'public.email_outbox_claim(text,integer,integer,public.email_template[])', 'EXECUTE') AS auth_claim,
+        has_function_privilege('service_role', 'public.email_outbox_claim(text,integer,integer,public.email_template[])', 'EXECUTE') AS service_claim,
+        to_regprocedure('public.email_outbox_claim(text,integer,integer)') IS NULL AS no_unscoped_claim,
         has_function_privilege('anon', 'public.email_outbox_reap(integer)', 'EXECUTE') AS anon_reap,
         has_function_privilege('authenticated', 'public.email_outbox_mark_sent(uuid,text,text)', 'EXECUTE') AS auth_mark_sent,
         has_function_privilege('anon', 'public.email_outbox_mark_retry(uuid,text,text,integer)', 'EXECUTE') AS anon_mark_retry,
@@ -443,6 +444,7 @@ test("delivery tables and functions stay outside the client boundary", async () 
   assert.equal(rows[0].anon_claim, false);
   assert.equal(rows[0].auth_claim, false);
   assert.equal(rows[0].service_claim, true);
+  assert.equal(rows[0].no_unscoped_claim, true);
   assert.equal(rows[0].anon_reap, false);
   assert.equal(rows[0].auth_mark_sent, false);
   assert.equal(rows[0].anon_mark_retry, false);

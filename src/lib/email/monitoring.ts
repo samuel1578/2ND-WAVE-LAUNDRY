@@ -33,6 +33,33 @@ export type EmailOperationalConfiguration = {
   testRecipientConfigured: boolean;
   templates: EmailTemplateConfiguration[];
 };
+/**
+ * The title shown for one outbox row in the monitor.
+ *
+ * Enquiries and newsletter alerts are not booking messages, so they never fake a
+ * booking reference. Returns null when the committed payload is unusable, which
+ * the repository turns into a stable monitoring error instead of printing
+ * untrusted text.
+ */
+export function emailMonitoringReference(
+  template: EmailTemplate,
+  payload: Record<string, unknown> | null,
+): string | null {
+  if (template === "newsletter_interest_received") {
+    const subscriber = payload?.subscriber_email;
+    return typeof subscriber === "string" ? subscriber : null;
+  }
+  if (template === "enquiry_received") {
+    const enquiryId = payload?.enquiry_id;
+    if (typeof enquiryId !== "string" || !/^[0-9a-f-]{36}$/i.test(enquiryId))
+      return null;
+    const kind = payload?.kind === "commercial" ? "commercial quote" : "general enquiry";
+    return `Enquiry — ${kind} ${enquiryId.slice(0, 8)}`;
+  }
+  const reference = payload?.booking_reference;
+  return typeof reference === "string" ? reference : null;
+}
+
 export type OutboxStatus =
   | "pending"
   | "sending"

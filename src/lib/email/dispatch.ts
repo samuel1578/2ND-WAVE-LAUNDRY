@@ -21,9 +21,15 @@ import {
 } from "./config";
 import { createEmailOutboxRepository } from "./outbox-repository";
 import { runEmailWorker } from "./worker";
+import { resolveDispatchTemplates } from "./dispatch-scope";
+import type { NotificationTemplate } from "./templates";
 
-export async function dispatchPendingEmails(source: string): Promise<void> {
+export async function dispatchPendingEmails(
+  source: string,
+  templates?: readonly NotificationTemplate[],
+): Promise<void> {
   try {
+    const dispatchTemplates = resolveDispatchTemplates(source, templates);
     const config = readTransactionalEmailConfig();
     if (!config.ok) {
       console.warn(
@@ -49,10 +55,12 @@ export async function dispatchPendingEmails(source: string): Promise<void> {
         siteUrl: config.config.siteUrl,
         templateIds,
         // Keep the post-response task short on serverless hosts. The protected
-        // endpoint remains able to drain a larger batch.
+        // endpoint remains able to drain a larger batch. Event-specific kicks
+        // pass their own template allowlist so one public form cannot trigger
+        // delivery of unrelated queued notifications.
         batchSize: 3,
       },
-      { workerId: `post-commit-${randomUUID()}` },
+      { workerId: `post-commit-${randomUUID()}`, templates: dispatchTemplates },
     );
 
     if (!summary.ok) {

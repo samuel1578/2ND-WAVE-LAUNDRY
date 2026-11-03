@@ -2,6 +2,11 @@
 import { useSyncExternalStore } from "react";
 import { branches, copy, demoMode, faqs, photos, services } from "./content";
 import {
+  galleryCollectionDeletionError,
+  galleryWorkspaceError,
+} from "./website/gallery-collections";
+import { seededGalleryCollections } from "./website/types";
+import {
   confirmationError,
   faqErrors,
   galleryError,
@@ -18,6 +23,7 @@ import type {
   BookingInput,
   ContentItem,
   FaqItem,
+  GalleryCollection,
   GalleryPlacement,
   Lead,
   LocationRecord,
@@ -130,6 +136,7 @@ const gallerySeeds: GalleryPlacement[] = (photos.batch_14_gallery || []).map(
     order: i + 1,
     visible: true,
     version: 1,
+    collectionKey: "",
   }),
 );
 const faqSeeds: FaqItem[] = faqs.map((faq, i) => ({
@@ -190,6 +197,7 @@ let state: {
   websiteContent: {
     locations: locationSeeds,
     gallery: gallerySeeds,
+    collections: seededGalleryCollections.map((collection) => ({ ...collection })),
     faqs: faqSeeds,
     promotions: [],
   },
@@ -537,6 +545,73 @@ export async function saveGallery(items: GalleryPlacement[]) {
   notify();
   return saved;
 }
+/**
+ * Admin Website Content — replace the gallery collections and their placements.
+ * Mirrors the database workspace save: one validated commit, optimistic versions
+ * and no silent re-assignment when a collection is deleted.
+ */
+export async function saveGalleryWorkspace(input: {
+  collections: GalleryCollection[];
+  placements: GalleryPlacement[];
+}) {
+  await operation();
+  const error = galleryWorkspaceError(input.collections, input.placements);
+  if (error) throw Error(error);
+  for (const collection of input.collections) {
+    const previous = state.websiteContent.collections.find(
+      (entry) => entry.id === collection.id,
+    );
+    if (previous && previous.version !== collection.version)
+      throw Error(conflict("gallery collection"));
+  }
+  for (const collection of state.websiteContent.collections) {
+    if (input.collections.some((entry) => entry.id === collection.id)) continue;
+    const blocked = galleryCollectionDeletionError(
+      collection.id,
+      input.placements,
+    );
+    if (blocked) throw Error(blocked);
+  }
+  for (const placement of input.placements) {
+    const asset = state.media.find((m) => m.id === placement.mediaId);
+    const previous = state.websiteContent.gallery.find(
+      (entry) => entry.id === placement.id,
+    );
+    const changedAsset = !previous || previous.mediaId !== placement.mediaId;
+    if ((!asset || asset.archived) && changedAsset)
+      throw Error(
+        "One of the selected media assets is unavailable. Remove it and try again.",
+      );
+    if (previous && previous.version !== placement.version)
+      throw Error(conflict("gallery"));
+  }
+  const collections = [...input.collections]
+    .sort((a, b) => a.order - b.order)
+    .map((collection, index) => ({
+      ...collection,
+      id: collection.id.trim(),
+      name: collection.name.trim(),
+      description: (collection.description ?? "").trim(),
+      order: index + 1,
+      version: collection.version + 1,
+    }));
+  const placements = [...input.placements]
+    .sort((a, b) => a.order - b.order)
+    .map((placement, index) => ({
+      ...placement,
+      alt: placement.alt.trim(),
+      collectionKey: (placement.collectionKey ?? "").trim(),
+      order: index + 1,
+      version: placement.version + 1,
+    }));
+  state.websiteContent = {
+    ...state.websiteContent,
+    collections,
+    gallery: placements,
+  };
+  notify();
+  return { collections, placements };
+}
 /** Admin Website Content — commit the FAQ collection. */
 export async function saveFaqs(items: FaqItem[]) {
   await operation();
@@ -685,6 +760,8 @@ export type GalleryRow = {
 };
 export const getLocations = () =>
   [...state.websiteContent.locations].sort((a, b) => a.order - b.order);
+export const getGalleryCollections = () =>
+  [...state.websiteContent.collections].sort((a, b) => a.order - b.order);
 export const getGallery = (): GalleryRow[] =>
   [...state.websiteContent.gallery]
     .sort((a, b) => a.order - b.order)

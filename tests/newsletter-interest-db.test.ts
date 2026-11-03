@@ -24,6 +24,8 @@ const FUNCTIONS_MIGRATION = "supabase/migrations/20261027120100_newsletter_inter
 const AUDIT_ACTION_MIGRATION = "supabase/migrations/20261101080200_correct_newsletter_audit_action.sql";
 const ENQUIRY_EMAIL_TYPE_MIGRATION = "supabase/migrations/20261101080000_enquiry_email_type.sql";
 const ENQUIRIES_MIGRATION = "supabase/migrations/20261101080100_enquiries.sql";
+const ENQUIRY_ALERTS_MIGRATION = "supabase/migrations/20261103130000_enquiry_alert_recipients.sql";
+const EMAIL_CLAIM_SCOPE_MIGRATION = "supabase/migrations/20261103140000_email_outbox_claim_template_scope.sql";
 
 const HARNESS = `
 CREATE ROLE anon NOLOGIN;
@@ -152,6 +154,8 @@ before(async () => {
     await db.exec(readFileSync(AUDIT_ACTION_MIGRATION, "utf8"));
     await db.exec(readFileSync(ENQUIRY_EMAIL_TYPE_MIGRATION, "utf8"));
     await db.exec(readFileSync(ENQUIRIES_MIGRATION, "utf8"));
+    await db.exec(readFileSync(ENQUIRY_ALERTS_MIGRATION, "utf8"));
+    await db.exec(readFileSync(EMAIL_CLAIM_SCOPE_MIGRATION, "utf8"));
 });
 
 after(async () => {
@@ -217,6 +221,26 @@ async function insertOutboxRow(overrides: Record<string, unknown> = {}) {
         `INSERT INTO public.email_outbox (idempotency_key, template, recipient_email, payload)
      VALUES ($1, $2::public.email_template, $3, $4)`,
         [values.idempotencyKey, values.template, values.recipientEmail, JSON.stringify(values.payload)],
+    );
+}
+
+async function insertEnquiryAlert() {
+    const enquiryId = randomUUID();
+    return db.query(
+        `INSERT INTO public.email_outbox (idempotency_key, template, recipient_email, payload)
+         VALUES ($1, 'enquiry_received', $2, $3::jsonb)`,
+        [
+            `enquiry:${enquiryId}:received:test`,
+            MANAGER,
+            JSON.stringify({
+                enquiry_id: enquiryId,
+                kind: "general",
+                name: "Amina Mensah",
+                business: null,
+                phone: "+233595224280",
+                topic: "Services",
+            }),
+        ],
     );
 }
 
@@ -464,29 +488,37 @@ test("the reference shape stays tolerant of booking-free newsletter rows", async
     assert.equal(newsletterRows[0].count, 1);
 });
 
-test("enquiry migration stores public submissions and queues a minimal manager alert", async () => {
+test("enquiry migration stores public submissions and queues a minimal alert per enabled recipient", async () => {
+    // Enquiry alerts now fan out to the administrator-managed list; the caller no
+    // longer supplies an address.
+    await db.query(
+        `INSERT INTO public.booking_alert_recipients (email) VALUES ($1)
+         ON CONFLICT (email) DO UPDATE SET enabled = true`,
+        [MANAGER],
+    );
     const correlation = randomUUID();
     const key = "enquiry-db-submit-key-012345";
     const { rows } = await db.query<{ result: { enquiry_id: string; is_new: boolean } }>(
         `SELECT public.enquiry_submit(
           $1::text, $2::text, $3::text, $4::text, $5::text, $6::text,
-          $7::text, $8::jsonb, $9::text, $10::text, $11::text, $12::uuid
+          $7::text, $8::jsonb, $9::text, $10::text, $11::uuid
         ) AS result`,
         [
             "general", "Amina Mensah", null, "+233595224280", "amina@example.test",
             "Services", "Please tell me about wash and fold.", JSON.stringify({}),
-            key, "b".repeat(32), MANAGER, correlation,
+            key, "b".repeat(32), correlation,
         ],
     );
     assert.equal(rows[0].result.is_new, true);
 
     const enquiryId = rows[0].result.enquiry_id;
-    const { rows: alertRows } = await db.query<{ template: string; payload: Record<string, unknown> }>(
-        "SELECT template::text, payload FROM public.email_outbox WHERE payload->>'enquiry_id' = $1",
+    const { rows: alertRows } = await db.query<{ template: string; recipient_email: string; payload: Record<string, unknown> }>(
+        "SELECT template::text, recipient_email, payload FROM public.email_outbox WHERE payload->>'enquiry_id' = $1",
         [enquiryId],
     );
     assert.equal(alertRows.length, 1);
     assert.equal(alertRows[0].template, "enquiry_received");
+    assert.equal(alertRows[0].recipient_email, MANAGER);
     assert.deepEqual(Object.keys(alertRows[0].payload).sort(), ["business", "enquiry_id", "kind", "name", "phone", "topic"].sort());
     assert.equal(JSON.stringify(alertRows[0].payload).includes("Please tell me"), false);
     assert.equal(JSON.stringify(alertRows[0].payload).includes("amina@example.test"), false);
@@ -497,6 +529,32 @@ test("enquiry migration stores public submissions and queues a minimal manager a
     );
     assert.equal(auditRows[0].action, "enquiry.submitted");
     assert.equal(auditRows[0].correlation_id, correlation);
+});
+
+test("four-argument claims isolate enquiry and newsletter rows; unscoped overload is removed", async () => {
+    await insertOutboxRow();
+    await insertEnquiryAlert();
+
+    const { rows: signatures } = await db.query<{ scoped: boolean; unscoped: boolean }>(
+        `SELECT
+            to_regprocedure('public.email_outbox_claim(text,integer,integer,public.email_template[])') IS NOT NULL AS scoped,
+            to_regprocedure('public.email_outbox_claim(text,integer,integer)') IS NOT NULL AS unscoped`,
+    );
+    assert.deepEqual(signatures[0], { scoped: true, unscoped: false });
+
+    const { rows: enquiryClaims } = await db.query<{ template: string }>(
+        `SELECT template::text FROM public.email_outbox_claim(
+            'enquiry-worker', 10, 120, ARRAY['enquiry_received'::public.email_template]
+        )`,
+    );
+    assert.deepEqual(enquiryClaims.map((row) => row.template), ["enquiry_received"]);
+
+    const { rows: newsletterClaims } = await db.query<{ template: string }>(
+        `SELECT template::text FROM public.email_outbox_claim(
+            'newsletter-worker', 10, 120, ARRAY['newsletter_interest_received'::public.email_template]
+        )`,
+    );
+    assert.deepEqual(newsletterClaims.map((row) => row.template), ["newsletter_interest_received"]);
 });
 
 test("browser roles hold no privilege and only the elevated role may submit", async () => {

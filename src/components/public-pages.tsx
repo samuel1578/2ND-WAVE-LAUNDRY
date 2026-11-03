@@ -31,7 +31,6 @@ import {
   commercial,
   branches as defaultBranches,
   photos,
-  type Photo,
   faqs,
   sections,
   contact,
@@ -79,6 +78,7 @@ import { PublicForm } from "./forms/public-form";
 import { isElevatedConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Gallery } from "./gallery";
+import type { PublicGallery } from "@/lib/website/public-queries";
 import {
   PublishedBlog,
   PublishedArticle,
@@ -832,7 +832,7 @@ export function QuotePage() {
     </div>
   );
 }
-export function GalleryPage({ photos: galleryPhotos }: { photos?: Photo[] } = {}) {
+export function GalleryPage({ gallery }: { gallery?: PublicGallery } = {}) {
   return (
     <>
       <section className="page-hero">
@@ -842,7 +842,7 @@ export function GalleryPage({ photos: galleryPhotos }: { photos?: Photo[] } = {}
         </div>
       </section>
       <div className="container">
-        <Gallery photos={galleryPhotos} />
+        <Gallery gallery={gallery} />
         <Section>
           <div className="actions">
             <Action href="/services">Explore Services</Action>

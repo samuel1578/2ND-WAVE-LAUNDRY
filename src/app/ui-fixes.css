@@ -2,22 +2,58 @@
     scroll-margin-top: calc(var(--header) + 16px);
 }
 
+/*
+ * Shared phone control.
+ *
+ * The input is styled by the generic `input:not([type=checkbox])...` rule in
+ * globals.css, whose specificity (0,3,1) is higher than a class-only selector
+ * (0,1,1). That rule set `padding: 13px 14px` and silently overrode the 44px
+ * icon inset declared here, so the absolutely positioned icon was drawn on top
+ * of the placeholder/value text. The icon slot and the input padding below are
+ * derived from the same custom properties, and the padding rule mirrors the
+ * generic selector's specificity, so the reserved space can never be reset.
+ */
 .phone-field__control {
+    --phone-icon-size: 18px;
+    --phone-icon-inset: 14px;
+    --phone-icon-gap: 10px;
     position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
 }
 
 .phone-field__control>svg {
     position: absolute;
     top: 50%;
-    left: 14px;
+    left: var(--phone-icon-inset);
     z-index: 1;
+    width: var(--phone-icon-size);
+    height: var(--phone-icon-size);
+    flex: none;
     color: var(--muted);
     transform: translateY(-50%);
     pointer-events: none;
 }
 
-.phone-field__control input {
+.phone-field__control input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
     min-height: 52px;
-    padding-left: 44px;
+    padding-block: 13px;
+    padding-inline-start: calc(var(--phone-icon-inset) + var(--phone-icon-size) + var(--phone-icon-gap));
+    padding-inline-end: 14px;
     font-size: 16px;
+    line-height: 1.5;
+}
+
+/* Keep focus and validation indicators inside the input box, never over the icon. */
+.phone-field__control input:focus-visible {
+    outline-offset: 2px;
+}
+
+.phone-field__control input:-webkit-autofill {
+    padding-inline-start: calc(var(--phone-icon-inset) + var(--phone-icon-size) + var(--phone-icon-gap));
 }

@@ -16,12 +16,14 @@ import {
   BLOG_LIST_COLUMNS,
   BRANCHES_COLUMNS,
   CONTENT_COLUMNS,
+  GALLERY_COLLECTION_COLUMNS,
   GALLERY_MEDIA_COLUMNS,
   PUBLIC_LIMITS,
   SERVICES_COLUMNS,
   buildGalleryPhotos,
   mapBlogPostRow,
   mapBranchRow,
+  mapGalleryCollectionRows,
   mapFaqRow,
   mapPublicSiteSettings,
   mapServiceRow,
@@ -36,6 +38,7 @@ import {
   type PublicBlogSummary,
   type PublicBranch,
   type PublicFaq,
+  type PublicGallery,
   type PublicService,
   type PublicSettingsBookingRow,
   type PublicSettingsSiteRow,
@@ -93,7 +96,15 @@ const demoPromotionServices: PromotionServiceOption[] = defaultServices
   .filter((service) => service.bookable)
   .map((service) => ({ slug: service.slug, name: service.title, bookable: true }));
 
-const demoGallery: Photo[] = photos.batch_14_gallery ?? [];
+const demoGalleryPhotos: Photo[] = photos.batch_14_gallery ?? [];
+const demoGallery: PublicGallery = {
+  collections: [],
+  photos: demoGalleryPhotos.map((photo) => ({
+    ...photo,
+    mediaId: photo.src,
+    collections: [],
+  })),
+};
 
 const demoDisplaySettings: PublicSiteSettings = {
   email: defaultSettings.email,
@@ -161,22 +172,53 @@ async function readFaqs(): Promise<PublicFaq[]> {
     .filter((faq): faq is PublicFaq => faq !== null);
 }
 
-async function readGallery(): Promise<Photo[]> {
+async function readGallery(): Promise<PublicGallery> {
   const db = createSupabaseAdminClient();
-  const placements = await db
-    .from("website_content")
-    .select(CONTENT_COLUMNS)
-    .eq("module", "gallery")
-    .eq("published", true)
-    .order("sort_order")
-    .limit(PUBLIC_LIMITS.gallery);
-  if (placements.error) {
-    reportQueryError("website_content", placements.error);
-    return [];
+  const [collectionResult, placementResult] = await Promise.all([
+    db
+      .from("website_content")
+      .select(GALLERY_COLLECTION_COLUMNS)
+      .eq("module", "gallery_collection")
+      .eq("published", true)
+      .order("sort_order")
+      .limit(PUBLIC_LIMITS.galleryCollections),
+    db
+      .from("website_content")
+      .select(CONTENT_COLUMNS)
+      .eq("module", "gallery")
+      .eq("published", true)
+      .order("sort_order")
+      .limit(PUBLIC_LIMITS.gallery),
+  ]);
+  if (placementResult.error) {
+    reportQueryError("website_content", placementResult.error);
+    return { collections: [], photos: [] };
   }
-  const placementRows = (placements.data ?? []) as unknown as GalleryPlacementRow[];
+  // A collection read failure degrades to the All view rather than hiding every
+  // image: the placements themselves are still a valid, published gallery.
+  if (collectionResult.error)
+    reportQueryError("website_content", collectionResult.error);
+  const collections = collectionResult.error
+    ? []
+    : mapGalleryCollectionRows(
+      (collectionResult.data ?? []) as unknown as ContentRow[],
+    );
+  const visibleCollections = new Set(
+    collections.map((collection) => collection.id),
+  );
+  // Placements in a hidden or deleted collection are not public. Legacy
+  // placements with no collection stay in the All view until assigned.
+  const placementRows = (
+    (placementResult.data ?? []) as unknown as GalleryPlacementRow[]
+  ).filter((placement) => {
+    const key =
+      typeof placement.payload.collection_key === "string"
+        ? placement.payload.collection_key
+        : "";
+    return !key || visibleCollections.has(key);
+  });
   const mediaIds = referencedMediaIds(placementRows);
-  if (!mediaIds.length) return [];
+  if (!mediaIds.length) return { collections, photos: [] };
 
   // Only referenced assets, only non-archived rows: archived media is filtered
   // in SQL instead of being downloaded and discarded.
@@ -187,12 +229,15 @@ async function readGallery(): Promise<Photo[]> {
     .eq("archived", false);
   if (media.error) {
     reportQueryError("website_gallery_media", media.error);
-    return [];
+    return { collections, photos: [] };
   }
-  return buildGalleryPhotos(
-    placementRows,
-    (media.data ?? []) as unknown as GalleryMediaRow[],
-  );
+  return {
+    collections,
+    photos: buildGalleryPhotos(
+      placementRows,
+      (media.data ?? []) as unknown as GalleryMediaRow[],
+    ),
+  };
 }
 
 async function readBlogList(): Promise<PublicBlogSummary[]> {
@@ -350,7 +395,7 @@ export async function getPublicFaqs(): Promise<PublicFaq[]> {
   return liveContent ? cachedFaqs() : defaultFaqs;
 }
 
-export async function getPublicGallery(): Promise<Photo[]> {
+export async function getPublicGallery(): Promise<PublicGallery> {
   return liveContent ? cachedGallery() : demoGallery;
 }
 
@@ -388,7 +433,7 @@ export async function getPublicWebsiteSnapshot(): Promise<PublicWebsiteSnapshot>
     services,
     branches,
     faqs,
-    gallery,
+    gallery: gallery.photos,
     promotions: promotions.promotions,
     promotionServices: promotions.promotionServices,
     settings,

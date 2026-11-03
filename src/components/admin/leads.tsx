@@ -6,11 +6,17 @@ import type { Lead } from "@/lib/contracts";
 import { Empty, Heading } from "@/components/ui";
 import { Dialog } from "@/components/dialog";
 import { Field, Notice, TextField } from "@/components/forms/controls";
+import {
+  enquiryDetailFields,
+  enquiryDetailFieldsFromValues,
+  type EnquiryDetailField,
+} from "@/lib/enquiries/presentation";
 type EnquiryView = {
   id: string;
   kind: "general" | "commercial";
   status: "new" | "contacted" | "closed";
   fields: Record<string, string>;
+  detail: EnquiryDetailField[];
   notes: string[];
   version: number;
 };
@@ -41,6 +47,7 @@ function liveEnquiryView(record: {
       message: record.message ?? "",
       ...Object.fromEntries(Object.entries(record.details).map(([key, value]) => [key, typeof value === "string" ? value : ""])),
     },
+    detail: enquiryDetailFields(record),
     notes: record.notes.map((note) => note.text),
     version: record.version,
   };
@@ -58,7 +65,15 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
   const [success, setSuccess] = useState("");
   const demoItem = demo ? store.leads.find((lead) => lead.id === id && ["general", "commercial"].includes(lead.kind)) : undefined;
   const item: EnquiryView | undefined = demoItem
-    ? { id: demoItem.id, kind: demoItem.kind as EnquiryView["kind"], status: demoItem.status as EnquiryView["status"], fields: demoItem.fields, notes: demoItem.notes, version: 1 }
+    ? {
+      id: demoItem.id,
+      kind: demoItem.kind as EnquiryView["kind"],
+      status: demoItem.status as EnquiryView["status"],
+      fields: demoItem.fields,
+      detail: enquiryDetailFieldsFromValues(demoItem.kind as EnquiryView["kind"], demoItem.fields),
+      notes: demoItem.notes,
+      version: 1,
+    }
     : records?.find((record) => record.id === id);
 
   useEffect(() => {
@@ -149,10 +164,10 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
           <section className="panel">
             <h2>Contact details & requirements</h2>
             <dl className="review-list">
-              {Object.entries(item.fields).map(([k, v]) => (
-                <div key={k}>
-                  <dt>{k.replaceAll("_", " ")}</dt>
-                  <dd>{v || "Not provided"}</dd>
+              {item.detail.map((field) => (
+                <div key={field.key}>
+                  <dt>{field.label}</dt>
+                  <dd>{field.value || "Not provided"}</dd>
                 </div>
               ))}
             </dl>
@@ -203,6 +218,7 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
       kind: lead.kind as EnquiryView["kind"],
       status: lead.status as EnquiryView["status"],
       fields: lead.fields,
+      detail: enquiryDetailFieldsFromValues(lead.kind as EnquiryView["kind"], lead.fields),
       notes: lead.notes,
       version: 1,
     }));
@@ -243,7 +259,11 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
             >
               <div>
                 <h3>{l.fields.business || l.fields.name}</h3>
-                <p>{l.fields.message || l.fields.items}</p>
+                <p>
+                  {l.kind === "commercial"
+                    ? l.fields.items
+                    : l.fields.message}
+                </p>
               </div>
               <span className="badge">{l.status}</span>
             </Link>

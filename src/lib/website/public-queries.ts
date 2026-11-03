@@ -32,12 +32,17 @@ export const BLOG_LIST_COLUMNS =
 /** Gallery media: only the columns a tile needs. Archived rows are filtered in SQL. */
 export const GALLERY_MEDIA_COLUMNS = "id,public_url,alt";
 
+/** Gallery collection rows: the stable slug plus its public label. */
+export const GALLERY_COLLECTION_COLUMNS =
+  "id,record_key,payload,sort_order,version,published";
+
 /** Hard caps so one bad row set can never turn into an unbounded response. */
 export const PUBLIC_LIMITS = {
   services: 50,
   branches: 50,
   faqs: 200,
   gallery: 200,
+  galleryCollections: 100,
   blog: 50,
   promotions: 20,
 } as const;
@@ -129,6 +134,25 @@ export type GalleryPlacementRow = Pick<
   ContentRow,
   "id" | "record_key" | "payload" | "sort_order"
 >;
+
+/** A published gallery collection, as the public filter bar renders it. */
+export type PublicGalleryCollection = {
+  /** Stable collection slug (website_content record_key). */
+  id: string;
+  name: string;
+  description: string;
+};
+
+/** A public tile: collection membership comes from stored data, never alt text. */
+export type PublicGalleryPhoto = Photo & {
+  mediaId: string;
+  collections: string[];
+};
+
+export type PublicGallery = {
+  collections: PublicGalleryCollection[];
+  photos: PublicGalleryPhoto[];
+};
 
 export type GalleryMediaRow = {
   id: string;
@@ -242,18 +266,56 @@ export function referencedMediaIds(
 export function buildGalleryPhotos(
   placements: GalleryPlacementRow[],
   media: GalleryMediaRow[],
-): Photo[] {
+): PublicGalleryPhoto[] {
   const byId = new Map(media.map((asset) => [asset.id, asset]));
-  const tiles: Photo[] = [];
+  const tiles: PublicGalleryPhoto[] = [];
   for (const placement of placements) {
     const asset = byId.get(text(placement.payload.media_id));
     if (!asset) continue;
+    const collection = text(placement.payload.collection_key);
     tiles.push({
       src: asset.public_url,
       alt: text(placement.payload.alt) || asset.alt || "",
+      mediaId: asset.id,
+      collections: collection ? [collection] : [],
     });
   }
   return tiles;
+}
+
+/** Visible collections in configured order. Rows without a name are ignored. */
+export function mapGalleryCollectionRows(
+  rows: ContentRow[],
+): PublicGalleryCollection[] {
+  const collections: PublicGalleryCollection[] = [];
+  for (const row of rows) {
+    const name = text(row.payload.name).trim();
+    if (!name) continue;
+    collections.push({
+      id: row.record_key,
+      name,
+      description: text(row.payload.description).trim(),
+    });
+  }
+  return collections;
+}
+
+/**
+ * One card per media asset. The same asset can be placed in several collections,
+ * so the All view (and any filtered view) must not repeat it.
+ */
+export function dedupeGalleryPhotos(
+  photos: PublicGalleryPhoto[],
+): PublicGalleryPhoto[] {
+  const seen = new Set<string>();
+  const unique: PublicGalleryPhoto[] = [];
+  for (const photo of photos) {
+    const key = photo.mediaId || photo.src;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(photo);
+  }
+  return unique;
 }
 
 export function summariseBlogRow(row: BlogListRow): PublicBlogSummary {

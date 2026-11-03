@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
     isValidEnquiryIdempotencyKey,
     validateEnquirySubmission,
@@ -42,6 +43,12 @@ const baseDeps = {
     rateLimiter: { consume: async () => allowed },
     submit: async () => ({ ok: true as const, enquiryId: "opaque-id", isNew: true }),
 };
+
+test("public enquiry route dispatches only enquiry_received rows", () => {
+    const route = readFileSync("src/app/api/enquiries/route.ts", "utf8");
+    assert.ok(route.includes("import { enquiryReceivedTemplates } from \"@/lib/email/templates\""));
+    assert.ok(route.includes('after(() => dispatchPendingEmails("enquiry_submit", enquiryReceivedTemplates))'));
+});
 
 test("validates and normalises general enquiries and commercial quotes", () => {
     const general = validateEnquirySubmission(GENERAL);
@@ -140,5 +147,17 @@ test("internal enquiry email parameters escape user text and omit message/privat
     assert.equal(params.name, "Amina &lt;script&gt;alert(1)&lt;/script&gt;");
     assert.equal(params.business, "B &amp; C Laundry");
     assert.equal(params.enquiryUrl, "https://2ndwave.example/admin/enquiries/123e4567-e89b-12d3-a456-426614174000");
-    assert.deepEqual(Object.keys(params).sort(), ["business", "enquiryUrl", "kind", "name", "phone", "topic", "websiteUrl"].sort());
+    // Commercial quote alerts never present the general-enquiry topic field.
+    assert.deepEqual(Object.keys(params).sort(), ["business", "enquiryUrl", "kind", "name", "phone", "websiteUrl"].sort());
+
+    const general = buildEnquiryReceivedParams({
+        enquiryId: "123e4567-e89b-12d3-a456-426614174000",
+        kind: "general",
+        name: "Amina Mensah",
+        business: null,
+        phone: "+233 59 522 4280",
+        topic: "Services",
+    }, { siteUrl: "https://2ndwave.example" });
+    assert.equal(general.topic, "Services");
+    assert.deepEqual(Object.keys(general).sort(), ["business", "enquiryUrl", "kind", "name", "phone", "topic", "websiteUrl"].sort());
 });

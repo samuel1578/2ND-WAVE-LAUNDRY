@@ -80,6 +80,13 @@ export const BREVO_ENQUIRY_TEMPLATE_ID_VARS: Record<EnquiryReceivedTemplate, str
   enquiry_received: "BREVO_TEMPLATE_ENQUIRY_RECEIVED_ID",
 };
 
+const ALL_TEMPLATE_ID_VARS: Record<string, string> = {
+  ...BREVO_TEMPLATE_ID_VARS,
+  ...BREVO_STAFF_TEMPLATE_ID_VARS,
+  ...BREVO_NEWSLETTER_TEMPLATE_ID_VARS,
+  ...BREVO_ENQUIRY_TEMPLATE_ID_VARS,
+};
+
 export const MIN_WORKER_SECRET_LENGTH = 32;
 export const MIN_WEBHOOK_SECRET_LENGTH = 32;
 
@@ -260,9 +267,9 @@ export function readEmailTemplateConfiguration(
       { templates: newsletterInterestTemplates, variables: BREVO_NEWSLETTER_TEMPLATE_ID_VARS },
       { templates: enquiryReceivedTemplates, variables: BREVO_ENQUIRY_TEMPLATE_ID_VARS },
     ];
+  const seen = new Set<number>();
 
   for (const { templates, variables } of groups) {
-    const seen = new Set<number>();
     for (const template of templates) {
       const variable = variables[template];
       const raw = (env[variable] ?? "").trim();
@@ -401,11 +408,30 @@ export type EnquiryTemplateIdsResult =
 export function readEnquiryTemplateIds(
   env: Record<string, string | undefined> = process.env,
 ): EnquiryTemplateIdsResult {
-  return readOptionalTemplateIds(
+  const result = readOptionalTemplateIds(
     env,
     enquiryReceivedTemplates,
     BREVO_ENQUIRY_TEMPLATE_ID_VARS,
   );
+  if (!result.ok) return result;
+
+  const enquiryId = result.templateIds.enquiry_received;
+  const collidesWithAnotherTemplate = Object.entries(ALL_TEMPLATE_ID_VARS).some(
+    ([template, variable]) => {
+      if (template === "enquiry_received") return false;
+      const raw = (env[variable] ?? "").trim();
+      return /^[1-9]\d*$/.test(raw) && Number(raw) === enquiryId;
+    },
+  );
+  if (collidesWithAnotherTemplate) {
+    return {
+      ok: false,
+      reason: "invalid-template-id",
+      templateVariable: BREVO_ENQUIRY_TEMPLATE_ID_VARS.enquiry_received,
+    };
+  }
+
+  return result;
 }
 
 /** Safe operator-facing explanation. Never includes a secret value. */

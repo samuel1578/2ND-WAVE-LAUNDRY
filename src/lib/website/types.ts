@@ -1,4 +1,4 @@
-import type { ContentItem, FaqItem, GalleryPlacement, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
+import type { ContentItem, FaqItem, GalleryCollection, GalleryPlacement, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
 import { branches, contact, faqs, photos, services } from "@/lib/content";
 
 export type WebsiteRow = { id: string; key: string; module: string; payload: Record<string, unknown>; published: boolean; sort_order: number; version: number };
@@ -14,7 +14,11 @@ export function toFaq(row: WebsiteRow): FaqItem {
 export function toGallery(row: WebsiteRow, media: Record<string, unknown>): GalleryPlacement & { asset?: MediaAsset } {
   const asset = media[String(row.payload.media_id ?? "")] as Record<string, unknown> | undefined;
   // Gallery writes key placements by record_key; the table's UUID id is not the RPC key.
-  return { id: row.key || row.id, mediaId: String(row.payload.media_id ?? ""), alt: String(row.payload.alt ?? ""), caption: String(row.payload.caption ?? ""), order: row.sort_order, visible: row.published, version: row.version, asset: asset ? { id: String(asset.id), src: String(asset.public_url), name: String(asset.name), alt: String(asset.alt), caption: String(asset.caption ?? ""), source: String(asset.source), permission: String(asset.permission), uses: [], archived: Boolean(asset.archived) } : undefined };
+  return { id: row.key || row.id, mediaId: String(row.payload.media_id ?? ""), alt: String(row.payload.alt ?? ""), caption: String(row.payload.caption ?? ""), order: row.sort_order, visible: row.published, version: row.version, collectionKey: String(row.payload.collection_key ?? ""), asset: asset ? { id: String(asset.id), src: String(asset.public_url), name: String(asset.name), alt: String(asset.alt), caption: String(asset.caption ?? ""), source: String(asset.source), permission: String(asset.permission), uses: [], archived: Boolean(asset.archived) } : undefined };
+}
+export function toGalleryCollection(row: WebsiteRow): GalleryCollection {
+  // The record_key is the stable identifier; it is never derived from alt text.
+  return { id: row.key || row.id, name: String(row.payload.name ?? ""), description: String(row.payload.description ?? ""), order: row.sort_order, visible: row.published, version: row.version };
 }
 export function toContent(row: WebsiteRow): ContentItem {
   const p = row.payload;
@@ -32,7 +36,14 @@ export function toPromotion(row: WebsiteRow): PromotionRecord {
 }
 export const seededFaqs: FaqItem[] = faqs.map((item, i) => ({ id: `seed-faq-${i + 1}`, question: item.q, answer: item.a, glow: item.glow, order: i + 1, enabled: true, version: 1 }));
 export const seededLocations: LocationRecord[] = branches.map((item, i) => ({ id: item.slug, slug: item.slug, section: item.section, name: item.title, label: item.label, phone: item.phone, map: item.map, hours: item.hours.map(([d, h]) => [d, h]), order: i + 1, version: 1 }));
-export const seededGallery: (GalleryPlacement & { asset?: MediaAsset })[] = (photos.batch_14_gallery ?? []).filter(p => !/logo/i.test(p.alt)).map((photo, i) => ({ id: `seed-gallery-${i + 1}`, mediaId: `seed-gallery-${i + 1}`, alt: photo.alt, caption: "", order: i + 1, visible: true, version: 1, asset: { id: `seed-gallery-${i + 1}`, src: photo.src, name: photo.src.split("/").pop() ?? "marketing-image", alt: photo.alt, caption: "", source: "Approved design handoff", permission: "Approved marketing image", uses: [], archived: false } }));
+export const seededGalleryCollections: GalleryCollection[] = [
+  { id: "laundry", name: "Laundry", description: "", order: 1, visible: true, version: 1 },
+  { id: "garment-care", name: "Garment Care", description: "", order: 2, visible: true, version: 1 },
+  { id: "shoe-care", name: "Shoe Care", description: "", order: 3, visible: true, version: 1 },
+  { id: "behind-the-scenes", name: "BTS / Behind the Scenes", description: "", order: 4, visible: true, version: 1 },
+  { id: "others", name: "Others", description: "", order: 5, visible: true, version: 1 },
+];
+export const seededGallery: (GalleryPlacement & { asset?: MediaAsset })[] = (photos.batch_14_gallery ?? []).filter(p => !/logo/i.test(p.alt)).map((photo, i) => ({ id: `seed-gallery-${i + 1}`, mediaId: `seed-gallery-${i + 1}`, alt: photo.alt, caption: "", order: i + 1, visible: true, version: 1, collectionKey: "", asset: { id: `seed-gallery-${i + 1}`, src: photo.src, name: photo.src.split("/").pop() ?? "marketing-image", alt: photo.alt, caption: "", source: "Approved design handoff", permission: "Approved marketing image", uses: [], archived: false } }));
 export const seededServices: ContentItem[] = services.map((service, i) => ({ id: service.slug, module: "Services", title: service.title, slug: service.slug, summary: service.summary, body: "", image: service.image?.src ?? "", alt: service.image?.alt ?? "", status: "Published", sort: i + 1, version: 1, published: { title: service.title, slug: service.slug, summary: service.summary, body: "", image: service.image?.src ?? "", alt: service.image?.alt ?? "" }, extra: {} }));
 export const seededPromotions: PromotionRecord[] = [];
 export const seededMedia: MediaAsset[] = seededGallery.flatMap(g => g.asset ? [g.asset] : []);

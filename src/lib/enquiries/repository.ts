@@ -50,10 +50,12 @@ export async function submitEnquiry(input: { submission: EnquirySubmission; idem
     const ready = clientOrResult();
     if ("error" in ready) return { ok: false, code: ready.error };
     const s = input.submission;
+    // The recipient list is resolved inside the database function from the
+    // enabled public.booking_alert_recipients rows; no address is sent here.
     const { data, error } = await ready.client.rpc("enquiry_submit", {
         p_kind: s.kind, p_name: s.name, p_business: s.business, p_phone: s.phone, p_email: s.email,
         p_topic: s.topic, p_message: s.message, p_details: s.details, p_idempotency_key: input.idempotencyKey,
-        p_source_ip_hash: input.sourceIpHash, p_recipient_email: "manager@2ndwavelaundry.com", p_correlation: input.correlationId,
+        p_source_ip_hash: input.sourceIpHash, p_correlation: input.correlationId,
     });
     if (error) return { ok: false, code: mapError(error.message), dbError: { code: error.code ?? null, message: error.message, hint: error.hint ?? null } };
     const result = data as { enquiry_id?: unknown; is_new?: unknown } | null;

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { toContent, toFaq, toGallery, toPromotion } from "@/lib/website/types";
+import { toContent, toFaq, toGallery, toGalleryCollection, toPromotion } from "@/lib/website/types";
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "private, no-store, max-age=0" } as const;
 export async function GET(request: Request) {
@@ -45,6 +45,28 @@ export async function GET(request: Request) {
           const media = mediaById[String(row.payload.media_id ?? "")];
           return toGallery({ id: row.id, key: row.record_key, module: "gallery", payload: row.payload, published: row.published, sort_order: row.sort_order, version: row.version }, media ? { [media.id]: media } : {});
         })
+      }, { headers: NO_STORE });
+    }
+    if (contentModule === "gallery-collections") {
+      const { data, error } = await db.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "gallery_collection").order("sort_order");
+      if (error) throw Error();
+      const countByKey = new Map(
+        (data ?? []).map((row) => [row.record_key, 0]),
+      );
+      const { data: placements, error: placementError } = await db
+        .from("website_content")
+        .select("payload")
+        .eq("module", "gallery");
+      if (placementError) throw Error();
+      for (const row of placements ?? []) {
+        const key = String(row.payload?.collection_key ?? "");
+        if (countByKey.has(key)) countByKey.set(key, (countByKey.get(key) ?? 0) + 1);
+      }
+      return NextResponse.json({
+        items: (data ?? []).map(row => ({
+          ...toGalleryCollection({ id: row.id, key: row.record_key, module: "gallery_collection", payload: row.payload, published: row.published, sort_order: row.sort_order, version: row.version }),
+          imageCount: countByKey.get(row.record_key) ?? 0,
+        }))
       }, { headers: NO_STORE });
     }
     if (!["faq", "blog", "promotion"].includes(contentModule)) return NextResponse.json({ code: "not_found" }, { status: 404, headers: NO_STORE });

@@ -97,7 +97,8 @@ test("the public endpoint hashes the caller and stays a generic adapter", () => 
     assert.ok(route.includes("readNewsletterInterestConfig()"));
     assert.ok(route.includes("resolveNewsletterRateLimiter()"));
     assert.ok(route.includes("request.headers.get(IDEMPOTENCY_HEADER) || null"));
-    assert.ok(route.includes('after(() => dispatchPendingEmails("newsletter_interest_submit"))'));
+    assert.ok(route.includes("import { newsletterInterestTemplates } from \"@/lib/email/templates\""));
+    assert.ok(route.includes('after(() => dispatchPendingEmails("newsletter_interest_submit", newsletterInterestTemplates))'));
     // The rejection log records the code and correlation, never the address.
     assert.ok(route.includes("console.warn"));
     for (const forbidden of ["JSON.stringify(body)", "body.email", "submitted.email", "subscriberEmail"])

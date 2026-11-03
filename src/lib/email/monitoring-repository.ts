@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  emailMonitoringReference,
   latestEmailDeliveryEvent,
   type EmailDeliveryEventSummary,
   type EmailMonitoringQuery,
@@ -40,9 +41,7 @@ type OutboxRecord = {
   booking_id: string | null;
   template: string;
   recipient_email: string;
-  payload:
-    | { booking_reference?: unknown; subscriber_email?: unknown }
-    | null;
+  payload: Record<string, unknown> | null;
   status: string;
   attempt_count: number;
   max_attempts: number;
@@ -75,6 +74,7 @@ const validTemplates = new Set([
   "staff_order_completed",
   "staff_order_cancelled",
   "newsletter_interest_received",
+  "enquiry_received",
 ]);
 const validStatuses = new Set([
   "pending",
@@ -145,36 +145,10 @@ export async function listEmailMonitoring(
       const template = row.template as EmailTemplate;
       if (!validStatuses.has(status) || !validTemplates.has(template))
         throw new EmailMonitoringRepositoryError();
-      // The newsletter manager alert has no booking: its subscriber address is
-      // the only identifying value, shown in the same title position.
-      if (template === "newsletter_interest_received") {
-        const subscriber = row.payload?.subscriber_email;
-        if (typeof subscriber !== "string")
-          throw new EmailMonitoringRepositoryError();
-        return {
-          id: row.id,
-          bookingId: row.booking_id,
-          bookingReference: subscriber,
-          template,
-          recipientEmail: row.recipient_email,
-          status,
-          attemptCount: row.attempt_count,
-          maxAttempts: row.max_attempts,
-          lastAttemptAt: row.last_attempt_at,
-          sentAt: row.sent_at,
-          nextAttemptAt:
-            status === "pending" || status === "retryable_failed"
-              ? row.next_attempt_at
-              : null,
-          lastError: row.last_error,
-          latestDeliveryEvent: latestEmailDeliveryEvent(rowEvents),
-          isTest: row.is_test === true,
-          resendOf: row.resend_of ?? null,
-        };
-      }
-      const reference = row.payload?.booking_reference;
-      if (typeof reference !== "string")
-        throw new EmailMonitoringRepositoryError();
+      // Newsletter and enquiry alerts have no booking: their own committed
+      // payload supplies the title, never a fabricated booking reference.
+      const reference = emailMonitoringReference(template, row.payload);
+      if (reference === null) throw new EmailMonitoringRepositoryError();
 
       return {
         id: row.id,
