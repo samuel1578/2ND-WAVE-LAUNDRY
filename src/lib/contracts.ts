@@ -38,6 +38,41 @@ export type Lead = {
   createdAt: string;
   notes: string[];
 };
+export type BlogAuthor = {
+  name: string;
+  bio?: string;
+  image?: string;
+  imageAlt?: string;
+  imageMediaId?: string;
+};
+export type BlogTextBlock = {
+  type: "text";
+  text: string;
+  order: number;
+};
+export type BlogImageBlock = {
+  type: "image";
+  mediaId: string;
+  src: string;
+  alt: string;
+  caption: string;
+  order: number;
+};
+export type BlogContentBlock = BlogTextBlock | BlogImageBlock;
+export type BlogArticleSnapshot = {
+  title: string;
+  slug: string;
+  summary: string;
+  body: string;
+  image: string;
+  alt: string;
+  imageMediaId?: string;
+  author?: BlogAuthor;
+  contentBlocks?: BlogContentBlock[];
+  publishedAt?: string;
+  modifiedAt?: string;
+  extra?: Record<string, string>;
+};
 export type ContentItem = {
   id: string;
   module: string;
@@ -47,17 +82,15 @@ export type ContentItem = {
   body: string;
   image: string;
   alt: string;
+  imageMediaId?: string;
+  author?: BlogAuthor;
+  contentBlocks?: BlogContentBlock[];
+  publishedAt?: string;
+  modifiedAt?: string;
   status: "Draft" | "Published" | "Archived";
   sort: number;
   version: number;
-  published?: {
-    title: string;
-    slug: string;
-    summary: string;
-    body: string;
-    image: string;
-    alt: string;
-  };
+  published?: BlogArticleSnapshot;
   extra: Record<string, string>;
 };
 export type MediaAsset = {

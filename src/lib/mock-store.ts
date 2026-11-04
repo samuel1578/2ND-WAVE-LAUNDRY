@@ -411,7 +411,8 @@ export async function saveContent(
       !item.slug.trim() ||
       !item.summary.trim() ||
       !item.body.trim() ||
-      (item.image && !item.alt.trim()))
+      (item.image && !item.alt.trim()) ||
+      item.contentBlocks?.some((block) => block.type === "image" && !block.alt.trim()))
   )
     throw Error("Complete the required fields before publishing.");
   if (action === "publish" && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.slug))
@@ -423,6 +424,15 @@ export async function saveContent(
     )
   )
     throw Error("This slug is already used in this module.");
+  const now = new Date().toISOString();
+  const publishedAt =
+    action === "publish"
+      ? previous?.published?.publishedAt ?? item.publishedAt ?? now
+      : item.publishedAt ?? previous?.published?.publishedAt;
+  const modifiedAt =
+    action === "publish"
+      ? now
+      : item.modifiedAt ?? previous?.published?.modifiedAt;
   const next: ContentItem = {
     ...item,
     id: item.id || crypto.randomUUID(),
@@ -433,6 +443,8 @@ export async function saveContent(
         : action === "archive"
           ? "Archived"
           : "Draft",
+    publishedAt,
+    modifiedAt,
     published:
       action === "publish"
         ? {
@@ -442,6 +454,14 @@ export async function saveContent(
           body: item.body,
           image: item.image,
           alt: item.alt,
+          ...(item.imageMediaId ? { imageMediaId: item.imageMediaId } : {}),
+          ...(item.author ? { author: structuredClone(item.author) } : {}),
+          ...(item.contentBlocks
+            ? { contentBlocks: structuredClone(item.contentBlocks) }
+            : {}),
+          ...(publishedAt ? { publishedAt } : {}),
+          ...(modifiedAt ? { modifiedAt } : {}),
+          extra: { ...item.extra },
         }
         : action === "unpublish" || action === "archive"
           ? undefined

@@ -1,4 +1,4 @@
-import type { ContentItem, FaqItem, GalleryCollection, GalleryPlacement, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
+import type { BlogAuthor, BlogContentBlock, ContentItem, FaqItem, GalleryCollection, GalleryPlacement, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
 import { branches, contact, faqs, photos, services } from "@/lib/content";
 
 export type WebsiteRow = { id: string; key: string; module: string; payload: Record<string, unknown>; published: boolean; sort_order: number; version: number };
@@ -20,15 +20,82 @@ export function toGalleryCollection(row: WebsiteRow): GalleryCollection {
   // The record_key is the stable identifier; it is never derived from alt text.
   return { id: row.key || row.id, name: String(row.payload.name ?? ""), description: String(row.payload.description ?? ""), order: row.sort_order, visible: row.published, version: row.version };
 }
+function storedBlogAuthor(value: unknown): BlogAuthor | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const author = value as Record<string, unknown>;
+  const name = typeof author.name === "string" ? author.name : "";
+  const bio = typeof author.bio === "string" ? author.bio : "";
+  const image = typeof author.image === "string" ? author.image : "";
+  const imageAlt = typeof author.imageAlt === "string" ? author.imageAlt : "";
+  const imageMediaId = typeof author.imageMediaId === "string" ? author.imageMediaId : "";
+  if (!name && !bio && !image && !imageMediaId) return undefined;
+  return {
+    name,
+    ...(bio ? { bio } : {}),
+    ...(image ? { image } : {}),
+    ...(imageAlt ? { imageAlt } : {}),
+    ...(imageMediaId ? { imageMediaId } : {}),
+  };
+}
+
+function storedBlogBlocks(value: unknown): BlogContentBlock[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const blocks = value.flatMap((entry, index): BlogContentBlock[] => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const block = entry as Record<string, unknown>;
+    const numericOrder = Number(block.order);
+    const order = Number.isFinite(numericOrder) ? numericOrder : index + 1;
+    if (block.type === "text" && typeof block.text === "string") {
+      return [{ type: "text", text: block.text, order }];
+    }
+    if (block.type === "image" && typeof block.src === "string") {
+      return [{
+        type: "image",
+        mediaId: typeof block.mediaId === "string" ? block.mediaId : "",
+        src: block.src,
+        alt: typeof block.alt === "string" ? block.alt : "",
+        caption: typeof block.caption === "string" ? block.caption : "",
+        order,
+      }];
+    }
+    return [];
+  });
+  return blocks.length ? blocks.sort((a, b) => a.order - b.order) : undefined;
+}
+
 export function toContent(row: WebsiteRow): ContentItem {
-  const p = row.payload;
-  const title = String(p.title ?? "");
-  const slug = String(p.slug ?? row.key);
-  const summary = String(p.summary ?? "");
-  const body = String(p.body ?? "");
-  const image = String(p.image ?? "");
-  const alt = String(p.alt ?? "");
-  return { id: row.key || row.id, module: row.module === "blog" ? "Blog" : "Promotions", title, slug, summary, body, image, alt, status: row.published ? "Published" : "Draft", sort: row.sort_order, version: row.version, published: row.published ? { title, slug, summary, body, image, alt } : undefined, extra: (p.extra && typeof p.extra === "object" ? p.extra : {}) as Record<string, string> };
+  const payload = row.payload;
+  const draft = row.published && payload.draft && typeof payload.draft === "object" && !Array.isArray(payload.draft)
+    ? payload.draft as Record<string, unknown>
+    : payload;
+  const readSnapshot = (source: Record<string, unknown>) => ({
+    title: String(source.title ?? ""),
+    slug: String(source.slug ?? row.key),
+    summary: String(source.summary ?? ""),
+    body: String(source.body ?? ""),
+    image: String(source.image ?? ""),
+    alt: String(source.alt ?? ""),
+    ...(typeof source.imageMediaId === "string" ? { imageMediaId: source.imageMediaId } : {}),
+    ...(storedBlogAuthor(source.author) ? { author: storedBlogAuthor(source.author) } : {}),
+    ...(storedBlogBlocks(source.contentBlocks) ? { contentBlocks: storedBlogBlocks(source.contentBlocks) } : {}),
+    ...(typeof source.publishedAt === "string" ? { publishedAt: source.publishedAt } : {}),
+    ...(typeof source.modifiedAt === "string" ? { modifiedAt: source.modifiedAt } : {}),
+    extra: (source.extra && typeof source.extra === "object" ? source.extra : {}) as Record<string, string>,
+  });
+  const current = readSnapshot(draft);
+  const publishedSnapshot = row.published ? readSnapshot(payload) : undefined;
+  const status = row.published
+    ? draft === payload ? "Published" : "Draft"
+    : payload.status === "Archived" ? "Archived" : "Draft";
+  return {
+    id: row.key || row.id,
+    module: row.module === "blog" ? "Blog" : "Promotions",
+    ...current,
+    status,
+    sort: row.sort_order,
+    version: row.version,
+    published: publishedSnapshot,
+  };
 }
 export function toPromotion(row: WebsiteRow): PromotionRecord {
   const p = row.payload;

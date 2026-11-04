@@ -173,12 +173,12 @@ export function localBusinessSchema(
     ...(branch.map ? { hasMap: branch.map } : {}),
     ...(profile?.latitude && profile?.longitude
       ? {
-          geo: {
-            "@type": "GeoCoordinates",
-            latitude: profile.latitude,
-            longitude: profile.longitude,
-          },
-        }
+        geo: {
+          "@type": "GeoCoordinates",
+          latitude: profile.latitude,
+          longitude: profile.longitude,
+        },
+      }
       : {}),
   };
 }
@@ -249,9 +249,17 @@ export function articleSchema(post: {
   summary: string;
   image: string;
   body: string;
+  author?: { name: string; image?: string };
   datePublished?: string;
   dateModified?: string;
 }): Schema {
+  const author = post.author?.name.trim()
+    ? {
+      "@type": "Person",
+      name: post.author.name.trim(),
+      ...(post.author.image ? { image: absoluteUrl(post.author.image) } : {}),
+    }
+    : { "@id": ORGANIZATION_ID };
   return {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -260,7 +268,7 @@ export function articleSchema(post: {
     url: absoluteUrl(`/blog/${post.slug}`),
     mainEntityOfPage: absoluteUrl(`/blog/${post.slug}`),
     image: post.image ? absoluteUrl(post.image) : absoluteUrl(OG_IMAGE_PATH),
-    author: { "@id": ORGANIZATION_ID },
+    author,
     publisher: { "@id": ORGANIZATION_ID },
     inLanguage: "en-GH",
     articleSection: "Laundry Notes",

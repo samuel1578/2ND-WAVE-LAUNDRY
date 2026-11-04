@@ -4,6 +4,7 @@ import { supabaseConfig } from "@/lib/supabase/config";
 import { promotionImageError } from "./promotion-image";
 import { promotionCtaError } from "@/lib/rules";
 import type { ContentItem, FaqItem, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
+import { buildBlogPayload, blogMediaIds } from "./blog-content";
 import { defaultSettings, toContent, toFaq, toGallery, toPromotion, type PublicSettings } from "./types";
 
 const fail = (message = "The website content service is unavailable."): never => { throw new Error(message); };
@@ -134,11 +135,53 @@ export async function writeFaqs(actor: string, items: FaqItem[]) {
 }
 export async function writeContent(actor: string, item: ContentItem, action: "draft" | "publish" | "archive" | "unpublish") {
   const client = createSupabaseAdminClient();
-  const published = action === "publish" || (action === "draft" && !!item.published);
-  const payload = { title: item.title, slug: item.slug, summary: item.summary, body: item.body, image: item.image, alt: item.alt, extra: item.extra, status: action === "archive" ? "Archived" : published ? "Published" : "Draft" };
-  const { data, error } = await client.rpc("website_content_upsert", { p_actor: actor, p_module: "blog", p_key: item.slug, p_payload: payload, p_published: published, p_sort_order: item.sort, p_expected_version: item.version || null });
+  let trustedItem = item;
+  if (item.version > 0) {
+    const { data: stored, error: storedError } = await client
+      .from("website_content")
+      .select("id,record_key,payload,published,sort_order,version")
+      .eq("module", "blog")
+      .eq("record_key", item.slug)
+      .maybeSingle();
+    if (storedError) return fail("The saved article could not be verified. Reload and try again.");
+    if (stored && stored.version === item.version) {
+      const saved = toContent({
+        id: stored.id,
+        key: stored.record_key,
+        module: "blog",
+        payload: stored.payload as Record<string, unknown>,
+        published: stored.published,
+        sort_order: stored.sort_order,
+        version: stored.version,
+      });
+      trustedItem = {
+        ...item,
+        published: saved.published,
+        publishedAt: saved.publishedAt,
+        modifiedAt: saved.modifiedAt,
+      };
+    } else if (!stored) {
+      trustedItem = { ...item, published: undefined, publishedAt: undefined, modifiedAt: undefined };
+    }
+  } else {
+    trustedItem = { ...item, published: undefined, publishedAt: undefined, modifiedAt: undefined };
+  }
+  const { payload, published } = buildBlogPayload(trustedItem, action);
+  const mediaIds = blogMediaIds(trustedItem);
+  if (mediaIds.length) {
+    const { data: media, error: mediaError } = await client
+      .from("website_gallery_media")
+      .select("id")
+      .in("id", mediaIds)
+      .eq("archived", false);
+    if (mediaError || media?.length !== mediaIds.length) {
+      return fail("Choose images from the active Media Library before saving this article.");
+    }
+  }
+  const { data, error } = await client.rpc("website_content_upsert", { p_actor: actor, p_module: "blog", p_key: trustedItem.slug, p_payload: payload, p_published: published, p_sort_order: trustedItem.sort, p_expected_version: trustedItem.version || null });
   if (isConflict(error)) {
-    const current = await client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "blog").eq("record_key", item.slug).maybeSingle();
+    const current = await client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "blog").eq("record_key", trustedItem.slug).maybeSingle();
+    if (!trustedItem.version && current.data) return fail("That article slug is already in use. Choose a different title.");
     if (!current.error && current.data && current.data.published === published && current.data.sort_order === item.sort && sameJson(current.data.payload, payload)) {
       return toContent({ id: current.data.record_key, key: current.data.record_key, module: "blog", payload: current.data.payload, published: current.data.published, sort_order: current.data.sort_order, version: current.data.version });
     }
@@ -189,6 +232,19 @@ export async function writeMedia(actor: string, asset: MediaAsset, expectedVersi
     ? await client.from("website_gallery_media").select("public_url").eq("id", id).maybeSingle()
     : { data: null, error: null };
   if (previousError) return fail("The existing media asset could not be verified. Reload and try again.");
+  if (previous && (asset.archived || previous.public_url !== asset.src)) {
+    const { data: contentRows, error: contentError } = await client
+      .from("website_content")
+      .select("module,payload");
+    if (contentError || !Array.isArray(contentRows)) return fail("Media usage could not be verified. Reload and try again.");
+    const blogReference = contentRows.some((row) =>
+      row.module === "blog" && (containsString(row.payload, id) || containsString(row.payload, previous.public_url)),
+    );
+    const urlReference = previous.public_url !== asset.src && contentRows.some((row) => containsString(row.payload, previous.public_url));
+    if (blogReference || urlReference) {
+      return fail("This media asset is in use by Blog content. Replace its references before archiving or changing its URL.");
+    }
+  }
   const storagePath = marketingStoragePath(asset.src) ?? asset.src.split("/").slice(-2).join("/");
   const { data, error } = await client.rpc("website_media_upsert", { p_actor: actor, p_id: id, p_storage_path: storagePath, p_public_url: asset.src, p_name: asset.name, p_alt: asset.alt, p_caption: asset.caption, p_source: asset.source, p_permission: asset.permission, p_archived: asset.archived, p_expected_version: expectedVersion ?? null });
   if (error) return fail(error.code === "40001" ? "Media changed or is currently in use. Reload and try again." : "Media could not be saved.");
@@ -223,8 +279,9 @@ export async function deleteMedia(id: string, knownUses: string[] = []) {
     client.from("services").select("public_image"),
   ]);
   if (contentReferences.error || serviceReferences.error) return fail("Media usage could not be verified. Reload and try again.");
-  const referenced = (contentReferences.data ?? []).some((row) => containsString(row.payload, asset.public_url))
-    || (serviceReferences.data ?? []).some((row) => row.public_image === asset.public_url);
+  const referenced = (contentReferences.data ?? []).some((row) =>
+    containsString(row.payload, id) || containsString(row.payload, asset.public_url),
+  ) || (serviceReferences.data ?? []).some((row) => row.public_image === asset.public_url);
   if (referenced) return fail("This media asset is in use on the website. Remove its references before deleting it.");
 
   const { data: deleted, error: deleteError } = await client

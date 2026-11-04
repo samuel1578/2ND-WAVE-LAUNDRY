@@ -203,6 +203,10 @@ export async function generateMetadata({
       description: post.summary,
       path: `/blog/${post.slug}`,
       type: "article",
+      image: post.image || undefined,
+      imageAlt: post.alt || undefined,
+      publishedTime: post.publishedAt,
+      modifiedTime: post.modifiedAt,
     });
   }
 
@@ -468,7 +472,11 @@ export default async function Page({
             { name: "Blog", path: "/blog" },
             { name: post.title, path: `/blog/${post.slug}` },
           ]),
-          articleSchema(post),
+          articleSchema({
+            ...post,
+            datePublished: post.publishedAt,
+            dateModified: post.modifiedAt,
+          }),
         ];
       } else {
         notFound();

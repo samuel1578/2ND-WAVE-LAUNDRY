@@ -125,7 +125,63 @@ export async function saveLiveGalleryWorkspace(
 export async function saveLiveContent(item: ContentItem, action: "draft" | "publish" | "archive" | "unpublish") {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
-  if (!item || item.module !== "Blog" || item.body.length > 50000) throw new Error("Article is invalid.");
+  const rawBlocks: unknown = item?.contentBlocks;
+  const rawAuthor: unknown = item?.author;
+  const validAuthor = rawAuthor === undefined || (
+    !!rawAuthor && typeof rawAuthor === "object" && !Array.isArray(rawAuthor) &&
+    typeof (rawAuthor as Record<string, unknown>).name === "string" &&
+    ["bio", "image", "imageAlt", "imageMediaId"].every((key) => {
+      const value = (rawAuthor as Record<string, unknown>)[key];
+      return value === undefined || typeof value === "string";
+    })
+  );
+  const validBlocks = rawBlocks === undefined || (
+    Array.isArray(rawBlocks) &&
+    rawBlocks.length <= 100 &&
+    rawBlocks.every((block: unknown) => {
+      if (!block || typeof block !== "object" || Array.isArray(block)) return false;
+      const value = block as Record<string, unknown>;
+      const validOrder = typeof value.order === "number" && Number.isFinite(value.order);
+      return value.type === "text"
+        ? typeof value.text === "string" && validOrder
+        : value.type === "image" &&
+        typeof value.mediaId === "string" &&
+        typeof value.src === "string" &&
+        typeof value.alt === "string" &&
+        typeof value.caption === "string" &&
+        validOrder;
+    })
+  );
+  if (
+    !item ||
+    !validAuthor ||
+    !validBlocks ||
+    item.module !== "Blog" ||
+    typeof item.title !== "string" ||
+    typeof item.slug !== "string" ||
+    typeof item.summary !== "string" ||
+    typeof item.body !== "string" ||
+    typeof item.image !== "string" ||
+    typeof item.alt !== "string" ||
+    item.body.length > 50000 ||
+    JSON.stringify(item).length > 80000
+  ) {
+    throw new Error("Article is invalid.");
+  }
+  if (action === "publish") {
+    if (!item.title.trim() || !item.slug.trim() || !item.summary.trim() || !item.body.trim()) {
+      throw new Error("Complete the title, slug, summary and article body before publishing.");
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.slug)) {
+      throw new Error("Use lowercase letters, numbers and hyphens for the article slug.");
+    }
+    if (item.image && !item.alt.trim()) {
+      throw new Error("Add alt text to the featured image before publishing.");
+    }
+    if (item.contentBlocks?.some((block) => block.type === "image" && !block.alt.trim())) {
+      throw new Error("Add alt text to every article image before publishing.");
+    }
+  }
   consumeWebsiteWrite(admin.userId);
   const saved = await writeContent(admin.userId, item, action);
   revalidatePublicPaths(

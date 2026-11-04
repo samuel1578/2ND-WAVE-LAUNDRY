@@ -1,3 +1,4 @@
+import type { BlogAuthor, BlogContentBlock } from "@/lib/contracts";
 import type { Photo, branches, services } from "../content";
 import {
   DEFAULT_PICKUP_END,
@@ -27,7 +28,7 @@ export const CONTENT_COLUMNS =
 
 /** Blog index: no `payload.body` and no full payload blob. */
 export const BLOG_LIST_COLUMNS =
-  "id,record_key,published,sort_order,version,title:payload->>title,slug:payload->>slug,summary:payload->>summary,image:payload->>image,alt:payload->>alt";
+  "id,record_key,published,sort_order,version,title:payload->>title,slug:payload->>slug,summary:payload->>summary,image:payload->>image,alt:payload->>alt,author:payload->author,publishedAt:payload->>publishedAt,modifiedAt:payload->>modifiedAt";
 
 /** Gallery media: only the columns a tile needs. Archived rows are filtered in SQL. */
 export const GALLERY_MEDIA_COLUMNS = "id,public_url,alt";
@@ -171,6 +172,9 @@ export type BlogListRow = {
   summary: string | null;
   image: string | null;
   alt: string | null;
+  author?: unknown;
+  publishedAt?: string | null;
+  modifiedAt?: string | null;
 };
 
 /** A blog index card. Deliberately has no `body` property. */
@@ -181,11 +185,17 @@ export type PublicBlogSummary = {
   summary: string;
   image: string;
   alt: string;
+  author?: BlogAuthor;
+  publishedAt?: string;
   order: number;
   version: number;
 };
 
-export type PublicBlogPost = PublicBlogSummary & { body: string };
+export type PublicBlogPost = PublicBlogSummary & {
+  body: string;
+  contentBlocks?: BlogContentBlock[];
+  modifiedAt?: string;
+};
 
 /**
  * Map a services row to a public card.
@@ -318,7 +328,50 @@ export function dedupeGalleryPhotos(
   return unique;
 }
 
+function mapBlogAuthor(value: unknown): BlogAuthor | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const author = value as Record<string, unknown>;
+  const name = text(author.name).trim();
+  const bio = text(author.bio).trim();
+  const image = text(author.image);
+  const imageAlt = text(author.imageAlt);
+  const imageMediaId = text(author.imageMediaId);
+  if (!name && !bio && !image) return undefined;
+  return {
+    name,
+    ...(bio ? { bio } : {}),
+    ...(image ? { image } : {}),
+    ...(imageAlt ? { imageAlt } : {}),
+    ...(imageMediaId ? { imageMediaId } : {}),
+  };
+}
+
+function mapBlogBlocks(value: unknown): BlogContentBlock[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const blocks = value.flatMap((entry, index): BlogContentBlock[] => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const block = entry as Record<string, unknown>;
+    const order = Number.isFinite(Number(block.order)) ? Number(block.order) : index + 1;
+    if (block.type === "text" && typeof block.text === "string") {
+      return [{ type: "text", text: block.text, order }];
+    }
+    if (block.type === "image" && typeof block.src === "string") {
+      return [{
+        type: "image",
+        mediaId: text(block.mediaId),
+        src: block.src,
+        alt: text(block.alt),
+        caption: text(block.caption),
+        order,
+      }];
+    }
+    return [];
+  });
+  return blocks.length ? blocks.sort((a, b) => a.order - b.order) : undefined;
+}
+
 export function summariseBlogRow(row: BlogListRow): PublicBlogSummary {
+  const author = mapBlogAuthor(row.author);
   return {
     id: row.record_key || row.id,
     slug: row.slug || row.record_key,
@@ -326,12 +379,18 @@ export function summariseBlogRow(row: BlogListRow): PublicBlogSummary {
     summary: row.summary ?? "",
     image: row.image ?? "",
     alt: row.alt ?? "",
+    ...(author ? { author } : {}),
+    ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
     order: row.sort_order,
     version: row.version,
   };
 }
 
 export function mapBlogPostRow(row: ContentRow): PublicBlogPost {
+  const author = mapBlogAuthor(row.payload.author);
+  const contentBlocks = mapBlogBlocks(row.payload.contentBlocks);
+  const publishedAt = text(row.payload.publishedAt);
+  const modifiedAt = text(row.payload.modifiedAt);
   return {
     id: row.record_key || row.id,
     slug: text(row.payload.slug) || row.record_key,
@@ -340,6 +399,10 @@ export function mapBlogPostRow(row: ContentRow): PublicBlogPost {
     image: text(row.payload.image),
     alt: text(row.payload.alt),
     body: text(row.payload.body),
+    ...(author ? { author } : {}),
+    ...(contentBlocks ? { contentBlocks } : {}),
+    ...(publishedAt ? { publishedAt } : {}),
+    ...(modifiedAt ? { modifiedAt } : {}),
     order: row.sort_order,
     version: row.version,
   };

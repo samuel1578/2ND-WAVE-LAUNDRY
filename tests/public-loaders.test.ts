@@ -66,10 +66,12 @@ test("services select never asks for section or public_body", () => {
   assert.ok(SERVICES_COLUMNS.includes("public_image"));
 });
 
-test("blog list select never transfers the post body", () => {
+test("blog list select projects public metadata without transferring the post body", () => {
   assert.equal(BLOG_LIST_COLUMNS.includes("payload->>body"), false);
   assert.equal(BLOG_LIST_COLUMNS.includes("payload.body"), false);
   assert.ok(BLOG_LIST_COLUMNS.includes("summary:payload->>summary"));
+  assert.ok(BLOG_LIST_COLUMNS.includes("author:payload->author"));
+  assert.ok(BLOG_LIST_COLUMNS.includes("publishedAt:payload->>publishedAt"));
 });
 
 test("blog list summary has no body property", () => {
@@ -95,6 +97,26 @@ test("blog list summary has no body property", () => {
     "title",
     "version",
   ]);
+  assert.equal("body" in summary, false);
+});
+
+test("blog list projects author and publication date while remaining body-free", () => {
+  const summary = summariseBlogRow({
+    id: "row-id",
+    record_key: "author-notes",
+    published: true,
+    sort_order: 1,
+    version: 7,
+    title: "Author notes",
+    slug: "author-notes",
+    summary: "A short summary",
+    image: "https://example.test/featured.jpg",
+    alt: "Featured image",
+    author: { name: "Sam", bio: "Writer", image: "https://example.test/profile.jpg" },
+    publishedAt: "2026-10-01T09:00:00.000Z",
+  });
+  assert.equal(summary.author?.name, "Sam");
+  assert.equal(summary.publishedAt, "2026-10-01T09:00:00.000Z");
   assert.equal("body" in summary, false);
 });
 
@@ -173,4 +195,35 @@ test("blog post mapping keeps the body for the article page", () => {
   });
   assert.equal(post.body, "Full body.");
   assert.equal(post.slug, "laundry-care");
+});
+
+test("public Blog detail maps top-level published metadata, not a nested draft", () => {
+  const post = mapBlogPostRow({
+    id: "row-id",
+    record_key: "published-post",
+    payload: {
+      title: "Published title",
+      summary: "Published summary",
+      body: "Published body",
+      image: "https://example.test/featured.jpg",
+      alt: "Featured",
+      author: { name: "Published Author", bio: "Author biography", image: "https://example.test/profile.jpg" },
+      publishedAt: "2026-10-01T09:00:00.000Z",
+      modifiedAt: "2026-11-01T09:00:00.000Z",
+      contentBlocks: [
+        { type: "text", text: "First paragraph", order: 1 },
+        { type: "image", mediaId: "media-1", src: "https://example.test/inline.jpg", alt: "Inline image", caption: "Caption", order: 2 },
+      ],
+      draft: { title: "Private draft title", body: "Private draft body" },
+    },
+    sort_order: 1,
+    version: 8,
+    published: true,
+  });
+  assert.equal(post.title, "Published title");
+  assert.equal(post.body, "Published body");
+  assert.equal(post.author?.name, "Published Author");
+  assert.equal(post.publishedAt, "2026-10-01T09:00:00.000Z");
+  assert.equal(post.modifiedAt, "2026-11-01T09:00:00.000Z");
+  assert.deepEqual(post.contentBlocks?.map((block) => block.type), ["text", "image"]);
 });

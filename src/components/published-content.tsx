@@ -21,6 +21,44 @@ import type {
   PublicBlogSummary,
 } from "@/lib/website/public-queries";
 import { BrandedText } from "@/lib/brand-highlight";
+import { BlogBody } from "./blog-body";
+
+function displayDate(value?: string): string {
+  if (!value || Number.isNaN(Date.parse(value))) return "";
+  return new Intl.DateTimeFormat("en-GH", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
+
+function BlogByline({
+  author,
+  publishedAt,
+}: {
+  author?: PublicBlogSummary["author"];
+  publishedAt?: string;
+}) {
+  const date = displayDate(publishedAt);
+  if (!author?.name && !date) return null;
+  return (
+    <div className="blog-byline">
+      {author?.image && (
+        <Picture
+          className="blog-byline__image"
+          photo={{ src: author.image, alt: author.imageAlt || author.name }}
+          sizes="48px"
+        />
+      )}
+      <div>
+        {author?.name && <span className="blog-byline__name">{author.name}</span>}
+        {date && <time dateTime={publishedAt}>{date}</time>}
+      </div>
+    </div>
+  );
+}
+
 /** Blog index. Posts are supplied by the server loader (no body field). */
 export function PublishedBlog({ posts = [] }: { posts?: PublicBlogSummary[] }) {
   const store = useDemoStore();
@@ -33,6 +71,8 @@ export function PublishedBlog({ posts = [] }: { posts?: PublicBlogSummary[] }) {
       summary: c.published!.summary,
       image: c.published!.image,
       alt: c.published!.alt,
+      author: c.published!.author,
+      publishedAt: c.published!.publishedAt,
       order: c.sort,
       version: c.version,
     }));
@@ -41,10 +81,18 @@ export function PublishedBlog({ posts = [] }: { posts?: PublicBlogSummary[] }) {
     <div className="grid three">
       {list.map((p) => (
         <Link href={`/blog/${p.slug}`} className="service-card" key={p.id}>
-          <Picture photo={p.image ? { src: p.image, alt: p.alt } : undefined} />
+          {p.image ? (
+            <Picture
+              photo={{ src: p.image, alt: p.alt }}
+              sizes="(max-width: 700px) 100vw, (max-width: 1100px) 50vw, 33vw"
+            />
+          ) : (
+            <div className="blog-card-image-placeholder" aria-hidden="true" />
+          )}
           <div className="card-body">
             <h2>{p.title}</h2>
             <p>{p.summary}</p>
+            <BlogByline author={p.author} publishedAt={p.publishedAt} />
             <span className="text-link">Read Article ↗</span>
           </div>
         </Link>
@@ -73,17 +121,23 @@ export function PublishedArticle({
   const demoPost = demoMode
     ? store.content.find((c) => c.module === "Blog" && c.published?.slug === slug)?.published
     : undefined;
-  const post =
-    loadedPost ??
-    (demoPost
-      ? {
-          title: demoPost.title,
-          summary: demoPost.summary,
-          image: demoPost.image,
-          alt: demoPost.alt,
-          body: demoPost.body,
-        }
-      : undefined);
+  const post: PublicBlogPost | undefined = loadedPost ?? (demoPost
+    ? {
+      id: demoPost.slug,
+      slug: demoPost.slug,
+      title: demoPost.title,
+      summary: demoPost.summary,
+      image: demoPost.image,
+      alt: demoPost.alt,
+      body: demoPost.body,
+      author: demoPost.author,
+      contentBlocks: demoPost.contentBlocks,
+      publishedAt: demoPost.publishedAt,
+      modifiedAt: demoPost.modifiedAt,
+      order: 0,
+      version: 0,
+    }
+    : undefined);
   if (!post)
     return (
       <Empty
@@ -104,14 +158,14 @@ export function PublishedArticle({
       <p className="lead">
         <BrandText text={post.summary} />
       </p>
+      <BlogByline author={post.author} publishedAt={post.publishedAt} />
+      {post.author?.bio && <p className="blog-author-bio">{post.author.bio}</p>}
       <Picture
         photo={post.image ? { src: post.image, alt: post.alt } : undefined}
+        priority
+        sizes="(max-width: 700px) 100vw, 760px"
       />
-      {post.body.split("\n\n").map((p, i) => (
-        <p key={i}>
-          <BrandText text={p} />
-        </p>
-      ))}
+      <BlogBody body={post.body} contentBlocks={post.contentBlocks} />
       <Action href="/services" secondary>
         Explore Services
       </Action>
