@@ -4,6 +4,7 @@ import type {
     BlogAuthor,
     ContentItem,
 } from "@/lib/contracts";
+import { normalizeBlogBlocks } from "./blog-blocks";
 
 export type BlogSaveAction = "draft" | "publish" | "archive" | "unpublish";
 export type BlogPayload = BlogArticleSnapshot & {
@@ -26,19 +27,7 @@ function cleanAuthor(author: BlogAuthor | undefined): BlogAuthor | undefined {
 }
 
 function orderedBlocks(blocks: BlogContentBlock[] | undefined): BlogContentBlock[] | undefined {
-    if (!blocks?.length) return undefined;
-    return blocks.map((block, index) =>
-        block.type === "text"
-            ? { type: "text", text: block.text, order: index + 1 }
-            : {
-                type: "image",
-                mediaId: block.mediaId,
-                src: block.src,
-                alt: block.alt,
-                caption: block.caption,
-                order: index + 1,
-            },
-    );
+    return normalizeBlogBlocks(blocks);
 }
 
 function snapshotFromItem(item: ContentItem): BlogArticleSnapshot {

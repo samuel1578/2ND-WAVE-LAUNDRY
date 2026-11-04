@@ -1,5 +1,6 @@
 import type { BlogAuthor, BlogContentBlock } from "@/lib/contracts";
 import type { Photo, branches, services } from "../content";
+import { normalizeBlogBlocks } from "./blog-blocks";
 import {
   DEFAULT_PICKUP_END,
   DEFAULT_PICKUP_START,
@@ -347,27 +348,7 @@ function mapBlogAuthor(value: unknown): BlogAuthor | undefined {
 }
 
 function mapBlogBlocks(value: unknown): BlogContentBlock[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const blocks = value.flatMap((entry, index): BlogContentBlock[] => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-    const block = entry as Record<string, unknown>;
-    const order = Number.isFinite(Number(block.order)) ? Number(block.order) : index + 1;
-    if (block.type === "text" && typeof block.text === "string") {
-      return [{ type: "text", text: block.text, order }];
-    }
-    if (block.type === "image" && typeof block.src === "string") {
-      return [{
-        type: "image",
-        mediaId: text(block.mediaId),
-        src: block.src,
-        alt: text(block.alt),
-        caption: text(block.caption),
-        order,
-      }];
-    }
-    return [];
-  });
-  return blocks.length ? blocks.sort((a, b) => a.order - b.order) : undefined;
+  return normalizeBlogBlocks(value);
 }
 
 export function summariseBlogRow(row: BlogListRow): PublicBlogSummary {

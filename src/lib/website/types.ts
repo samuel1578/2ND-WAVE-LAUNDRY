@@ -1,5 +1,6 @@
 import type { BlogAuthor, BlogContentBlock, ContentItem, FaqItem, GalleryCollection, GalleryPlacement, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
 import { branches, contact, faqs, photos, services } from "@/lib/content";
+import { normalizeBlogBlocks } from "./blog-blocks";
 
 export type WebsiteRow = { id: string; key: string; module: string; payload: Record<string, unknown>; published: boolean; sort_order: number; version: number };
 export type PublicSettings = Pick<Settings, "email" | "phone" | "whatsapp" | "instagram" | "tiktok" | "facebook" | "newsletter" | "version"> & { acceptBookings: boolean; start: string; end: string; cutoff: string };
@@ -39,28 +40,7 @@ function storedBlogAuthor(value: unknown): BlogAuthor | undefined {
 }
 
 function storedBlogBlocks(value: unknown): BlogContentBlock[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const blocks = value.flatMap((entry, index): BlogContentBlock[] => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-    const block = entry as Record<string, unknown>;
-    const numericOrder = Number(block.order);
-    const order = Number.isFinite(numericOrder) ? numericOrder : index + 1;
-    if (block.type === "text" && typeof block.text === "string") {
-      return [{ type: "text", text: block.text, order }];
-    }
-    if (block.type === "image" && typeof block.src === "string") {
-      return [{
-        type: "image",
-        mediaId: typeof block.mediaId === "string" ? block.mediaId : "",
-        src: block.src,
-        alt: typeof block.alt === "string" ? block.alt : "",
-        caption: typeof block.caption === "string" ? block.caption : "",
-        order,
-      }];
-    }
-    return [];
-  });
-  return blocks.length ? blocks.sort((a, b) => a.order - b.order) : undefined;
+  return normalizeBlogBlocks(value);
 }
 
 export function toContent(row: WebsiteRow): ContentItem {

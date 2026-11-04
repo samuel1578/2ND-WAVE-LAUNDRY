@@ -45,10 +45,20 @@ export type BlogAuthor = {
   imageAlt?: string;
   imageMediaId?: string;
 };
+export type BlogTextStyle =
+  | "paragraph"
+  | "heading2"
+  | "heading3"
+  | "bulleted"
+  | "numbered";
+export type BlogImageAlign = "left" | "center" | "right";
+export type BlogImageSize = "small" | "medium" | "large" | "full";
 export type BlogTextBlock = {
   type: "text";
   text: string;
   order: number;
+  /** Block formatting; a missing style renders as a paragraph. */
+  style?: BlogTextStyle;
 };
 export type BlogImageBlock = {
   type: "image";
@@ -57,6 +67,9 @@ export type BlogImageBlock = {
   alt: string;
   caption: string;
   order: number;
+  /** Inline image placement; missing values fall back to centred and full width. */
+  align?: BlogImageAlign;
+  size?: BlogImageSize;
 };
 export type BlogContentBlock = BlogTextBlock | BlogImageBlock;
 export type BlogArticleSnapshot = {

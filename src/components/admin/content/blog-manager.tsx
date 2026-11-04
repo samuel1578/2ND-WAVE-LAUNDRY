@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Empty, Picture } from "@/components/ui";
 import { Field, TextField } from "@/components/forms/controls";
 import { Dialog } from "@/components/dialog";
@@ -8,12 +8,14 @@ import { UnsavedGuard } from "../unsaved";
 import { deleteContent, saveContent, useDemoStore } from "@/lib/mock-store";
 import type { BlogAuthor, BlogContentBlock, ContentItem, MediaAsset } from "@/lib/contracts";
 import { ModuleShell } from "./shared/module-shell";
-import { MediaPicker } from "./shared/media-picker";
+import { MediaLibraryPicker } from "./shared/media-library-picker";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
 import { saveLiveContent } from "@/lib/website/actions";
 import { slugify } from "@/lib/content";
 import { BlogBody } from "@/components/blog-body";
+import { BlogEditor, type BlogEditorHandle } from "./blog-editor";
+import { blogBodyFromBlocks } from "@/lib/website/blog-blocks";
 
 function editorBlocks(item?: ContentItem): BlogContentBlock[] {
   if (item?.contentBlocks?.length) {
@@ -124,6 +126,8 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [mediaTarget, setMediaTarget] = useState<MediaTarget | null>(null);
+  const [uploadedMedia, setUploadedMedia] = useState<MediaAsset[]>([]);
+  const editorRef = useRef<BlogEditorHandle | null>(null);
   const [preview, setPreview] = useState(false);
   const [confirm, setConfirm] = useState<"publish" | "archive" | "delete" | null>(null);
   const [deleted, setDeleted] = useState(false);
@@ -132,7 +136,13 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
   const archived = form.status === "Archived";
   const showPublish = !published || dirty || form.status === "Draft";
   const canSaveDraft = dirty || !form.id;
-  const media = (demoMode ? store.media : mediaData.items).filter((asset) => !asset.archived);
+  const libraryMedia = demoMode ? store.media : mediaData.items;
+  const media = [
+    ...uploadedMedia,
+    ...libraryMedia.filter(
+      (asset) => !uploadedMedia.some((extra) => extra.id === asset.id),
+    ),
+  ].filter((asset) => !asset.archived);
 
   function change(key: keyof ContentItem, value: unknown) {
     setForm((current) => ({
@@ -153,34 +163,15 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
 
   function changeBlocks(nextBlocks: BlogContentBlock[]) {
     const contentBlocks = orderBlocks(nextBlocks);
-    const body = contentBlocks
-      .filter((block): block is Extract<BlogContentBlock, { type: "text" }> => block.type === "text")
-      .map((block) => block.text)
-      .join("\n\n");
-    setForm((current) => ({ ...current, contentBlocks, body }));
+    setForm((current) => ({
+      ...current,
+      contentBlocks,
+      body: blogBodyFromBlocks(contentBlocks),
+    }));
     setSuccess("");
   }
 
-  function updateBlock(index: number, patch: Partial<BlogContentBlock>) {
-    const blocks = [...(form.contentBlocks ?? editorBlocks(form))];
-    blocks[index] = { ...blocks[index], ...patch } as BlogContentBlock;
-    changeBlocks(blocks);
-  }
-
-  function moveBlock(index: number, direction: -1 | 1) {
-    const blocks = [...(form.contentBlocks ?? editorBlocks(form))];
-    const next = index + direction;
-    if (next < 0 || next >= blocks.length) return;
-    [blocks[index], blocks[next]] = [blocks[next], blocks[index]];
-    changeBlocks(blocks);
-  }
-
-  function removeBlock(index: number) {
-    const blocks = (form.contentBlocks ?? editorBlocks(form)).filter((_, i) => i !== index);
-    changeBlocks(blocks.length ? blocks : [{ type: "text", text: "", order: 1 }]);
-  }
-
-  function pickMedia(asset: MediaAsset) {
+  function pickMedia(asset: MediaAsset, keepOpen = false) {
     if (mediaTarget === "featured") {
       setForm((current) => ({ ...current, image: asset.src, alt: asset.alt, imageMediaId: asset.id }));
     } else if (mediaTarget === "author") {
@@ -194,13 +185,16 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
         },
       }));
     } else {
-      changeBlocks([
-        ...(form.contentBlocks ?? editorBlocks(form)),
-        { type: "image", mediaId: asset.id, src: asset.src, alt: asset.alt, caption: asset.caption, order: (form.contentBlocks?.length ?? 0) + 1 },
-      ]);
+      editorRef.current?.insertImage(asset);
     }
-    setMediaTarget(null);
+    if (!keepOpen) setMediaTarget(null);
     setSuccess("");
+  }
+
+  function handleUploadedMedia(asset: MediaAsset) {
+    setUploadedMedia((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+    pickMedia(asset, true);
+    if (!demoMode) void mediaData.refetch();
   }
 
   async function save(action: "draft" | "publish" | "archive" | "unpublish") {
@@ -292,53 +286,17 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
           {!item && <small>Website link: /blog/{form.slug || "your-article-name"} (created from the title)</small>}
           {field("summary", "Summary *")}
           <section className="form-stack">
-            <h2>Article body *</h2>
-            <small>Arrange text and Media Library images in reading order. HTML is not executed.</small>
-            {(form.contentBlocks ?? editorBlocks(form)).map((block, index) => (
-              <div className="blog-editor-block" key={`block-${index}`}>
-                <div className="blog-editor-block__heading">
-                  <strong>{block.type === "text" ? "Text" : "Image"} block {index + 1}</strong>
-                  <div className="actions">
-                    <button type="button" className="button secondary" disabled={index === 0} onClick={() => moveBlock(index, -1)} aria-label={`Move block ${index + 1} up`}>Move up</button>
-                    <button type="button" className="button secondary" disabled={index === (form.contentBlocks?.length ?? 1) - 1} onClick={() => moveBlock(index, 1)} aria-label={`Move block ${index + 1} down`}>Move down</button>
-                    <button type="button" className="button danger" onClick={() => removeBlock(index)}>Remove</button>
-                  </div>
-                </div>
-                {block.type === "text" ? (
-                  <Field id={`article-block-${index}`} label="Text">
-                    <textarea
-                      id={`article-block-${index}`}
-                      value={block.text}
-                      onChange={(event) => updateBlock(index, { text: event.target.value })}
-                      rows={6}
-                      maxLength={50000}
-                    />
-                  </Field>
-                ) : (
-                  <div className="blog-editor-image">
-                    <Picture photo={{ src: block.src, alt: block.alt }} sizes="(max-width: 700px) 100vw, 760px" />
-                    <TextField
-                      id={`article-block-${index}-alt`}
-                      label="Image alt text *"
-                      value={block.alt}
-                      maxLength={1000}
-                      onChange={(event) => updateBlock(index, { alt: event.target.value })}
-                    />
-                    <TextField
-                      id={`article-block-${index}-caption`}
-                      label="Caption (optional)"
-                      value={block.caption}
-                      maxLength={1000}
-                      onChange={(event) => updateBlock(index, { caption: event.target.value })}
-                    />
-                  </div>
-                )}
-              </div>
-            ))}
-            <div className="actions">
-              <button type="button" className="button secondary" onClick={() => changeBlocks([...(form.contentBlocks ?? editorBlocks(form)), { type: "text", text: "", order: (form.contentBlocks?.length ?? 0) + 1 }])}>Add text</button>
-              <button type="button" className="button secondary" onClick={() => setMediaTarget("content")}>Add image</button>
-            </div>
+            <h2>Article body</h2>
+            <BlogEditor
+              ref={editorRef}
+              blocks={form.contentBlocks ?? editorBlocks(form)}
+              onChange={changeBlocks}
+              onRequestImage={() => setMediaTarget("content")}
+            />
+            <small>
+              The featured image is optional and separate from the body. Images inserted into the
+              canvas appear only where you place them, and HTML is never executed.
+            </small>
           </section>
           <small>Newer articles appear first on the blog page after publishing.</small>
         </div>
@@ -393,15 +351,18 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
           </section>
         </div>
       </form>
-      <MediaPicker
+      <MediaLibraryPicker
         open={!!mediaTarget}
-        title={mediaTarget === "author" ? "Select Author Profile Image" : mediaTarget === "content" ? "Add Article Image" : "Select Featured Image"}
+        title={mediaTarget === "author" ? "Select Author Profile Image" : mediaTarget === "content" ? "Insert Article Image" : "Select Featured Image"}
+        selectLabel={mediaTarget === "author" ? "Use as profile image" : mediaTarget === "content" ? "Insert image" : "Use as featured image"}
         assets={media}
         loading={!demoMode && mediaData.loading}
         error={!demoMode ? mediaData.error : ""}
         onRetry={() => void mediaData.refetch()}
-        onPick={pickMedia}
+        onSelect={(asset) => pickMedia(asset)}
+        onUploaded={handleUploadedMedia}
         onClose={() => setMediaTarget(null)}
+        insertOnUpload={mediaTarget === "content"}
       />
       <Dialog open={preview} onClose={() => setPreview(false)} title="Article preview">
         <article className="article blog-preview">

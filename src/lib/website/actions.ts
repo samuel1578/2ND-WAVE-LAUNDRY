@@ -11,6 +11,7 @@ import type { MediaAsset } from "@/lib/contracts";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { validatePromotionServiceSlug } from "./promotion-service-validation";
+import { isBlogImageAlign, isBlogImageSize, isBlogTextStyle } from "./blog-blocks";
 import { settingsForWrite } from "./settings-validation";
 import { assertWebsiteWritesEnabled, consumeWebsiteWrite } from "./write-guard";
 import { revalidatePublicPaths, writeAndRevalidate } from "./revalidation";
@@ -142,14 +143,19 @@ export async function saveLiveContent(item: ContentItem, action: "draft" | "publ
       if (!block || typeof block !== "object" || Array.isArray(block)) return false;
       const value = block as Record<string, unknown>;
       const validOrder = typeof value.order === "number" && Number.isFinite(value.order);
+      const validStyle = value.style === undefined || isBlogTextStyle(value.style);
+      const validAlign = value.align === undefined || isBlogImageAlign(value.align);
+      const validSize = value.size === undefined || isBlogImageSize(value.size);
       return value.type === "text"
-        ? typeof value.text === "string" && validOrder
+        ? typeof value.text === "string" && validOrder && validStyle
         : value.type === "image" &&
         typeof value.mediaId === "string" &&
         typeof value.src === "string" &&
         typeof value.alt === "string" &&
         typeof value.caption === "string" &&
-        validOrder;
+        validOrder &&
+        validAlign &&
+        validSize;
     })
   );
   if (
