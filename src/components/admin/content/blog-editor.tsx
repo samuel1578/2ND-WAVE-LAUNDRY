@@ -14,11 +14,19 @@ import type {
   BlogImageBlock,
   BlogImageSize,
   BlogTextStyle,
+  BlogTextMark,
+  BlogTextSegment,
   MediaAsset,
 } from "@/lib/contracts";
 import {
+  BLOG_FONT_FAMILIES,
+  BLOG_FONT_SIZES,
   isBlogImageAlign,
   isBlogImageSize,
+  isBlogFontFamily,
+  isBlogFontSize,
+  isSafeBlogColor,
+  safeBlogLink,
 } from "@/lib/website/blog-blocks";
 
 const TEXT_STYLES: { style: BlogTextStyle; label: string }[] = [
@@ -41,6 +49,8 @@ const SIZES: { size: BlogImageSize; label: string }[] = [
   { size: "large", label: "Large" },
   { size: "full", label: "Full width" },
 ];
+const TEXT_COLORS = ["#102B51", "#00609A", "#146C40", "#BA1A1A", "#7C3AED"] as const;
+const HIGHLIGHT_COLORS = ["#FFF3A3", "#CDEBFF", "#D9F5D0", "#FFD6D6", "#E9D5FF"] as const;
 
 const BLOCK_TAGS = new Set([
   "P",
@@ -69,6 +79,45 @@ function escapeHtml(value: string): string {
 
 function textLinesHtml(text: string): string {
   return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+function marksHtml(marks: BlogTextMark | undefined): string {
+  if (!marks) return "";
+  const styles = [
+    marks.fontSize ? `font-size:${marks.fontSize}px` : "",
+    marks.color ? `color:${marks.color}` : "",
+    marks.highlight ? `background-color:${marks.highlight}` : "",
+    marks.fontFamily ? `font-family:${marks.fontFamily}` : "",
+  ].filter(Boolean).join(";");
+  return [
+    marks.bold ? "<strong>" : "",
+    marks.italic ? "<em>" : "",
+    marks.underline ? "<u>" : "",
+    marks.strike ? "<s>" : "",
+    styles ? `<span style="${styles}">` : "",
+  ].join("");
+}
+function marksClose(marks: BlogTextMark | undefined): string {
+  if (!marks) return "";
+  return [
+    marks.fontFamily || marks.fontSize || marks.color || marks.highlight ? "</span>" : "",
+    marks.strike ? "</s>" : "",
+    marks.underline ? "</u>" : "",
+    marks.italic ? "</em>" : "",
+    marks.bold ? "</strong>" : "",
+  ].join("");
+}
+function segmentHtml(segment: BlogTextSegment): string {
+  const text = textLinesHtml(segment.text);
+  const body = `${marksHtml(segment.marks)}${text}${marksClose(segment.marks)}`;
+  return segment.marks?.link
+    ? `<a href="${escapeHtml(segment.marks.link)}" target="_blank" rel="noopener noreferrer">${body}</a>`
+    : body;
+}
+function textBlockHtml(block: Extract<BlogContentBlock, { type: "text" }>): string {
+  return block.segments?.length
+    ? block.segments.map(segmentHtml).join("")
+    : textLinesHtml(block.text);
 }
 
 function figureHtml(block: BlogImageBlock): string {
@@ -105,14 +154,14 @@ function blocksToHtml(blocks: BlogContentBlock[]): string {
       while (index < blocks.length) {
         const item = blocks[index];
         if (item.type !== "text" || (item.style ?? "paragraph") !== style) break;
-        items.push(`<li>${item.text.trim() ? textLinesHtml(item.text) : "<br>"}</li>`);
+        items.push(`<li>${item.text.trim() ? textBlockHtml(item) : "<br>"}</li>`);
         index += 1;
       }
       html += `<${tag}>${items.join("")}</${tag}>`;
       continue;
     }
     const tag = style === "heading2" ? "h2" : style === "heading3" ? "h3" : "p";
-    html += `<${tag}>${block.text.trim() ? textLinesHtml(block.text) : "<br>"}</${tag}>`;
+    html += `<${tag}>${block.text.trim() ? textBlockHtml(block) : "<br>"}</${tag}>`;
     index += 1;
   }
   return html;
@@ -143,6 +192,58 @@ function imageBlockFromElement(element: Element, order: number): BlogImageBlock 
     ...(isBlogImageAlign(align) ? { align } : {}),
     ...(isBlogImageSize(size) ? { size } : {}),
   };
+}
+
+function marksFromElement(element: Element): BlogTextMark | undefined {
+  const marks: BlogTextMark = {};
+  if (element.closest("strong,b")) marks.bold = true;
+  if (element.closest("em,i")) marks.italic = true;
+  if (element.closest("u")) marks.underline = true;
+  if (element.closest("s,del,strike")) marks.strike = true;
+  const styled = element.closest("[style]") as HTMLElement | null;
+  const style = styled?.style;
+  const size = Number.parseInt(style?.fontSize ?? "", 10);
+  const color = style?.color;
+  const highlight = style?.backgroundColor;
+  const family = style?.fontFamily?.replace(/^["']|["']$/g, "");
+  if (isBlogFontSize(size)) marks.fontSize = size;
+  const cssColor = (value: string | undefined) => {
+    if (value && /^#[0-9a-f]{6}$/i.test(value)) return value;
+    const match = value?.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+    if (!match || match.some((part, index) => index > 0 && Number(part) > 255)) return undefined;
+    return `#${match.slice(1).map((part) => Number(part).toString(16).padStart(2, "0")).join("")}`;
+  };
+  const safeColor = cssColor(color);
+  const safeHighlight = cssColor(highlight);
+  if (safeColor) marks.color = safeColor;
+  if (safeHighlight) marks.highlight = safeHighlight;
+  if (isBlogFontFamily(family)) marks.fontFamily = family;
+  const link = element.closest("a")?.getAttribute("href");
+  if (safeBlogLink(link)) marks.link = link;
+  return Object.keys(marks).length ? marks : undefined;
+}
+
+function sameMarks(a: BlogTextMark | undefined, b: BlogTextMark | undefined) {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+}
+
+function appendSegment(out: BlogTextSegment[], text: string, marks: BlogTextMark | undefined) {
+  if (!text) return;
+  const previous = out[out.length - 1];
+  if (previous && sameMarks(previous.marks, marks)) previous.text += text;
+  else out.push({ text, ...(marks ? { marks } : {}) });
+}
+
+function collectInline(nodes: Node[], out: BlogTextSegment[]) {
+  for (const node of nodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      appendSegment(out, node.textContent ?? "", marksFromElement(node.parentElement ?? document.body));
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
+      if (element.tagName === "BR") appendSegment(out, "\n", marksFromElement(element));
+      else collectInline(Array.from(element.childNodes), out);
+    }
+  }
 }
 
 function collectList(element: Element, out: BlogContentBlock[]) {
@@ -186,18 +287,20 @@ function collectElement(element: Element, out: BlogContentBlock[]) {
  * text/image/text blocks in order.
  */
 function collectNodes(nodes: Node[], out: BlogContentBlock[], style: BlogTextStyle) {
-  let buffer = "";
+  let buffer: BlogTextSegment[] = [];
   const flush = (force: boolean) => {
-    if (!buffer.trim() && !force) {
-      buffer = "";
+    const text = buffer.map((segment) => segment.text).join("");
+    if (!text.trim() && !force) {
+      buffer = [];
       return;
     }
-    out.push(textBlock(buffer.replace(/\u00a0/g, " "), style, out.length + 1));
-    buffer = "";
+    const segments = buffer.map((segment) => ({ ...segment, text: segment.text.replace(/\u00a0/g, " ") }));
+    out.push({ ...textBlock(text.replace(/\u00a0/g, " "), style, out.length + 1), ...(segments.length ? { segments } : {}) });
+    buffer = [];
   };
   for (const node of nodes) {
     if (node.nodeType === Node.TEXT_NODE) {
-      buffer += node.textContent ?? "";
+      appendSegment(buffer, node.textContent ?? "", marksFromElement((node.parentElement ?? document.body)));
       continue;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) continue;
@@ -215,7 +318,7 @@ function collectNodes(nodes: Node[], out: BlogContentBlock[], style: BlogTextSty
       continue;
     }
     if (tag === "BR") {
-      buffer += "\n";
+      appendSegment(buffer, "\n", marksFromElement(element));
       continue;
     }
     if (BLOCK_TAGS.has(tag)) {
@@ -223,7 +326,7 @@ function collectNodes(nodes: Node[], out: BlogContentBlock[], style: BlogTextSty
       collectElement(element, out);
       continue;
     }
-    buffer += element.textContent ?? "";
+    collectInline([element], buffer);
   }
   flush(true);
 }
@@ -334,6 +437,7 @@ export const BlogEditor = forwardRef<
   const [initialHtml] = useState(() => blocksToHtml(blocks));
   const propsSignature = JSON.stringify(blocks);
   const [image, setImage] = useState<ImageSelection | null>(null);
+  const [, refreshToolbar] = useState(0);
 
   function emit() {
     const canvas = canvasRef.current;
@@ -362,6 +466,7 @@ export const BlogEditor = forwardRef<
       if (!canvas) return;
       const range = selectionInside(canvas);
       if (range) savedRange.current = range.cloneRange();
+      refreshToolbar((value) => value + 1);
     };
     document.addEventListener("selectionchange", onSelectionChange);
     return () => document.removeEventListener("selectionchange", onSelectionChange);
@@ -380,6 +485,87 @@ export const BlogEditor = forwardRef<
     const saved = savedRange.current;
     if (saved && canvas.contains(saved.startContainer)) return saved;
     return selectionInside(canvas);
+  }
+
+  function restoreRange(range: Range) {
+    const selection = document.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
+  function formatMark(mark: "bold" | "italic" | "underline" | "strike") {
+    const range = currentRange();
+    if (!range) return;
+    restoreRange(range);
+    document.execCommand(mark === "strike" ? "strikeThrough" : mark, false);
+    savedRange.current = selectionInside(canvasRef.current!)?.cloneRange() ?? null;
+    emit();
+  }
+
+  function wrapSelection(style: Partial<Record<"fontSize" | "color" | "backgroundColor" | "fontFamily", string>>) {
+    const range = currentRange();
+    const canvas = canvasRef.current;
+    if (!range || !canvas || range.collapsed) return;
+    restoreRange(range);
+    const wrapper = document.createElement("span");
+    Object.assign(wrapper.style, style);
+    wrapper.appendChild(range.extractContents());
+    range.insertNode(wrapper);
+    range.selectNodeContents(wrapper);
+    restoreRange(range);
+    savedRange.current = range.cloneRange();
+    emit();
+  }
+
+  function applyLink() {
+    const range = currentRange();
+    if (!range || range.collapsed) return;
+    const existingAnchor = (range.commonAncestorContainer instanceof Element
+      ? range.commonAncestorContainer
+      : range.commonAncestorContainer.parentElement)?.closest("a");
+    const existing = existingAnchor?.getAttribute("href") ?? "";
+    const value = window.prompt("Enter a safe http(s) or mailto link", existing);
+    if (value === null) return;
+    if (!safeBlogLink(value)) {
+      window.alert("Enter a valid http(s) or mailto URL.");
+      return;
+    }
+    const updated = currentRange();
+    if (!updated) return;
+    if (existingAnchor && existingAnchor.contains(updated.startContainer) && existingAnchor.contains(updated.endContainer)) {
+      existingAnchor.setAttribute("href", value);
+      existingAnchor.setAttribute("target", "_blank");
+      existingAnchor.setAttribute("rel", "noopener noreferrer");
+      emit();
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = value;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.appendChild(updated.extractContents());
+    updated.insertNode(anchor);
+    updated.selectNodeContents(anchor);
+    restoreRange(updated);
+    savedRange.current = updated.cloneRange();
+    emit();
+  }
+
+  function clearFormatting() {
+    const range = currentRange();
+    if (!range) return;
+    restoreRange(range);
+    document.execCommand("removeFormat", false);
+    document.execCommand("unlink", false);
+    emit();
+  }
+
+  function selectionActive(tag: string) {
+    const range = currentRange();
+    const element = range?.commonAncestorContainer instanceof Element
+      ? range.commonAncestorContainer
+      : range?.commonAncestorContainer.parentElement;
+    return !!element?.closest(tag);
   }
 
   function selectFigure(figure: HTMLElement) {
@@ -590,6 +776,87 @@ export const BlogEditor = forwardRef<
   return (
     <div className="blog-editor">
       <div className="blog-editor-toolbar" role="toolbar" aria-label="Article formatting">
+        {([
+          ["bold", "Bold", "bold"],
+          ["italic", "Italic", "italic"],
+          ["underline", "Underline", "underline"],
+          ["strikeThrough", "Strikethrough", "strike"],
+        ] as const).map(([command, label, activeTag]) => (
+          <button
+            key={command}
+            type="button"
+            className={`button secondary${selectionActive(activeTag === "strike" ? "s,del,strike" : activeTag) ? " is-active" : ""}`}
+            aria-label={label}
+            aria-pressed={selectionActive(activeTag === "strike" ? "s,del,strike" : activeTag)}
+            title={label}
+            onMouseDown={(event) => { event.preventDefault(); captureSelection(); }}
+            onClick={() => formatMark(command === "strikeThrough" ? "strike" : command as "bold" | "italic" | "underline")}
+          >
+            {label}
+          </button>
+        ))}
+        <label className="blog-editor-toolbar__select" title="Font size">
+          <span className="sr-only">Font size</span>
+          <select
+            aria-label="Font size"
+            defaultValue=""
+            onMouseDown={captureSelection}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (isBlogFontSize(value)) wrapSelection({ fontSize: `${value}px` });
+              event.currentTarget.value = "";
+            }}
+          >
+            <option value="">Font size</option>
+            {BLOG_FONT_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}
+          </select>
+        </label>
+        <label className="blog-editor-toolbar__select" title="Font family">
+          <span className="sr-only">Font family</span>
+          <select
+            aria-label="Font family"
+            defaultValue=""
+            onMouseDown={captureSelection}
+            onChange={(event) => {
+              if (isBlogFontFamily(event.target.value)) wrapSelection({ fontFamily: event.target.value });
+              event.currentTarget.value = "";
+            }}
+          >
+            <option value="">Font family</option>
+            {BLOG_FONT_FAMILIES.map((family) => <option key={family} value={family}>{family}</option>)}
+          </select>
+        </label>
+        <label className="blog-editor-toolbar__color" title="Text colour">
+          <span className="sr-only">Text colour</span>
+          <input type="color" aria-label="Text colour" defaultValue="#102b51" onMouseDown={captureSelection} onChange={(event) => wrapSelection({ color: event.target.value })} />
+        </label>
+        <label className="blog-editor-toolbar__select" title="Text colour presets">
+          <span className="sr-only">Text colour presets</span>
+          <select aria-label="Text colour presets" defaultValue="" onMouseDown={captureSelection} onChange={(event) => {
+            if (isSafeBlogColor(event.target.value)) wrapSelection({ color: event.target.value });
+            event.currentTarget.value = "";
+          }}>
+            <option value="">Colour presets</option>
+            {TEXT_COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
+          </select>
+        </label>
+        <label className="blog-editor-toolbar__color" title="Text highlighting">
+          <span className="sr-only">Text highlighting</span>
+          <input type="color" aria-label="Text highlighting" defaultValue="#fff3a3" onMouseDown={captureSelection} onChange={(event) => wrapSelection({ backgroundColor: event.target.value })} />
+        </label>
+        <label className="blog-editor-toolbar__select" title="Highlight presets">
+          <span className="sr-only">Highlight presets</span>
+          <select aria-label="Highlight presets" defaultValue="" onMouseDown={captureSelection} onChange={(event) => {
+            if (isSafeBlogColor(event.target.value)) wrapSelection({ backgroundColor: event.target.value });
+            event.currentTarget.value = "";
+          }}>
+            <option value="">Highlight presets</option>
+            {HIGHLIGHT_COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
+          </select>
+        </label>
+        <button type="button" className="button secondary" title="Insert or edit link" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={applyLink}>Link</button>
+        <button type="button" className="button secondary" title="Remove link" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={() => { const range = currentRange(); if (!range) return; restoreRange(range); document.execCommand("unlink", false); emit(); }}>Unlink</button>
+        <button type="button" className="button secondary" title="Clear inline formatting" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={clearFormatting}>Clear</button>
         {TEXT_STYLES.map((option) => (
           <button
             key={option.style}

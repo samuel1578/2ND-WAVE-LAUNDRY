@@ -2344,6 +2344,31 @@ tbody tr:hover .cell-select.branch {
   font-size: 12px;
 }
 
+.blog-editor-toolbar__select select,
+.blog-editor-toolbar__color input {
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.blog-editor-toolbar__select select {
+  padding: 0 8px;
+}
+
+.blog-editor-toolbar__color input {
+  width: 40px;
+  padding: 3px;
+  cursor: pointer;
+}
+
+.blog-editor-toolbar .button.is-active {
+  border-color: var(--ink);
+  background: var(--tint);
+  font-weight: 650;
+}
+
 .blog-editor-canvas {
   min-height: 340px;
   padding: 22px 24px;

@@ -1,10 +1,11 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Picture } from "@/components/ui";
 import { BrandText } from "@/components/brand-text";
 import type {
     BlogContentBlock,
     BlogImageBlock,
     BlogTextStyle,
+    BlogTextSegment,
 } from "@/lib/contracts";
 import { normalizeBlogBlocks } from "@/lib/website/blog-blocks";
 
@@ -20,6 +21,32 @@ function Lines({ text }: { text: string }) {
             ))}
         </>
     );
+}
+
+function Segment({ segment }: { segment: BlogTextSegment }) {
+    const marks = segment.marks ?? {};
+    const style = {
+        ...(marks.fontSize ? { fontSize: `${marks.fontSize}px` } : {}),
+        ...(marks.color ? { color: marks.color } : {}),
+        ...(marks.highlight ? { backgroundColor: marks.highlight } : {}),
+        ...(marks.fontFamily ? { fontFamily: marks.fontFamily } : {}),
+    };
+    let content: ReactNode = segment.text.split("\n").map((line, index) => (
+        <Fragment key={index}>{index > 0 && <br />}{line}</Fragment>
+    ));
+    if (marks.bold) content = <strong>{content}</strong>;
+    if (marks.italic) content = <em>{content}</em>;
+    if (marks.underline) content = <u>{content}</u>;
+    if (marks.strike) content = <s>{content}</s>;
+    if (Object.keys(style).length) content = <span style={style}>{content}</span>;
+    return marks.link ? (
+        <a href={marks.link} target="_blank" rel="noopener noreferrer">{content}</a>
+    ) : content;
+}
+
+function RichText({ block }: { block: Extract<BlogContentBlock, { type: "text" }> }) {
+    if (!block.segments?.length) return <Lines text={block.text} />;
+    return <>{block.segments.map((segment, index) => <Segment key={index} segment={segment} />)}</>;
 }
 
 function ImageBlock({ block, blockKey }: { block: BlogImageBlock; blockKey: string }) {
@@ -40,9 +67,9 @@ function ImageBlock({ block, blockKey }: { block: BlogImageBlock; blockKey: stri
 }
 
 type Row =
-    | { kind: "text"; style: Exclude<BlogTextStyle, "bulleted" | "numbered">; text: string; key: string }
+    | { kind: "text"; style: Exclude<BlogTextStyle, "bulleted" | "numbered">; block: Extract<BlogContentBlock, { type: "text" }>; key: string }
     | { kind: "image"; block: BlogImageBlock; key: string }
-    | { kind: "list"; ordered: boolean; items: { text: string; key: string }[]; key: string };
+    | { kind: "list"; ordered: boolean; items: { text: string; block: Extract<BlogContentBlock, { type: "text" }>; key: string }[]; key: string };
 
 function buildRows(blocks: BlogContentBlock[]): Row[] {
     const rows: Row[] = [];
@@ -55,7 +82,7 @@ function buildRows(blocks: BlogContentBlock[]): Row[] {
         if (style === "bulleted" || style === "numbered") {
             const ordered = style === "numbered";
             const previous = rows[rows.length - 1];
-            const item = { text: block.text, key: `text-${index}` };
+                const item = { text: block.text, key: `text-${index}`, block };
             if (previous && previous.kind === "list" && previous.ordered === ordered) {
                 previous.items.push(item);
             } else {
@@ -63,7 +90,7 @@ function buildRows(blocks: BlogContentBlock[]): Row[] {
             }
             return;
         }
-        rows.push({ kind: "text", style, text: block.text, key: `text-${index}` });
+        rows.push({ kind: "text", style, block, key: `text-${index}` });
     });
     return rows;
 }
@@ -93,7 +120,7 @@ export function BlogBody({
                 if (row.kind === "list") {
                     const items = row.items.map((item) => (
                         <li key={item.key}>
-                            {item.text.trim() ? <Lines text={item.text} /> : <br />}
+                            {item.text.trim() ? <RichText block={item.block} /> : <br />}
                         </li>
                     ));
                     return row.ordered ? (
@@ -105,22 +132,22 @@ export function BlogBody({
                 if (row.style === "heading2") {
                     return (
                         <h2 key={row.key}>
-                            {row.text.trim() ? <Lines text={row.text} /> : <br />}
+                            {row.block.text.trim() ? <RichText block={row.block} /> : <br />}
                         </h2>
                     );
                 }
                 if (row.style === "heading3") {
                     return (
                         <h3 key={row.key}>
-                            {row.text.trim() ? <Lines text={row.text} /> : <br />}
+                            {row.block.text.trim() ? <RichText block={row.block} /> : <br />}
                         </h3>
                     );
                 }
                 return (
                     <Fragment key={row.key}>
-                        {row.text.split(/\n{2,}/).map((paragraph, index) => (
+                        {row.block.text.split(/\n{2,}/).map((paragraph, index) => (
                             <p key={`${row.key}-${index}`}>
-                                {paragraph.trim() ? <Lines text={paragraph} /> : <br />}
+                                {paragraph.trim() ? <RichText block={{ ...row.block, text: paragraph }} /> : <br />}
                             </p>
                         ))}
                     </Fragment>

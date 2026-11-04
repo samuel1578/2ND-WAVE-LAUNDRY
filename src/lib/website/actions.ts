@@ -11,7 +11,7 @@ import type { MediaAsset } from "@/lib/contracts";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { validatePromotionServiceSlug } from "./promotion-service-validation";
-import { isBlogImageAlign, isBlogImageSize, isBlogTextStyle } from "./blog-blocks";
+import { isBlogImageAlign, isBlogImageSize, isBlogTextStyle, isValidBlogSegments } from "./blog-blocks";
 import { settingsForWrite } from "./settings-validation";
 import { assertWebsiteWritesEnabled, consumeWebsiteWrite } from "./write-guard";
 import { revalidatePublicPaths, writeAndRevalidate } from "./revalidation";
@@ -147,7 +147,8 @@ export async function saveLiveContent(item: ContentItem, action: "draft" | "publ
       const validAlign = value.align === undefined || isBlogImageAlign(value.align);
       const validSize = value.size === undefined || isBlogImageSize(value.size);
       return value.type === "text"
-        ? typeof value.text === "string" && validOrder && validStyle
+        ? typeof value.text === "string" && validOrder && validStyle &&
+          isValidBlogSegments(value.segments)
         : value.type === "image" &&
         typeof value.mediaId === "string" &&
         typeof value.src === "string" &&

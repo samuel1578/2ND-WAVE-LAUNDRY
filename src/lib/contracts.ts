@@ -51,6 +51,21 @@ export type BlogTextStyle =
   | "heading3"
   | "bulleted"
   | "numbered";
+export type BlogTextMark = {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  fontSize?: 12 | 14 | 16 | 18 | 20 | 24 | 28 | 32 | 36 | 48;
+  color?: string;
+  highlight?: string;
+  fontFamily?: "Arial" | "Georgia" | "Inter" | "Times New Roman" | "Verdana";
+  link?: string;
+};
+export type BlogTextSegment = {
+  text: string;
+  marks?: BlogTextMark;
+};
 export type BlogImageAlign = "left" | "center" | "right";
 export type BlogImageSize = "small" | "medium" | "large" | "full";
 export type BlogTextBlock = {
@@ -59,6 +74,7 @@ export type BlogTextBlock = {
   order: number;
   /** Block formatting; a missing style renders as a paragraph. */
   style?: BlogTextStyle;
+  segments?: BlogTextSegment[];
 };
 export type BlogImageBlock = {
   type: "image";

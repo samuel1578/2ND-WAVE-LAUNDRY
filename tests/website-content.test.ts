@@ -48,6 +48,11 @@ import { promotionLinkSelection } from "../src/lib/website/promotion-form";
 import { splitBranded } from "../src/lib/brand-highlight";
 import { readFileSync } from "node:fs";
 import { writeAndRevalidate } from "../src/lib/website/revalidation";
+import {
+  isValidBlogSegments,
+  normalizeBlogBlocks,
+  safeBlogLink,
+} from "../src/lib/website/blog-blocks";
 
 function promotionFromPayload(payload: Record<string, unknown>) {
   return toPromotion({
@@ -60,6 +65,32 @@ function promotionFromPayload(payload: Record<string, unknown>) {
     version: 1,
   });
 }
+
+test("blog inline formatting normalizes safely and preserves legacy blocks", () => {
+  const blocks = normalizeBlogBlocks([
+    {
+      type: "text",
+      text: "Bold blue",
+      order: 4,
+      segments: [
+        { text: "Bold", marks: { bold: true, fontSize: 24 } },
+        { text: " blue", marks: { color: "#00609a", highlight: "#fff3a3" } },
+      ],
+    },
+    { type: "image", mediaId: "image-1", src: "/image.jpg", alt: "Laundry", caption: "", order: 5 },
+    { type: "text", text: "Legacy paragraph", order: 6 },
+  ]);
+  assert.equal(blocks?.[0].type, "text");
+  assert.deepEqual(blocks?.[0].type === "text" ? blocks[0].segments : undefined, [
+    { text: "Bold", marks: { bold: true, fontSize: 24 } },
+    { text: " blue", marks: { color: "#00609A", highlight: "#FFF3A3" } },
+  ]);
+  assert.equal(blocks?.[1].type, "image");
+  assert.equal(blocks?.[2].type, "text");
+  assert.equal(isValidBlogSegments([{ text: "ok", marks: { link: "javascript:alert(1)" } }]), false);
+  assert.equal(safeBlogLink("javascript:alert(1)"), false);
+  assert.equal(safeBlogLink("https://example.com/article"), true);
+});
 
 test("six modules, code-managed routes and review relocation", () => {
   assert.deepEqual(
