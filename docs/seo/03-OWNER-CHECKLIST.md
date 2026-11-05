@@ -40,6 +40,8 @@ Do not create Google Business Profiles for areas without a staffed branch.
 - [ ] Add the domain property (or the `https://www.` prefix property).
 - [ ] Set `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` in the hosting environment and redeploy.
 - [ ] Submit `https://www.2ndwavelaundry.com/sitemap.xml`.
+- [ ] Do not submit the apex redirect URL (`https://2ndwavelaundry.com/sitemap.xml`);
+      use the WWW URL above as the single canonical sitemap.
 - [ ] Request indexing for `/`, each of the three branch pages, `/services`, and `/commercial-laundry`.
       Requesting the home page also refreshes the favicon in results.
 - [ ] Confirm `robots.txt` fetches successfully and shows the sitemap line.

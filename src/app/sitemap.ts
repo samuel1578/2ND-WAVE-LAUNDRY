@@ -17,11 +17,26 @@ import { SITE_URL } from "@/lib/site";
  * reliable content-updated date for static pages or blog posts.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [services, branches, posts] = await Promise.all([
+  const [servicesResult, branchesResult, postsResult] = await Promise.allSettled([
     getPublicServices(),
     getPublicBranches(),
     getPublicBlogList(),
   ]);
+
+  const services =
+    servicesResult.status === "fulfilled" ? servicesResult.value : defaultServices;
+  const branches = branchesResult.status === "fulfilled" ? branchesResult.value : [];
+  const posts = postsResult.status === "fulfilled" ? postsResult.value : [];
+
+  for (const [source, result] of [
+    ["services", servicesResult],
+    ["branches", branchesResult],
+    ["blog", postsResult],
+  ] as const) {
+    if (result.status === "rejected") {
+      console.error(`Sitemap data source failed: source=${source}`, result.reason);
+    }
+  }
 
   const url = (path: string): string =>
     path === "/" ? `${SITE_URL}/` : `${SITE_URL}${path}`;

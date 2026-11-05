@@ -2,23 +2,24 @@
  * Canonical public-site constants.
  *
  * `NEXT_PUBLIC_SITE_URL` is the single source of truth for the public origin.
- * It is normalised to `scheme://host` (no path, no trailing slash) so the same
+ * It is normalised to `https://host` (no path, no trailing slash) so the same
  * value can be used for `metadataBase`, canonicals, sitemap entries and
- * JSON-LD `@id`s. When it is missing or malformed we fall back to the live
- * canonical domain rather than emitting a broken absolute URL.
+ * JSON-LD `@id`s. The live site is canonical on WWW; invalid, non-HTTPS or
+ * apex values fall back to that origin rather than emitting redirecting URLs.
  */
 
 const FALLBACK_SITE_URL = "https://www.2ndwavelaundry.com";
+const CANONICAL_HOST = "www.2ndwavelaundry.com";
 
 function resolveSiteUrl(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (!raw) return FALLBACK_SITE_URL;
   try {
     const url = new URL(raw);
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
+    if (url.protocol !== "https:" || url.hostname.toLowerCase() !== CANONICAL_HOST) {
       return FALLBACK_SITE_URL;
     }
-    return `${url.protocol}//${url.host}`;
+    return `https://${CANONICAL_HOST}`;
   } catch {
     return FALLBACK_SITE_URL;
   }
