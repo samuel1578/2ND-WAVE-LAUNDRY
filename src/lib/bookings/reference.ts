@@ -7,8 +7,13 @@
  * read-by-reference endpoint, and knowing a reference grants nothing.
  */
 
-/** Reference shape produced by the database: `2W-` plus ten Crockford-safe chars. */
-export const BOOKING_REFERENCE_PATTERN = /^2W-[0-9A-HJKMNP-TV-Z]{10}$/;
+/**
+ * Reference shape produced by the database: the unchanged `2W-` prefix plus four
+ * Crockford-safe characters. Ten-character references issued before the
+ * shortening remain valid and must still be displayable and searchable.
+ */
+export const BOOKING_REFERENCE_PATTERN =
+  /^2W-(?:[0-9A-HJKMNP-TV-Z]{4}|[0-9A-HJKMNP-TV-Z]{10})$/;
 
 export function isValidBookingReference(value: unknown): value is string {
   return typeof value === "string" && BOOKING_REFERENCE_PATTERN.test(value.trim());

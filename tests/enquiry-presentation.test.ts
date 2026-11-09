@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   enquiryDetailFields,
   enquiryDetailFieldsFromValues,
+  formatEnquirySubmittedAt,
 } from "../src/lib/enquiries/presentation";
 import {
   buildEnquiryReceivedParams,
@@ -37,6 +38,17 @@ const GENERAL = {
   message: "Could you tell me more about wash and fold?",
   details: {},
 };
+
+test("enquiry submitted timestamps render in the review dashboard format", () => {
+  assert.equal(formatEnquirySubmittedAt(""), "—");
+  assert.equal(formatEnquirySubmittedAt(null), "—");
+  assert.equal(formatEnquirySubmittedAt(undefined), "—");
+  assert.equal(formatEnquirySubmittedAt("not-a-timestamp"), "—");
+  // Same presentation as the review dashboard: en-GB, Africa/Accra.
+  const formatted = formatEnquirySubmittedAt("2026-11-05T09:15:00Z");
+  assert.match(formatted, /05\/11\/2026/);
+  assert.match(formatted, /09:15/);
+});
 
 test("commercial details contain only the collected commercial fields", () => {
   const fields = enquiryDetailFields(COMMERCIAL);

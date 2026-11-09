@@ -25,6 +25,21 @@ export type EnquiryDetailField = {
     value: string;
 };
 
+/**
+ * Formats a stored enquiry submission timestamp for the admin dashboard.
+ *
+ * This matches the review dashboard: en-GB date and time in Africa/Accra. A
+ * missing or unparseable stored value renders as an em dash rather than an
+ * invented date.
+ */
+export function formatEnquirySubmittedAt(iso: string | null | undefined): string {
+    if (!iso) return "—";
+    const instant = new Date(iso);
+    return Number.isNaN(instant.getTime())
+        ? "—"
+        : instant.toLocaleString("en-GB", { timeZone: "Africa/Accra" });
+}
+
 const text = (value: unknown): string =>
     typeof value === "string" ? value.trim() : "";
 

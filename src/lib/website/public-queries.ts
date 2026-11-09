@@ -12,13 +12,12 @@ import {
  *
  * Nothing here imports Next.js or Supabase, so the select lists and mapping
  * rules can be unit tested without a running app. Column lists deliberately
- * exclude `services.section` (no such column exists) and `services.public_body`
- * (never rendered), and the blog list projects JSON subpaths so a post body is
- * never transferred for an index page.
+ * exclude `services.section` (no such column exists), and the blog list projects
+ * JSON subpaths so a post body is never transferred for an index page.
  */
 
 export const SERVICES_COLUMNS =
-  "slug,title,summary,public_image,public_alt,bookable,sort_order";
+  "slug,title,summary,public_body,public_image,public_alt,bookable,sort_order";
 
 export const BRANCHES_COLUMNS =
   "slug,title,label,phone,public_map_url,public_hours,sort_order";
@@ -107,6 +106,7 @@ export type ServiceRow = {
   slug: string;
   title: string;
   summary: string;
+  public_body: string | null;
   public_image: string | null;
   public_alt: string | null;
   bookable: boolean;
@@ -201,23 +201,28 @@ export type PublicBlogPost = PublicBlogSummary & {
 /**
  * Map a services row to a public card.
  *
- * Service title/summary intentionally come from the built-in defaults until the
- * admin Services editor is wired to public text (separate task). The database
- * still decides which services exist, their order, and whether they are
- * bookable; a service without a baseline falls back to its slug for `section`.
+ * The database is the source of truth for the copy and featured image, so an
+ * admin edit is what the public site renders. The built-in baseline only
+ * supplies layout metadata (`section`, `focal`) and a fallback when a stored
+ * field is still blank; a newly created service has no baseline and renders its
+ * own title, summary and body.
  */
 export function mapServiceRow(
   row: ServiceRow,
   baseline?: PublicService,
 ): PublicService {
+  const title = row.title.trim() || baseline?.title || row.slug;
+  const summary = row.summary.trim() || baseline?.summary || "";
+  const body = (row.public_body ?? "").trim();
   const image = row.public_image
     ? { src: row.public_image, alt: row.public_alt || baseline?.image?.alt || "" }
     : baseline?.image;
   return {
     slug: row.slug,
     section: baseline?.section ?? row.slug,
-    title: baseline?.title ?? row.title,
-    summary: baseline?.summary ?? row.summary,
+    title,
+    summary,
+    ...(body ? { body } : {}),
     image,
     focal: baseline?.focal,
     bookable: row.bookable,

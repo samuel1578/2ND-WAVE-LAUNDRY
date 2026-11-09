@@ -19,6 +19,7 @@ const serviceRow = (patch: Partial<ServiceRow> = {}): ServiceRow => ({
   slug: "suit-cleaning",
   title: "Suit Cleaning (database)",
   summary: "Database summary.",
+  public_body: "",
   public_image: "",
   public_alt: "",
   bookable: true,
@@ -60,9 +61,9 @@ test("cached display settings map pickup times from booking settings", () => {
   assert.equal(defaults.pickupEnd, "17:00");
 });
 
-test("services select never asks for section or public_body", () => {
+test("services select keeps section out but loads stored body and media", () => {
   assert.equal(SERVICES_COLUMNS.includes("section"), false);
-  assert.equal(SERVICES_COLUMNS.includes("public_body"), false);
+  assert.ok(SERVICES_COLUMNS.includes("public_body"));
   assert.ok(SERVICES_COLUMNS.includes("public_image"));
 });
 
@@ -160,8 +161,8 @@ test("public collections keep configured order and ignore unnamed rows", () => {
   ]);
 });
 
-test("service mapping keeps built-in title and summary until the editor is wired", () => {
-  const moved = mapServiceRow(serviceRow({ public_image: "https://example.test/db.jpg", public_alt: "DB alt" }), {
+test("service mapping renders stored admin copy and media over the built-in baseline", () => {
+  const baseline = {
     slug: "suit-cleaning",
     section: "04.07",
     title: "Suit Cleaning",
@@ -169,19 +170,44 @@ test("service mapping keeps built-in title and summary until the editor is wired
     image: { src: "/images/suits.jpg", alt: "Suits" },
     focal: "left center",
     bookable: true,
-  });
+  };
+  const stored = mapServiceRow(serviceRow({
+    title: "Suit Care",
+    summary: "Updated summary.",
+    public_body: "Updated body.",
+    public_image: "https://example.test/db.jpg",
+    public_alt: "DB alt",
+  }), baseline);
 
-  assert.equal(moved.title, "Suit Cleaning");
-  assert.equal(moved.summary, "Arrange cleaning for your suits.");
-  assert.equal(moved.section, "04.07");
-  assert.deepEqual(moved.image, {
+  assert.equal(stored.title, "Suit Care");
+  assert.equal(stored.summary, "Updated summary.");
+  assert.equal(stored.body, "Updated body.");
+  assert.equal(stored.section, "04.07");
+  assert.equal(stored.focal, "left center");
+  assert.deepEqual(stored.image, {
     src: "https://example.test/db.jpg",
     alt: "DB alt",
   });
 
-  const noBaseline = mapServiceRow(serviceRow({ slug: "new-service" }));
-  assert.equal(noBaseline.section, "new-service");
-  assert.equal(noBaseline.title, "Suit Cleaning (database)");
+  // Blank stored fields still fall back to the approved baseline copy.
+  const blank = mapServiceRow(serviceRow({ title: "", summary: "", public_image: "", public_alt: "" }), baseline);
+  assert.equal(blank.title, "Suit Cleaning");
+  assert.equal(blank.summary, "Arrange cleaning for your suits.");
+  assert.deepEqual(blank.image, baseline.image);
+
+  // A service created in the admin has no baseline section.
+  const created = mapServiceRow(serviceRow({
+    slug: "new-service",
+    title: "New Service",
+    summary: "New summary.",
+    public_image: "/images/new.jpg",
+    public_alt: "New image",
+  }));
+  assert.equal(created.section, "new-service");
+  assert.equal(created.title, "New Service");
+  assert.equal(created.summary, "New summary.");
+  assert.equal("body" in created, false);
+  assert.deepEqual(created.image, { src: "/images/new.jpg", alt: "New image" });
 });
 
 test("blog post mapping keeps the body for the article page", () => {

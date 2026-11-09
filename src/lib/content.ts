@@ -114,6 +114,8 @@ export type Service = {
   section: string;
   title: string;
   summary: string;
+  /** Stored body copy; only rendered for services with no code-managed section. */
+  body?: string;
   image?: Photo;
   focal?: string;
   bookable: boolean;

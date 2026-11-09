@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     if (contentModule === "services") {
       const { data, error } = await db.from("services").select("id,slug,title,summary,public_body,public_image,public_alt,kind,bookable,active,sort_order,version").order("sort_order");
       if (error) throw Error();
-      return NextResponse.json({ items: (data ?? []).map(r => ({ id: r.slug, module: "Services", title: r.title, slug: r.slug, summary: r.summary, body: r.public_body, image: r.public_image, alt: r.public_alt, status: r.active ? "Published" : "Archived", sort: r.sort_order, version: r.version, extra: { kind: r.kind, bookable: String(r.bookable), active: String(r.active) }, published: r.active ? { title: r.title, slug: r.slug, summary: r.summary, body: r.public_body, image: r.public_image, alt: r.public_alt } : undefined })) }, { headers: NO_STORE });
+      return NextResponse.json({ items: (data ?? []).map(r => ({ id: r.slug, module: "Services", title: r.title, slug: r.slug, summary: r.summary, body: r.public_body, image: r.public_image, alt: r.public_alt, status: r.active ? "Published" : "Draft", sort: r.sort_order, version: r.version, extra: { recordId: r.id, kind: r.kind, bookable: String(r.bookable), active: String(r.active) }, ...(r.active ? { published: { title: r.title, slug: r.slug, summary: r.summary, body: r.public_body, image: r.public_image, alt: r.public_alt } } : {}) })) }, { headers: NO_STORE });
     }
     if (contentModule === "locations") {
       const { data, error } = await db.from("branches").select("id,slug,title,label,phone,public_map_url,public_hours,sort_order,version").eq("active", true).order("sort_order");

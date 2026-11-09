@@ -387,11 +387,17 @@ test("arrangement validation rejects negative fees and a reasonless zero fee", (
 /* Reference and idempotency helpers                                           */
 /* -------------------------------------------------------------------------- */
 
-test("booking references are validated against the database shape", () => {
-  assert.ok(BOOKING_REFERENCE_PATTERN.test("2W-7K3M9PQRST"));
+test("new booking references are four characters and historical ones stay valid", () => {
+  assert.ok(BOOKING_REFERENCE_PATTERN.test("2W-A7K9"));
+  assert.ok(BOOKING_REFERENCE_PATTERN.test("2W-P8M3"));
+  assert.equal(isValidBookingReference("2W-A7K9"), true);
+  assert.equal(isValidBookingReference(" 2W-B4X2 "), true);
+  // Ten-character references issued before the shortening remain valid.
   assert.equal(isValidBookingReference("2W-7K3M9PQRST"), true);
   assert.equal(isValidBookingReference("DEMO-001"), false);
   assert.equal(isValidBookingReference("2W-123"), false);
+  assert.equal(isValidBookingReference("2W-ABCDE"), false);
+  assert.equal(isValidBookingReference("2w-a7k9"), false);
   assert.equal(isValidBookingReference(null), false);
 });
 

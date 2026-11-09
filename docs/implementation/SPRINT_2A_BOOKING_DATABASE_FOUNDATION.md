@@ -286,8 +286,9 @@ treated as closed. The same rules are mirrored as pure functions in
 
 ### Idempotency and references
 
-References are generated server-side (`2W-` plus ten random characters) with a
-unique constraint and bounded retry. Submissions are idempotent on
+References are generated server-side (`2W-` plus four Crockford-safe characters)
+with a unique constraint and bounded retry. References issued before the
+shortening keep their ten-character suffix and remain valid. Submissions are idempotent on
 `(submission_scope, idempotency_key)`: a replay with the same payload returns the
 original committed result (and is **not** re-evaluated against a later cutoff),
 while a reused key with a different payload raises `BOOKING_IDEMPOTENCY_MISMATCH`.

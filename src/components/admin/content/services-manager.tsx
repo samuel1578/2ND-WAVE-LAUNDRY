@@ -6,13 +6,17 @@ import { Field, TextField } from "@/components/forms/controls";
 import { Dialog } from "@/components/dialog";
 import { UnsavedGuard } from "../unsaved";
 import { deleteContent, saveContent, useDemoStore } from "@/lib/mock-store";
-import type { ContentItem } from "@/lib/contracts";
+import type { ContentItem, MediaAsset } from "@/lib/contracts";
 import { ModuleShell } from "./shared/module-shell";
-import { MediaPicker } from "./shared/media-picker";
+import { MediaLibraryPicker } from "./shared/media-library-picker";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
 import { saveLiveService } from "@/lib/website/actions";
 import { seededServices } from "@/lib/website/types";
+import { slugify } from "@/lib/content";
+
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 export function ServicesManager({
   id,
   state,
@@ -31,8 +35,13 @@ export function ServicesManager({
     if (id !== "new" && !item)
       return (
         <Empty
-          title="Record not found"
-          body={live.error || "This service is not available."}
+          title={!demoMode && live.loading ? "Loading service…" : "Record not found"}
+          body={
+            live.error ||
+            (live.loading
+              ? "Retrieving the saved service."
+              : "This service is not available.")
+          }
         />
       );
     return <ServiceEditor key={item?.id || "new"} item={item} />;
@@ -43,7 +52,7 @@ export function ServicesManager({
     <>
       <ModuleShell
         title="Services"
-        description="Catalogue records for each public service. Public service pages keep the approved baseline."
+        description="Catalogue records for each public service. Published services appear on the public website."
         backHref="/admin/content"
         backLabel="Website Content"
         badge={
@@ -52,7 +61,11 @@ export function ServicesManager({
           </Link>
         }
       />
-      {services.length ? (
+      {!demoMode && live.loading ? (
+        <Empty title="Loading services…" body="Retrieving saved services." />
+      ) : !demoMode && live.error ? (
+        <Empty title="Services could not be loaded" body={live.error} />
+      ) : services.length ? (
         <div className="grid two">
           {services.map((service) => (
             <Link
@@ -61,7 +74,7 @@ export function ServicesManager({
               href={`/admin/content/services/${service.id}`}
             >
               <div>
-                <span className="badge">
+                <span className={`badge status-${service.published ? "published" : service.status === "Archived" ? "archived" : "draft"}`}>
                   {service.published
                     ? "Published"
                     : service.status === "Archived"
@@ -70,9 +83,6 @@ export function ServicesManager({
                 </span>
                 <h2>{service.title || "Untitled draft"}</h2>
                 <p>{service.summary}</p>
-                {service.published && service.status === "Draft" && (
-                  <small>Published version retained</small>
-                )}
               </div>
               <span className="text-link">Edit Service</span>
             </Link>
@@ -81,7 +91,7 @@ export function ServicesManager({
       ) : (
         <Empty
           title="No services yet. Create a draft to get started."
-          body="Service records are demo-only; public service pages keep the approved baseline."
+          body="Published services appear on the public website and in the booking catalogue."
         />
       )}
     </>
@@ -89,6 +99,9 @@ export function ServicesManager({
 }
 function ServiceEditor({ item }: { item?: ContentItem }) {
   const store = useDemoStore();
+  const mediaData = useAdminWebsiteData<MediaAsset>("media", [], {
+    enabled: !demoMode,
+  });
   const empty: ContentItem = {
     id: "",
     module: "Services",
@@ -113,6 +126,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(false);
+  const [uploadedMedia, setUploadedMedia] = useState<MediaAsset[]>([]);
   const [preview, setPreview] = useState(false);
   const [confirm, setConfirm] = useState<
     "publish" | "archive" | "delete" | null
@@ -121,29 +135,80 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
   const dirty = JSON.stringify(form) !== baseline;
   const published = !!form.published;
   const archived = form.status === "Archived";
-  const showPublish = published ? dirty : true;
-  const canSaveDraft = dirty || !form.id;
+  const canSave = dirty || !form.id;
+  const libraryMedia = demoMode ? store.media : mediaData.items;
+  const mediaAssets = [
+    ...uploadedMedia,
+    ...libraryMedia.filter(
+      (asset) => !uploadedMedia.some((extra) => extra.id === asset.id),
+    ),
+  ].filter((asset) => !asset.archived);
+
   function change(key: keyof ContentItem, value: unknown) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => ({
+      ...f,
+      [key]: value,
+      ...(key === "title" && !item ? { slug: slugify(String(value)) } : {}),
+    }));
     setSuccess("");
   }
+
+  function pickMedia(asset: MediaAsset) {
+    setForm((f) => ({ ...f, image: asset.src, alt: asset.alt }));
+    setMedia(false);
+    setSuccess("");
+  }
+
+  function handleUploadedMedia(asset: MediaAsset) {
+    setUploadedMedia((current) => [
+      asset,
+      ...current.filter((entry) => entry.id !== asset.id),
+    ]);
+    setForm((f) => ({ ...f, image: asset.src, alt: asset.alt }));
+    setSuccess("");
+    if (!demoMode) void mediaData.refetch();
+  }
+
+  function validationMessage(
+    action: "draft" | "publish" | "archive" | "unpublish",
+  ): string {
+    if (!form.title.trim()) return "Enter a title for this service.";
+    if (!form.slug.trim()) return "Enter a slug for this service.";
+    if (!SLUG_PATTERN.test(form.slug))
+      return "Use lowercase letters, numbers and hyphens for the slug.";
+    if (action === "publish" && !form.summary.trim())
+      return "Add a summary before publishing this service.";
+    if (action === "publish" && form.image && !form.alt.trim())
+      return "Add alt text to the featured image before publishing.";
+    return "";
+  }
+
   async function save(action: "draft" | "publish" | "archive" | "unpublish") {
     if (busy) return;
     setBusy(true);
     setError("");
     setSuccess("");
+    const validation = validationMessage(action);
+    if (validation) {
+      setError(validation);
+      setConfirm(null);
+      setBusy(false);
+      return;
+    }
     try {
-      const next = demoMode ? await saveContent(form, action) : await saveLiveService(form);
+      const next = demoMode ? await saveContent(form, action) : await saveLiveService(form, action);
       setForm(next);
       setBaseline(JSON.stringify(next));
       setSuccess(
         action === "publish"
           ? "Service published."
           : action === "unpublish"
-            ? "Service unpublished. The draft is retained."
+            ? "Service unpublished. The record is retained."
             : action === "archive"
               ? "Service archived."
-              : "Draft saved.",
+              : published
+                ? "Changes saved. The published service is up to date."
+                : "Draft saved.",
       );
       setConfirm(null);
     } catch (err) {
@@ -200,11 +265,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
         backLabel="Services"
         badge={
           <span className="badge">
-            {dirty
-              ? "Unsaved changes"
-              : published
-                ? "Published"
-                : form.status}
+            {dirty ? "Unsaved changes" : published ? "Published" : form.status}
           </span>
         }
         error={error}
@@ -221,8 +282,13 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
         <div className="panel form-stack">
           {field("title", "Title *")}
           {field("slug", "Slug *")}
+          {!item && (
+            <small>
+              Website link: /services/{form.slug || "your-service-name"}
+            </small>
+          )}
           {field("summary", "Summary *")}
-          <Field id="service-body" label="Body *">
+          <Field id="service-body" label="Body">
             <textarea
               id="service-body"
               value={form.body}
@@ -231,7 +297,10 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
               maxLength={50000}
             />
           </Field>
-          <small>Plain text with paragraph breaks. HTML is not executed.</small>
+          <small>
+            Plain text with paragraph breaks. HTML is not executed. New services
+            display this body on their public page.
+          </small>
           <TextField
             id="service-sort"
             label="Sort order"
@@ -253,12 +322,43 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
               className="button secondary"
               onClick={() => setMedia(true)}
             >
-              {form.image ? "Replace Media" : "Select Media"}
+              {form.image ? "Replace from Media Library" : "Select from Media Library"}
             </button>
-            {field("alt", "Alt text *")}
+            {form.image && (
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  setForm((f) => ({ ...f, image: "", alt: "" }));
+                  setSuccess("");
+                }}
+              >
+                Remove featured image
+              </button>
+            )}
+            {field("alt", form.image ? "Alt text *" : "Alt text")}
           </section>
           <section className="panel form-stack">
-            {showPublish ? (
+            {published ? (
+              <>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={busy || !canSave}
+                  onClick={() => void save("draft")}
+                >
+                  Save changes
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={() => void save("unpublish")}
+                >
+                  Unpublish
+                </button>
+              </>
+            ) : (
               <>
                 <button
                   type="button"
@@ -271,20 +371,12 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
                 <button
                   type="button"
                   className="button secondary"
-                  disabled={busy || !canSaveDraft}
+                  disabled={busy || !canSave}
                   onClick={() => void save("draft")}
                 >
                   Save Draft
                 </button>
               </>
-            ) : (
-              <button
-                type="submit"
-                className="button"
-                disabled={busy || !canSaveDraft}
-              >
-                Save Draft
-              </button>
             )}
             <button
               type="button"
@@ -293,17 +385,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
             >
               Preview
             </button>
-            {published && (
-              <button
-                type="button"
-                className="button secondary"
-                disabled={busy}
-                onClick={() => void save("unpublish")}
-              >
-                Unpublish
-              </button>
-            )}
-            {form.id && !archived && (
+            {demoMode && form.id && !archived && (
               <button
                 type="button"
                 className="button secondary"
@@ -313,7 +395,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
                 Archive
               </button>
             )}
-            {form.id && !published && (
+            {demoMode && form.id && !published && (
               <button
                 type="button"
                 className="button danger"
@@ -332,15 +414,16 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
           </section>
         </div>
       </form>
-      <MediaPicker
+      <MediaLibraryPicker
         open={media}
-        title="Select Media"
-        assets={store.media.filter((m) => !m.archived)}
-        onPick={(asset) => {
-          setForm((f) => ({ ...f, image: asset.src, alt: asset.alt }));
-          setMedia(false);
-          setSuccess("");
-        }}
+        title="Select Featured Image"
+        selectLabel="Use as featured image"
+        assets={mediaAssets}
+        loading={!demoMode && mediaData.loading}
+        error={!demoMode ? mediaData.error : ""}
+        onRetry={() => void mediaData.refetch()}
+        onSelect={pickMedia}
+        onUploaded={handleUploadedMedia}
         onClose={() => setMedia(false)}
       />
       <Dialog
@@ -353,7 +436,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
         {form.image && <Picture photo={{ src: form.image, alt: form.alt }} />}
         <div className="prose">{form.body}</div>
         <p className="demo-caption">
-          Preview only. Public service pages keep the approved baseline.
+          Preview only. Save to update the public website.
         </p>
       </Dialog>
       <Dialog
@@ -369,7 +452,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
       >
         <p>
           {confirm === "publish"
-            ? "The published snapshot updates in this demo workspace. Public service pages keep the approved baseline."
+            ? "The service will become visible on the public website."
             : confirm === "archive"
               ? "The service will be marked archived in this demo workspace."
               : "This removes the unpublished draft from the demo workspace."}

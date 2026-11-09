@@ -131,7 +131,9 @@ async function readServices(): Promise<PublicService[]> {
     return defaultServices;
   }
   const rows = (data ?? []) as unknown as ServiceRow[];
-  if (!rows.length) return defaultServices;
+  // An empty result means every service is unpublished, not that the read
+  // failed. The built-in defaults are only a transport-error fallback.
+  if (!rows.length) return [];
   const baseline = new Map(defaultServices.map((service) => [service.slug, service]));
   return rows.map((row) => mapServiceRow(row, baseline.get(row.slug)));
 }
@@ -382,7 +384,7 @@ const cachedSettings = unstable_cache(readSettings, ["public-settings"], {
   tags: [PUBLIC_TAGS.settings],
 });
 
-/** Active services, in database order. Title/summary stay built-in for now. */
+/** Active services, in database order, with their stored copy and media. */
 export async function getPublicServices(): Promise<PublicService[]> {
   return liveContent ? cachedServices() : defaultServices;
 }

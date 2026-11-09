@@ -219,11 +219,108 @@ export async function writeLocation(actor: string, location: LocationRecord) {
   if (error) return fail("Branch changed or could not be saved. Reload and try again.");
   return { ...location, id: data.id, slug: data.slug, name: data.title, label: data.label, phone: data.phone, map: data.map_url, hours: data.hours, order: data.sort_order, version: data.version };
 }
-export async function writeService(actor: string, item: ContentItem) {
+type SavedServiceRow = {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  body: string;
+  image: string;
+  alt: string;
+  kind: string;
+  bookable: boolean;
+  active: boolean;
+  sort_order: number;
+  version: number;
+};
+
+const SERVICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Existing services are addressed by their immutable row id so slug edits update the same record. */
+function serviceRecordId(item: ContentItem): string | null {
+  const id = item.extra?.recordId ?? "";
+  return SERVICE_ID.test(id) ? id : null;
+}
+
+function toServiceItem(item: ContentItem, row: SavedServiceRow): ContentItem {
+  return {
+    ...item,
+    id: row.slug,
+    module: "Services",
+    title: row.title,
+    slug: row.slug,
+    summary: row.summary,
+    body: row.body,
+    image: row.image,
+    alt: row.alt,
+    status: row.active ? "Published" : "Draft",
+    sort: row.sort_order,
+    version: row.version,
+    published: row.active
+      ? {
+        title: row.title,
+        slug: row.slug,
+        summary: row.summary,
+        body: row.body,
+        image: row.image,
+        alt: row.alt,
+      }
+      : undefined,
+    extra: {
+      ...(item.extra ?? {}),
+      recordId: row.id,
+      kind: row.kind,
+      bookable: String(row.bookable),
+      active: String(row.active),
+    },
+  };
+}
+
+export async function writeService(
+  actor: string,
+  item: ContentItem,
+  action: "draft" | "publish" | "archive" | "unpublish",
+) {
   const client = createSupabaseAdminClient();
-  const { data, error } = await client.rpc("website_service_update", { p_actor: actor, p_slug: item.slug, p_expected_version: item.version, p_title: item.title, p_summary: item.summary, p_body: item.body, p_image: item.image, p_alt: item.alt, p_sort_order: item.sort });
-  if (error) return fail("Service changed or could not be saved. Reload and try again.");
-  return { ...item, id: data.slug, version: data.version, published: { title: data.title, slug: data.slug, summary: data.summary, body: data.body, image: data.image, alt: data.alt } };
+  const recordId = serviceRecordId(item);
+  // The services table has one stored copy per service, so `active` is the
+  // publish state. Editing a published service keeps it live; a new draft stays
+  // hidden until published.
+  const active =
+    action === "publish"
+      ? true
+      : action === "unpublish" || action === "archive"
+        ? false
+        : Boolean(item.published);
+  const { data, error } = await client.rpc("website_service_upsert", {
+    p_actor: actor,
+    p_service_id: recordId,
+    p_slug: item.slug,
+    p_expected_version: recordId ? item.version : null,
+    p_title: item.title,
+    p_summary: item.summary,
+    p_body: item.body,
+    p_image: item.image,
+    p_alt: item.alt,
+    p_sort_order: item.sort,
+    p_active: active,
+  });
+  if (error) {
+    if (isConflict(error)) {
+      if (!recordId) {
+        const { data: existing } = await client
+          .from("services")
+          .select("id")
+          .eq("slug", item.slug)
+          .maybeSingle();
+        if (existing) return fail("That service slug is already in use. Choose a different slug.");
+      }
+      return fail("Service changed while editing. Reload the latest details and try again.");
+    }
+    if (error.code === "23505") return fail("That service slug is already in use. Choose a different slug.");
+    return fail("Service could not be saved. Reload and try again.");
+  }
+  return toServiceItem(item, data as unknown as SavedServiceRow);
 }
 export async function writeMedia(actor: string, asset: MediaAsset, expectedVersion?: number) {
   const client = createSupabaseAdminClient();

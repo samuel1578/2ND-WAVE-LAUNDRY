@@ -136,7 +136,9 @@ public.email_delivery_status:
 
 - Recipient email is trimmed, 3–254 chars, and matches a basic address shape.
 - Payload is an object with exactly `booking_reference` and `status`; the
-  reference matches `^2W-[0-9A-HJKMNP-TV-Z]{10}$`.
+  reference matches `^2W-([0-9A-HJKMNP-TV-Z]{4}|[0-9A-HJKMNP-TV-Z]{10})$`
+  (four characters for new references; ten-character historical references
+  remain valid).
 - Template and payload status must agree:
   `booking_created→pending`, `confirmed→confirmed`,
   `processing_started→processing`, `ready→ready`, `completed→completed`,

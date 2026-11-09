@@ -9,6 +9,7 @@ import { Field, Notice, TextField } from "@/components/forms/controls";
 import {
   enquiryDetailFields,
   enquiryDetailFieldsFromValues,
+  formatEnquirySubmittedAt,
   type EnquiryDetailField,
 } from "@/lib/enquiries/presentation";
 type EnquiryView = {
@@ -19,6 +20,7 @@ type EnquiryView = {
   detail: EnquiryDetailField[];
   notes: string[];
   version: number;
+  createdAt: string;
 };
 function liveEnquiryView(record: {
   id: string;
@@ -33,6 +35,7 @@ function liveEnquiryView(record: {
   details: Record<string, unknown>;
   notes: Array<{ text: string }>;
   version: number;
+  createdAt: string;
 }): EnquiryView {
   return {
     id: record.id,
@@ -50,6 +53,7 @@ function liveEnquiryView(record: {
     detail: enquiryDetailFields(record),
     notes: record.notes.map((note) => note.text),
     version: record.version,
+    createdAt: record.createdAt,
   };
 }
 export function Enquiries({ id, state, demo = false }: { id?: string; state?: string; demo?: boolean }) {
@@ -73,6 +77,7 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
       detail: enquiryDetailFieldsFromValues(demoItem.kind as EnquiryView["kind"], demoItem.fields),
       notes: demoItem.notes,
       version: 1,
+      createdAt: demoItem.createdAt,
     }
     : records?.find((record) => record.id === id);
 
@@ -164,6 +169,10 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
           <section className="panel">
             <h2>Contact details & requirements</h2>
             <dl className="review-list">
+              <div>
+                <dt>Submitted</dt>
+                <dd>{formatEnquirySubmittedAt(item.createdAt)}</dd>
+              </div>
               {item.detail.map((field) => (
                 <div key={field.key}>
                   <dt>{field.label}</dt>
@@ -221,6 +230,7 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
       detail: enquiryDetailFieldsFromValues(lead.kind as EnquiryView["kind"], lead.fields),
       notes: lead.notes,
       version: 1,
+      createdAt: lead.createdAt,
     }));
   const leads = (demo ? (state === "empty" ? [] : demoLeads) : records ?? [])
     .filter((lead) => lead.kind === tab && JSON.stringify(lead.fields).toLowerCase().includes(query.toLowerCase()));
@@ -264,6 +274,7 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
                     ? l.fields.items
                     : l.fields.message}
                 </p>
+                <small>Submitted {formatEnquirySubmittedAt(l.createdAt)}</small>
               </div>
               <span className="badge">{l.status}</span>
             </Link>

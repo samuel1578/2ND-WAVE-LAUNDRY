@@ -287,14 +287,46 @@ export async function deleteLiveMedia(id: string, uses: string[] = []) {
     PUBLIC_WRITE_TAGS.media,
   );
 }
-export async function saveLiveService(item: ContentItem) {
+export async function saveLiveService(
+  item: ContentItem,
+  action: "draft" | "publish" | "archive" | "unpublish",
+) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
-  if (!item || item.module !== "Services" || item.body.length > 50000) throw new Error("Service is invalid.");
+  if (
+    !item ||
+    item.module !== "Services" ||
+    !["draft", "publish", "archive", "unpublish"].includes(action) ||
+    typeof item.title !== "string" ||
+    typeof item.slug !== "string" ||
+    typeof item.summary !== "string" ||
+    typeof item.body !== "string" ||
+    typeof item.image !== "string" ||
+    typeof item.alt !== "string" ||
+    item.title.length > 120 ||
+    item.summary.length > 2000 ||
+    item.body.length > 50000 ||
+    item.image.length > 2000 ||
+    item.alt.length > 1000 ||
+    !Number.isInteger(item.sort) ||
+    item.sort < 0
+  ) {
+    throw new Error("Service is invalid.");
+  }
+  if (!item.title.trim()) throw new Error("Enter a title for this service.");
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.slug)) {
+    throw new Error("Use lowercase letters, numbers and hyphens for the service slug.");
+  }
+  if (action === "publish" && !item.summary.trim()) {
+    throw new Error("Add a summary before publishing this service.");
+  }
+  if (action === "publish" && item.image && !item.alt.trim()) {
+    throw new Error("Add alt text to the featured image before publishing.");
+  }
   consumeWebsiteWrite(admin.userId);
   return writeAndRevalidate(
-    () => writeService(admin.userId, item),
-    [],
+    () => writeService(admin.userId, item, action),
+    ["/", "/services", `/services/${item.slug}`],
     undefined,
     PUBLIC_WRITE_TAGS.service,
   );

@@ -208,6 +208,64 @@ test("a real booking submission commits exactly one creation notification", asyn
   assert.equal(rows[0].status, "pending");
 });
 
+test("new booking references use the short 2W-XXXX format", async () => {
+  const result = await submit(payload(), randomUUID());
+  assert.match(result.reference, /^2W-[0-9A-HJKMNP-TV-Z]{4}$/);
+});
+
+test("short references are collision-checked and remain unique", async () => {
+  const { rows } = await db.query<{ reference: string }>(
+    "SELECT private.booking_reference() AS reference FROM generate_series(1, 100)",
+  );
+  assert.equal(rows.length, 100);
+  assert.ok(
+    rows.every((row) => /^2W-[0-9A-HJKMNP-TV-Z]{4}$/.test(row.reference)),
+  );
+  assert.equal(new Set(rows.map((row) => row.reference)).size, 100);
+});
+
+test("a historical ten-character reference stays valid and can still notify", async () => {
+  const bookingId = randomUUID();
+  const legacyReference = "2W-7K3M9PQRST";
+
+  await db.query(
+    `INSERT INTO public.bookings (
+        id, reference, submission_scope, idempotency_key, submission_hash,
+        customer_name, customer_phone, customer_email, item_category,
+        load_size, pickup_address, requested_date
+     ) VALUES ($1, $2, 'legacy_import', $3, $4, 'Legacy Customer',
+               '+233595224280', 'legacy@example.test', 'clothing',
+               '1 Standard Bag', '1 Test Street', '2026-01-05')`,
+    [bookingId, legacyReference, randomUUID(), "b".repeat(32)],
+  );
+
+  const { rows } = await db.query<{
+    reference: string;
+    payload: { booking_reference: string };
+  }>(
+    `SELECT b.reference, o.payload
+     FROM public.bookings AS b
+     JOIN public.email_outbox AS o ON o.booking_id = b.id
+     WHERE b.id = $1`,
+    [bookingId],
+  );
+  assert.equal(rows[0]?.reference, legacyReference);
+  assert.equal(rows[0]?.payload.booking_reference, legacyReference);
+
+  // The reference stays unique regardless of its length.
+  await assert.rejects(
+    db.query(
+      `INSERT INTO public.bookings (
+          reference, idempotency_key, submission_hash, customer_name,
+          customer_phone, item_category, load_size, pickup_address, requested_date
+       ) VALUES ($1, $2, $3, 'Duplicate', '+233595224280', 'clothing',
+                 '1 Standard Bag', '1 Test Street', '2026-01-05')`,
+      [legacyReference, randomUUID(), "c".repeat(32)],
+    ),
+    /duplicate key|unique/i,
+  );
+});
+
 test("replaying the exact submission key is a no-op for the outbox", async () => {
   const key = randomUUID();
   const first = await submit(payload(), key);

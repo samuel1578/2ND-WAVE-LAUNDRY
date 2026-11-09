@@ -164,55 +164,70 @@ export function ServiceDetail({
 }) {
   const s = services.find((s) => s.slug === slug)!;
   const site = settings ?? resolveSiteSettings(null);
-  const id = s.section;
+  // A service created in the admin has no code-managed section copy. Use the
+  // shared service section for headings and FAQs, and render its stored body
+  // instead of borrowing another service's detail cards.
+  const hasSection = Object.prototype.hasOwnProperty.call(sections, s.section);
+  const id = hasSection ? s.section : "04.00";
   const fields = sections[id].fields;
   const ctaLabel = copy(id, "CTA", copy(id, "Closing CTA", "Book a Pickup"));
   const cards: DetailCard[] = [];
-  const detailEntries = [1, 2, 3]
-    .map(
-      (n) =>
-        [
-          n,
-          fields[`Detail card ${n} title`],
-          fields[`Detail card ${n} text`],
-        ] as const,
-    )
-    .filter(([, title, body]) => title && body);
-  if (detailEntries.length) {
-    detailEntries.forEach(([n, title, body]) => {
+  if (!hasSection) {
+    if (s.body) {
       cards.push({
-        key: `detail-${n}`,
-        title,
-        body,
-        icon: detailCardIcons[n - 1],
+        key: "information",
+        title: s.title,
+        body: s.body,
+        icon: Package,
+      });
+    }
+  } else {
+    const detailEntries = [1, 2, 3]
+      .map(
+        (n) =>
+          [
+            n,
+            fields[`Detail card ${n} title`],
+            fields[`Detail card ${n} text`],
+          ] as const,
+      )
+      .filter(([, title, body]) => title && body);
+    if (detailEntries.length) {
+      detailEntries.forEach(([n, title, body]) => {
+        cards.push({
+          key: `detail-${n}`,
+          title,
+          body,
+          icon: detailCardIcons[n - 1],
+        });
+      });
+    } else if (fields["Information"]) {
+      cards.push({
+        key: "information",
+        title: fields["Information heading"] || s.title,
+        body: fields["Information"],
+        icon: Package,
+      });
+    }
+    ["Step 1", "Step 2", "Step 3"].forEach((key, i) => {
+      if (!fields[key]) return;
+      const [title, ...rest] = fields[key].split(" — ");
+      cards.push({ key, title, body: rest.join(" — "), step: `0${i + 1}` });
+    });
+    sharedFieldCards.forEach(([titleKey, bodyKey, icon]) => {
+      if (!fields[bodyKey]) return;
+      cards.push({
+        key: bodyKey,
+        title: fields[titleKey],
+        body: fields[bodyKey],
+        icon,
+        action:
+          bodyKey === "Alternative" && fields["Alternative CTA"]
+            ? { href: "/locations", label: fields["Alternative CTA"] }
+            : undefined,
       });
     });
-  } else if (fields["Information"]) {
-    cards.push({
-      key: "information",
-      title: fields["Information heading"] || s.title,
-      body: fields["Information"],
-      icon: Package,
-    });
   }
-  ["Step 1", "Step 2", "Step 3"].forEach((key, i) => {
-    if (!fields[key]) return;
-    const [title, ...rest] = fields[key].split(" — ");
-    cards.push({ key, title, body: rest.join(" — "), step: `0${i + 1}` });
-  });
-  sharedFieldCards.forEach(([titleKey, bodyKey, icon]) => {
-    if (!fields[bodyKey]) return;
-    cards.push({
-      key: bodyKey,
-      title: fields[titleKey],
-      body: fields[bodyKey],
-      icon,
-      action:
-        bodyKey === "Alternative" && fields["Alternative CTA"]
-          ? { href: "/locations", label: fields["Alternative CTA"] }
-          : undefined,
-    });
-  });
   const detailsHeading = copy(
     id,
     "Details heading",
