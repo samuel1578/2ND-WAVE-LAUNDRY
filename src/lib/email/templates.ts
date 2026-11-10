@@ -11,6 +11,7 @@
  * worker sends only `templateId` plus this dynamic parameter object.
  */
 
+import { normaliseClock, preferredPickupTimeLabel } from "@/lib/bookings/scheduling";
 import type { BookingStatus } from "@/lib/bookings/types";
 export const emailTemplates = [
   "booking_created",
@@ -271,18 +272,23 @@ export function formatEventTimestamp(value: string | null): string | null {
   return formatAccraDateTime(date);
 }
 
-/** Formats a requested (not confirmed) date without timezone date-shifting. */
+/**
+ * Formats a requested (not confirmed) date without timezone date-shifting.
+ *
+ * The customer's preferred time is rendered whenever one is recorded — `09:00`
+ * and `09:00:00` both print as `09:00` — and "As soon as possible" appears only
+ * when the request genuinely carries no clock time. A date on its own is never
+ * produced, because a booking always has a collection preference.
+ */
 export function formatRequestedPickup(
   requestedDate: string | null,
   requestedTime: string | null,
 ): string | null {
   if (!requestedDate || !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return null;
 
-  const time =
-    requestedTime && /^\d{2}:\d{2}/.test(requestedTime)
-      ? requestedTime.slice(0, 5)
-      : null;
-  const date = new Date(`${requestedDate}T${time ?? "00:00"}:00Z`);
+  const requested = normaliseClock(requestedTime);
+  const time = requested ?? preferredPickupTimeLabel(null);
+  const date = new Date(`${requestedDate}T${requested ?? "00:00"}:00Z`);
   if (Number.isNaN(date.getTime())) return null;
 
   const day = new Intl.DateTimeFormat("en-GB", {
@@ -293,7 +299,7 @@ export function formatRequestedPickup(
     timeZone: "UTC",
   }).format(date);
 
-  return time ? `${day} at ${time}` : day;
+  return `${day} at ${time}`;
 }
 
 /**

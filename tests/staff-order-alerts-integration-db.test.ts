@@ -237,19 +237,25 @@ test("a real submission fans the pending alert out to every enabled recipient", 
       row.payload.occurred_at,
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
     );
+    // The administrator alert carries the pickup the customer selected.
+    assert.equal(row.payload.requested_date, "2099-01-01");
+    assert.equal(row.payload.requested_time, "09:00");
   }
 
   // Distinct deterministic keys: fan-out is not a duplicate, replay is.
   assert.equal(new Set(staff.map((row) => row.idempotency_key)).size, 2);
 
-  // Phase 2D customer mail is still exactly one row with its two-key payload.
+  // Customer mail is still exactly one row, and carries the same pickup.
   const customer = await rowsFor(created.booking_id, "booking_created");
   assert.equal(customer.length, 1);
   assert.equal(customer[0].recipient_email, "ama@example.test");
   assert.deepEqual(Object.keys(customer[0].payload).sort(), [
     "booking_reference",
+    "requested_date",
+    "requested_time",
     "status",
   ]);
+  assert.equal(customer[0].payload.requested_time, "09:00");
 });
 
 test("replaying the submission key adds no second alert", async () => {

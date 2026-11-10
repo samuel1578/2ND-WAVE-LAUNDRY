@@ -22,6 +22,16 @@ const RECIPIENTS_MIGRATION =
   "supabase/migrations/20261022120000_booking_alert_recipients.sql";
 const STAFF_ALERTS_MIGRATION =
   "supabase/migrations/20261022120100_staff_order_email_alerts.sql";
+/**
+ * The current payload contract and enqueue helpers. The two feature migrations
+ * only add their enum labels, which the contract's `template IN (…)` test needs.
+ */
+const PICKUP_MIGRATION =
+  "supabase/migrations/20261110120000_preferred_pickup_notifications.sql";
+const ENUM_LABEL_MIGRATIONS = [
+  "newsletter_interest_received",
+  "enquiry_received",
+];
 
 const HARNESS = `
 CREATE ROLE anon NOLOGIN;
@@ -116,6 +126,14 @@ before(async () => {
   await db.exec(readFileSync(OUTBOX_MIGRATION, "utf8"));
   await db.exec(readFileSync(RECIPIENTS_MIGRATION, "utf8"));
   await db.exec(readFileSync(STAFF_ALERTS_MIGRATION, "utf8"));
+  for (const label of ENUM_LABEL_MIGRATIONS) {
+    await db.exec(`DO $$ BEGIN
+      ALTER TYPE public.email_template ADD VALUE IF NOT EXISTS '${label}';
+    END $$;`);
+  }
+  // Apply the current definitions of the payload contract and enqueue helpers, so
+  // this harness asserts the deployed behaviour rather than an earlier revision.
+  await db.exec(readFileSync(PICKUP_MIGRATION, "utf8"));
 });
 
 after(async () => {
@@ -284,11 +302,14 @@ test("a newly placed order queues one pending alert per enabled recipient", asyn
   // Distinct per-recipient keys, so replay and fan-out are both deterministic.
   assert.equal(new Set(staff.map((row) => row.idempotency_key)).size, 2);
 
-  // The Phase 2D customer notification is unchanged.
+  // The customer notification keeps its closed payload, now including the
+  // pickup the customer selected.
   const customer = await outbox("booking_created");
   assert.equal(customer.length, 1);
   assert.deepEqual(Object.keys(customer[0].payload).sort(), [
     "booking_reference",
+    "requested_date",
+    "requested_time",
     "status",
   ]);
 });

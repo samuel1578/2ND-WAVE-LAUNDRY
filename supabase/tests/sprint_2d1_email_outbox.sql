@@ -128,9 +128,12 @@ BEGIN
         RAISE EXCEPTION 'FAIL expected pending delivery state, got %', v_row.status;
     END IF;
 
+    -- The payload carries the pickup the customer selected, exactly as committed.
     IF v_row.payload <> jsonb_build_object(
         'booking_reference', (SELECT reference FROM public.bookings WHERE id = v_id),
-        'status', 'pending'
+        'status', 'pending',
+        'requested_date', (SELECT to_char(requested_date, 'YYYY-MM-DD') FROM public.bookings WHERE id = v_id),
+        'requested_time', (SELECT to_char(requested_time, 'HH24:MI') FROM public.bookings WHERE id = v_id)
     ) THEN
         RAISE EXCEPTION 'FAIL unexpected creation payload: %', v_row.payload;
     END IF;

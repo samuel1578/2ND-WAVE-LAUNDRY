@@ -38,6 +38,31 @@ import {
   type NotificationTemplate,
 } from "./templates";
 
+/**
+ * Chooses the preferred pickup used to render one notification.
+ *
+ * The committed booking is authoritative: it is what the customer selected and
+ * what the database stored. The queued payload is only a fallback for a row
+ * whose booking could not be read. Neither path can invent a time — an absent
+ * value stays absent and the builder renders the immediate-pickup wording.
+ */
+export function withQueuedPickup(
+  context: BookingEmailContext,
+  row: ClaimedOutboxEmail,
+): BookingEmailContext {
+  const payload = row.payload as {
+    requested_date?: string | null;
+    requested_time?: string | null;
+  };
+  const hasQueued = "requested_date" in payload || "requested_time" in payload;
+  if (!hasQueued) return context;
+  return {
+    ...context,
+    requestedDate: context.requestedDate ?? payload.requested_date ?? null,
+    requestedTime: context.requestedTime ?? payload.requested_time ?? null,
+  };
+}
+
 export const WORKER_BATCH_SIZE = 10;
 export const WORKER_LEASE_SECONDS = 300;
 export const WORKER_REAP_LIMIT = 50;
@@ -492,16 +517,17 @@ export async function runEmailWorker(
 
     let params: Record<string, string>;
     try {
+      const renderContext = withQueuedPickup(context, row);
       if (isStaffOrderTemplate(row.template)) {
         if (!staffContext) throw new Error("Staff alert metadata is missing.");
         params = buildStaffOrderTemplateParams(
           row.template,
-          context,
+          renderContext,
           staffContext,
           { siteUrl: deps.siteUrl },
         );
       } else {
-        params = buildBrevoTemplateParams(row.template, context, {
+        params = buildBrevoTemplateParams(row.template, renderContext, {
           siteUrl: deps.siteUrl,
         });
       }

@@ -191,7 +191,12 @@ test("a real booking submission commits exactly one creation notification", asyn
 
   const { rows } = await db.query<{
     recipient_email: string;
-    payload: { booking_reference: string; status: string };
+    payload: {
+      booking_reference: string;
+      status: string;
+      requested_date: string;
+      requested_time: string;
+    };
     status: string;
     idempotency_key: string;
   }>(
@@ -201,9 +206,13 @@ test("a real booking submission commits exactly one creation notification", asyn
   );
 
   assert.equal(rows[0].recipient_email, "ama@example.test");
+  // The notification carries the pickup the customer selected, formatted once
+  // from the committed `time` value.
   assert.deepEqual(rows[0].payload, {
     booking_reference: result.reference,
     status: "pending",
+    requested_date: "2099-01-01",
+    requested_time: "09:00",
   });
   assert.equal(rows[0].status, "pending");
 });
@@ -507,4 +516,158 @@ test("the existing booking security boundary is preserved", async () => {
   );
   assert.equal(functions[0].anon_submit, false);
   assert.equal(functions[0].auth_transition, false);
+});
+/* -------------------------------------------------------------------------- */
+/* Preferred pickup through the real database                                  */
+/* -------------------------------------------------------------------------- */
+
+type PickupPayload = {
+  requested_date: string | null;
+  requested_time: string | null;
+};
+
+async function storedBooking(bookingId: string) {
+  const { rows } = await db.query<{
+    requested_date: string;
+    requested_time: string | null;
+  }>(
+    `SELECT to_char(requested_date, 'YYYY-MM-DD') AS requested_date,
+            CASE WHEN requested_time IS NULL THEN NULL
+                 ELSE to_char(requested_time, 'HH24:MI') END AS requested_time
+     FROM public.bookings WHERE id = $1`,
+    [bookingId],
+  );
+  return rows[0];
+}
+
+async function creationPayload(bookingId: string): Promise<PickupPayload> {
+  const { rows } = await db.query<{ payload: PickupPayload }>(
+    `SELECT payload FROM public.email_outbox
+     WHERE booking_id = $1 AND template = 'booking_created'`,
+    [bookingId],
+  );
+  return rows[0].payload;
+}
+
+test("A: the immediate option is stored as null and notified as null", async () => {
+  const result = await submit(payload({ requested_time: null }), randomUUID());
+
+  assert.deepEqual(await storedBooking(result.booking_id), {
+    requested_date: "2099-01-01",
+    requested_time: null,
+  });
+  assert.deepEqual(await creationPayload(result.booking_id), {
+    booking_reference: result.reference,
+    status: "pending",
+    requested_date: "2099-01-01",
+    requested_time: null,
+  });
+});
+
+test("B: a morning selection is stored and notified unchanged", async () => {
+  const result = await submit(payload({ requested_time: "08:15" }), randomUUID());
+
+  assert.deepEqual(await storedBooking(result.booking_id), {
+    requested_date: "2099-01-01",
+    requested_time: "08:15",
+  });
+  assert.equal((await creationPayload(result.booking_id)).requested_time, "08:15");
+});
+
+test("C: an afternoon selection is stored and notified unchanged", async () => {
+  const result = await submit(payload({ requested_time: "16:45" }), randomUUID());
+
+  assert.equal((await storedBooking(result.booking_id)).requested_time, "16:45");
+  assert.equal((await creationPayload(result.booking_id)).requested_time, "16:45");
+});
+
+test("D: a different pickup date keeps its own date and time", async () => {
+  const result = await submit(
+    payload({ requested_date: "2099-02-14", requested_time: "13:30" }),
+    randomUUID(),
+  );
+
+  assert.deepEqual(await storedBooking(result.booking_id), {
+    requested_date: "2099-02-14",
+    requested_time: "13:30",
+  });
+  assert.deepEqual(await creationPayload(result.booking_id), {
+    booking_reference: result.reference,
+    status: "pending",
+    requested_date: "2099-02-14",
+    requested_time: "13:30",
+  });
+});
+
+test("a status change notifies the same pickup the booking was created with", async () => {
+  const created = await submit(payload({ requested_time: "10:10" }), randomUUID());
+  const version = await arrange(created.booking_id, 1);
+  await transition(created.booking_id, version, "confirmed");
+
+  const { rows } = await db.query<{ payload: PickupPayload }>(
+    `SELECT payload FROM public.email_outbox
+     WHERE booking_id = $1 AND template = 'booking_confirmed'`,
+    [created.booking_id],
+  );
+  assert.deepEqual(rows[0].payload, {
+    booking_reference: created.reference,
+    status: "confirmed",
+    requested_date: "2099-01-01",
+    requested_time: "10:10",
+  });
+
+  // The arrangement records the agreed pickup separately and never rewrites the
+  // customer's stated preference.
+  assert.equal(
+    (await storedBooking(created.booking_id)).requested_time,
+    "10:10",
+  );
+});
+
+test("a pre-existing booking keeps its stored pickup and still notifies", async () => {
+  const bookingId = randomUUID();
+  // A booking committed before this change: its stored preference is authoritative
+  // and must not be rewritten or back-filled.
+  await db.query(
+    `INSERT INTO public.bookings (
+        id, reference, submission_scope, idempotency_key, submission_hash,
+        customer_name, customer_phone, customer_email, item_category,
+        load_size, pickup_address, requested_date, requested_time
+     ) VALUES ($1, $4, 'legacy_import', $2, $3, 'Legacy Customer',
+               '+233595224280', 'legacy@example.test', 'clothing',
+               '1 Standard Bag', '1 Test Street', '2026-01-05', '14:20')`,
+    [bookingId, randomUUID(), "d".repeat(32), `2W-${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`],
+  );
+
+  const { rows } = await db.query<{ payload: PickupPayload }>(
+    `SELECT payload FROM public.email_outbox WHERE booking_id = $1`,
+    [bookingId],
+  );
+  assert.equal(rows[0].payload.requested_date, "2026-01-05");
+  assert.equal(rows[0].payload.requested_time, "14:20");
+});
+
+test("the payload contract still rejects an unexpected key and a malformed pickup", async () => {
+  const bookingId = randomUUID();
+  await db.query(
+    `INSERT INTO public.bookings (
+        id, reference, idempotency_key, submission_hash, customer_name,
+        customer_phone, customer_email, item_category, load_size, pickup_address,
+        requested_date, requested_time
+     ) VALUES ($1, '2W-AB12', $2, $3, 'Contract Test', '+233595224280',
+               'contract@example.test', 'clothing', '1 Standard Bag',
+               '1 Test Street', '2099-01-01', '09:00')`,
+    [bookingId, randomUUID(), "e".repeat(32)],
+  );
+
+  const insert = (payload: Record<string, unknown>) =>
+    db.query(
+      `INSERT INTO public.email_outbox (idempotency_key, template, recipient_email, payload)
+       VALUES ($1, 'booking_created', 'x@example.test', $2::jsonb)`,
+      [randomUUID(), JSON.stringify({ booking_reference: "2W-AB12", status: "pending", ...payload })],
+    );
+
+  await assert.rejects(insert({ customer_name: "Full Name" }), /email_outbox_payload_shape/);
+  await assert.rejects(insert({ requested_time: "9am" }), /email_outbox_payload_shape/);
+  await assert.rejects(insert({ requested_date: "01/01/2099" }), /email_outbox_payload_shape/);
 });

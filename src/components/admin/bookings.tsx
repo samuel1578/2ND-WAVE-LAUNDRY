@@ -21,6 +21,7 @@ import {
   type BranchOption,
 } from "@/lib/bookings/admin";
 import { allowedTransitions, confirmationFieldErrors } from "@/lib/bookings/lifecycle";
+import { preferredPickupTimeLabel } from "@/lib/bookings/scheduling";
 import {
   addBookingNoteAction,
   changeBookingStatus,
@@ -893,7 +894,7 @@ function LiveBookingList() {
                     <td>
                       {row.requestedDate}
                       <small>
-                        {row.requestedTime || "As soon as possible"}
+                        {preferredPickupTimeLabel(row.requestedTime)}
                         {row.expressRequested ? " · Express" : ""}
                       </small>
                     </td>
@@ -1278,7 +1279,7 @@ function LiveBookingDetail({
                 Address: detail.pickupAddress,
                 Landmark: detail.pickupLandmark || "Not provided",
                 Date: detail.requestedDate,
-                "Preferred time": detail.requestedTime || "As soon as possible",
+                "Preferred time": preferredPickupTimeLabel(detail.requestedTime),
                 Transport: statusLabel(detail.transportPreference),
                 "Map link": detail.pickupMapUrl || "Not provided",
               }).map(([k, v]) => (

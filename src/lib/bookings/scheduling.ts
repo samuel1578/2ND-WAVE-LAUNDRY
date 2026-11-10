@@ -43,6 +43,40 @@ export const isValidDateString = (value: string): boolean => {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 };
 
+/**
+ * Canonical `HH:MM` form of a clock value.
+ *
+ * A booking's preferred time may come back from PostgREST as a PostgreSQL `time`
+ * (`HH:MM:SS`, sometimes with fractional seconds) or already as `HH:MM`. Reducing
+ * both to the two significant fields keeps comparisons and equality stable.
+ * Returns `null` when the value is absent or not a clock at all.
+ */
+export function normaliseClock(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = value.trim().match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d(?:\.\d+)?)?$/);
+  return match ? `${match[1]}:${match[2]}` : null;
+}
+
+/**
+ * The approved wording for a request with no preferred clock time.
+ *
+ * This is a *label for an absent time*, never a stored value: a booking whose
+ * `requested_time` is recorded keeps that exact time on every surface.
+ */
+export const IMMEDIATE_PICKUP_LABEL = "As soon as possible";
+
+/**
+ * Display text for a booking's preferred pickup time.
+ *
+ * Returns the customer's exact selection (`HH:MM`) whenever one is recorded, and
+ * the immediate-pickup wording only when no time was selected at all. Every
+ * surface — customer emails, administrator alerts and the dashboard — calls this
+ * so the three can never disagree about what the customer asked for.
+ */
+export function preferredPickupTimeLabel(value: unknown): string {
+  return normaliseClock(value) ?? IMMEDIATE_PICKUP_LABEL;
+}
+
 /** Seconds since local midnight for an `HH:MM` or `HH:MM:SS` clock value. */
 export function clockToSeconds(value: string): number {
   const [h, m, s = "0"] = value.split(":");

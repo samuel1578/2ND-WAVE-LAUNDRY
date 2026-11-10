@@ -20,6 +20,7 @@ import {
   clockToSeconds,
   isValidClock,
   isValidDateString,
+  normaliseClock,
   type PickupWindow,
   type SchedulingFailure,
 } from "./scheduling";
@@ -306,11 +307,7 @@ const asNumberOrNull = (value: unknown): number | null => {
 };
 
 /** Reads a `time` column, normalising `HH:MM:SS` to `HH:MM`. */
-const asClock = (value: unknown): string | null => {
-  if (typeof value !== "string") return null;
-  const match = value.match(/^(\d{2}:\d{2})/);
-  return match ? match[1] : null;
-};
+const asClock = (value: unknown): string | null => normaliseClock(value);
 
 function embedObject(value: unknown): Record<string, unknown> | null {
   if (Array.isArray(value)) {

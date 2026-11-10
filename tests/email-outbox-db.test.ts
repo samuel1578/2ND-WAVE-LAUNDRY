@@ -20,6 +20,41 @@ import { PGlite } from "@electric-sql/pglite";
  */
 
 const MIGRATION = "supabase/migrations/20261019120000_email_outbox.sql";
+/**
+ * The current revision of the customer enqueue helper.
+ *
+ * Only this one function is applied on top of the base migration: it is the unit
+ * this harness asserts on, and it accepts both the current four-character and the
+ * historical ten-character references plus the committed preferred pickup. The
+ * staff-alert sibling needs the full booking schema and is covered by
+ * `email-outbox-integration-db.test.ts` and `staff-order-alerts-integration-db.test.ts`.
+ */
+const CURRENT_ENQUEUE_HELPER =
+  "supabase/migrations/20261110120000_preferred_pickup_notifications.sql";
+
+/** Extracts the replacement `email_outbox_payload_shape` constraint statement. */
+function extractConstraintShape(sql: string, name: string): string {
+  const pattern = new RegExp(
+    `ALTER TABLE public\\.email_outbox ADD CONSTRAINT ${name}[\\s\\S]*?\\n\\);`,
+  );
+  const statement = sql.match(pattern)?.[0];
+  if (!statement) throw new Error(`${name} definition not found`);
+  return statement.replace(
+    `ADD CONSTRAINT ${name}`,
+    `ADD CONSTRAINT ${name}_current`,
+  ).replace(
+    `ALTER TABLE public.email_outbox`,
+    `ALTER TABLE public.email_outbox DROP CONSTRAINT ${name};\nALTER TABLE public.email_outbox`,
+  );
+}
+
+/** Extracts one `CREATE OR REPLACE FUNCTION … $$;` block by its qualified name. */
+function extractFunction(sql: string, name: string): string | null {
+  const pattern = new RegExp(
+    `CREATE OR REPLACE FUNCTION ${name.replace(/\\./g, "\\\\.")}\\([\\s\\S]*?\\$\\$;`,
+  );
+  return sql.match(pattern)?.[0] ?? null;
+}
 
 const HARNESS = `
 CREATE ROLE anon NOLOGIN;
@@ -44,6 +79,26 @@ $$;
 REVOKE ALL ON FUNCTION private.touch_updated_at()
 FROM PUBLIC, anon, authenticated;
 
+-- The preferred-pickup serialiser normally arrives with the booking migrations;
+-- this harness stubs it so the outbox functions under test can be applied.
+CREATE OR REPLACE FUNCTION private.booking_requested_pickup_json(
+    p_date date,
+    p_time time
+)
+RETURNS jsonb
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+    SELECT jsonb_build_object(
+        'requested_date', to_char(p_date, 'YYYY-MM-DD'),
+        'requested_time', CASE
+            WHEN p_time IS NULL THEN NULL::text
+            ELSE to_char(p_time, 'HH24:MI')
+        END
+    );
+$$;
+
 CREATE TYPE public.booking_status AS ENUM (
     'pending',
     'confirmed',
@@ -64,6 +119,8 @@ CREATE TABLE public.bookings (
     customer_email text,
     status public.booking_status NOT NULL DEFAULT 'pending',
     version integer NOT NULL DEFAULT 1,
+    requested_date date NOT NULL DEFAULT date '2099-01-01',
+    requested_time time,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -80,6 +137,36 @@ before(async () => {
   db = new PGlite();
   await db.exec(HARNESS);
   await db.exec(readFileSync(MIGRATION, "utf8"));
+  // Apply the current definition of the helper this file asserts on, so the
+  // harness tests the deployed contract rather than the first revision of it.
+  const helper = extractFunction(
+    readFileSync(CURRENT_ENQUEUE_HELPER, "utf8"),
+    "private.enqueue_booking_email",
+  );
+  if (!helper) throw new Error("enqueue_booking_email definition not found");
+  await db.exec(helper);
+
+  // The payload contract is evaluated on every insert, so the staff labels must
+  // exist even though this harness never queues a staff alert (the full-schema
+  // tests cover that path).
+  for (const label of [
+    "staff_order_pending",
+    "staff_order_processing",
+    "staff_order_ready",
+    "staff_order_completed",
+    "staff_order_cancelled",
+    "newsletter_interest_received",
+    "enquiry_received",
+  ])
+    await db.exec(`ALTER TYPE public.email_template ADD VALUE '${label}'`);
+
+  // …and the closed payload contract that accepts the pickup keys it writes.
+  await db.exec(
+    extractConstraintShape(
+      readFileSync(CURRENT_ENQUEUE_HELPER, "utf8"),
+      "email_outbox_payload_shape",
+    ),
+  );
 });
 
 after(async () => {
@@ -95,6 +182,8 @@ type NewBooking = {
   reference?: string;
   email?: string | null;
   status?: string;
+  requestedDate?: string;
+  requestedTime?: string | null;
 };
 
 function reference(): string {
@@ -110,9 +199,18 @@ async function insertBooking(overrides: NewBooking = {}) {
   };
 
   await db.query(
-    `INSERT INTO public.bookings (id, reference, customer_email, status, version)
-     VALUES ($1, $2, $3, $4, 1)`,
-    [booking.id, booking.reference, booking.email, booking.status],
+    `INSERT INTO public.bookings (
+        id, reference, customer_email, status, version,
+        requested_date, requested_time
+     ) VALUES ($1, $2, $3, $4, 1, $5, $6)`,
+    [
+      booking.id,
+      booking.reference,
+      booking.email,
+      booking.status,
+      overrides.requestedDate === undefined ? "2099-01-01" : overrides.requestedDate,
+      overrides.requestedTime === undefined ? "09:00" : overrides.requestedTime,
+    ],
   );
 
   return booking;
@@ -130,7 +228,12 @@ async function outboxRows(bookingId: string) {
     id: string;
     template: string;
     recipient_email: string;
-    payload: { booking_reference: string; status: string };
+    payload: {
+      booking_reference: string;
+      status: string;
+      requested_date?: string | null;
+      requested_time?: string | null;
+    };
     status: string;
     attempt_count: number;
     next_attempt_at: string;
@@ -166,6 +269,8 @@ test("a valid creation with an email enqueues exactly one minimal row", async ()
   assert.deepEqual(rows[0].payload, {
     booking_reference: booking.reference,
     status: "pending",
+    requested_date: "2099-01-01",
+    requested_time: "09:00",
   });
   assert.equal(
     rows[0].idempotency_key,
@@ -174,6 +279,8 @@ test("a valid creation with an email enqueues exactly one minimal row", async ()
   // No unnecessary customer information in the payload.
   assert.deepEqual(Object.keys(rows[0].payload).sort(), [
     "booking_reference",
+    "requested_date",
+    "requested_time",
     "status",
   ]);
 });
@@ -494,7 +601,10 @@ test("the enqueued message identity cannot be redirected or rewritten", async ()
 
   await assert.rejects(
     db.query(
-      "UPDATE public.email_outbox SET template = 'booking_cancelled', payload = jsonb_build_object('booking_reference', payload->>'booking_reference', 'status', 'cancelled') WHERE id = $1",
+      `UPDATE public.email_outbox
+       SET template = 'booking_cancelled',
+           payload = payload || '{"status":"cancelled"}'::jsonb
+       WHERE id = $1`,
       [ids[0].id],
     ),
   );

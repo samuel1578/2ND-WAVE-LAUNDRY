@@ -13,6 +13,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { normaliseClock } from "@/lib/bookings/scheduling";
 import { bookingStatuses, type BookingStatus } from "@/lib/bookings/types";
 import {
   isEnquiryReceivedTemplate,
@@ -35,6 +36,9 @@ export type ClaimedOutboxEmail = {
   | {
     booking_reference: string;
     status: string;
+    /** Preferred pickup captured when the notification was queued. */
+    requested_date?: string | null;
+    requested_time?: string | null;
   }
   | NewsletterInterestContext
   | EnquiryReceivedContext;
@@ -217,10 +221,37 @@ function asEnquiryContext(value: unknown): EnquiryReceivedContext {
 }
 
 /**
- * Parses the minimal render payload. Customer rows carry exactly two keys; staff
- * rows additionally carry the trusted event metadata written by the enqueue
- * trigger; the newsletter manager alert carries only its committed sign-up
- * detail. A malformed payload is a repository error, never a fabricated value.
+ * Reads the preferred pickup recorded at enqueue time.
+ *
+ * Both keys are optional as a pair: notifications queued before the fix carry
+ * neither, and those rows render from the committed booking exactly as they did
+ * before. When present they must be well formed (`YYYY-MM-DD` and a clock, or
+ * `null`), so a corrupted payload is reported rather than rendered.
+ */
+function requestedPickupPayload(record: Record<string, unknown>): {
+  requested_date?: string | null;
+  requested_time?: string | null;
+} {
+  const date = record.requested_date;
+  const time = record.requested_time;
+  if (date === undefined && time === undefined) return {};
+  if (date !== null && (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)))
+    throw new EmailRepositoryError();
+  if (time !== null && (typeof time !== "string" || !normaliseClock(time)))
+    throw new EmailRepositoryError();
+  return {
+    requested_date: date as string | null,
+    requested_time: time as string | null,
+  };
+}
+
+/**
+ * Parses the minimal render payload. Customer rows carry the reference, status
+ * and — for rows queued since the preferred-pickup fix — the requested pickup;
+ * staff rows additionally carry the trusted event metadata written by the
+ * enqueue trigger; the newsletter manager alert carries only its committed
+ * sign-up detail. A malformed payload is a repository error, never a fabricated
+ * value.
  */
 function asPayload(
   value: unknown,
@@ -253,6 +284,7 @@ function asPayload(
   const payload = {
     booking_reference: record.booking_reference,
     status: record.status,
+    ...requestedPickupPayload(record),
   };
 
   if (!isStaffOrderTemplate(template)) return { payload };

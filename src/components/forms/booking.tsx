@@ -17,6 +17,10 @@ import {
   validPhone,
   clockLabel,
 } from "@/lib/rules";
+import {
+  normaliseClock,
+  preferredPickupTimeLabel,
+} from "@/lib/bookings/scheduling";
 import type { BookingInput } from "@/lib/contracts";
 import { createIdempotencyKey } from "@/lib/bookings/reference";
 import { DemoFailure, Field, Notice, Submit, TextField } from "./controls";
@@ -97,6 +101,15 @@ export function BookingForm({
   const heading = useRef<HTMLHeadingElement>(null);
   const resultHeading = useRef<HTMLHeadingElement>(null);
   const [message, setMessage] = useState("");
+  /**
+   * The preferred time as it will be sent.
+   *
+   * The time input is a visible form control and is normalised before it leaves
+   * the browser, so a value that is not a clock (for example a pasted string) is
+   * reduced to an empty preference rather than reaching the request. The exact
+   * `HH:MM` a customer selects is preserved end to end.
+   */
+  const preferredTime = normaliseClock(input.time) ?? "";
   const [feedback, setFeedback] = useState("");
   useEffect(() => {
     if (!saved) return;
@@ -301,7 +314,7 @@ export function BookingForm({
       if (!demoMode && result.photoUploadToken && photoRef.current.length)
         void uploadPhotos(result.photoUploadToken);
       setMessage(
-        `Hello 2nd Wave team. I would like to discuss pickup request ${reference}.\nName: ${input.name}\nServices: ${input.services.map((slug) => catalogue.find((s) => s.slug === slug)?.title).join(", ")}\nPreferred date: ${input.date}\nPreferred time: ${input.time || "As soon as possible"}\nPlease contact me to agree the fee and arrangements.`,
+        `Hello 2nd Wave team. I would like to discuss pickup request ${reference}.\nName: ${input.name}\nServices: ${input.services.map((slug) => catalogue.find((s) => s.slug === slug)?.title).join(", ")}\nPreferred date: ${input.date}\nPreferred time: ${preferredPickupTimeLabel(preferredTime)}\nPlease contact me to agree the fee and arrangements.`,
       );
     } catch (e) {
       setError(
@@ -711,7 +724,7 @@ export function BookingForm({
                     .join(", "),
                   "Load Size": input.items,
                   "Pickup date": input.date,
-                  "Preferred time": input.time || "As soon as possible",
+                  "Preferred time": preferredPickupTimeLabel(preferredTime),
                   Address: input.address,
                   "Transport preference": input.transport,
                   "Contact details": `${input.name} · ${input.phone}`,
