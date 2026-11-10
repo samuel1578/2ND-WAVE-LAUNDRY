@@ -7,7 +7,22 @@ import {
   useState,
   type MouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { Field, TextField } from "@/components/forms/controls";
+import styles from "./blog-manager.module.css";
+import {
+  Bold,
+  ChevronDown,
+  Image as ImageIcon,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
+  MoreHorizontal,
+  Pilcrow,
+  Strikethrough,
+  Underline,
+} from "lucide-react";
 import type {
   BlogContentBlock,
   BlogImageAlign,
@@ -437,6 +452,10 @@ export const BlogEditor = forwardRef<
   const [initialHtml] = useState(() => blocksToHtml(blocks));
   const propsSignature = JSON.stringify(blocks);
   const [image, setImage] = useState<ImageSelection | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0 });
   const [, refreshToolbar] = useState(0);
 
   function emit() {
@@ -459,6 +478,50 @@ export const BlogEditor = forwardRef<
     lastEmitted.current = propsSignature;
     setImage(null);
   }, [blocks, propsSignature]);
+
+  useEffect(() => {
+    if (!advancedOpen) return;
+    const positionMenu = () => {
+      const button = moreButtonRef.current;
+      const menu = menuRef.current;
+      if (!button || !menu) return;
+      const anchor = button.getBoundingClientRect();
+      const margin = 16;
+      const availableWidth = window.innerWidth - margin * 2;
+      const width = Math.min(360, availableWidth);
+      const rightAligned = anchor.right - width;
+      const left = Math.max(
+        margin,
+        Math.min(rightAligned, window.innerWidth - width - margin),
+      );
+      const below = anchor.bottom + 8;
+      const estimatedHeight = Math.min(menu.scrollHeight || 360, window.innerHeight * 0.7);
+      const top = below + estimatedHeight <= window.innerHeight - margin
+        ? below
+        : Math.max(margin, anchor.top - estimatedHeight - 8);
+      setMenuPosition({ left, top });
+    };
+    positionMenu();
+    window.addEventListener("resize", positionMenu);
+    window.addEventListener("scroll", positionMenu, true);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAdvancedOpen(false);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target) && !moreButtonRef.current?.contains(target)) {
+        setAdvancedOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("resize", positionMenu);
+      window.removeEventListener("scroll", positionMenu, true);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [advancedOpen]);
 
   useEffect(() => {
     const onSelectionChange = () => {
@@ -776,109 +839,105 @@ export const BlogEditor = forwardRef<
   return (
     <div className="blog-editor">
       <div className="blog-editor-toolbar" role="toolbar" aria-label="Article formatting">
+        <label className="blog-editor-toolbar__style">
+          <Pilcrow aria-hidden="true" />
+          <span className="sr-only">Paragraph style</span>
+          <select
+            aria-label="Paragraph style"
+            defaultValue="paragraph"
+            onMouseDown={(event) => event.preventDefault()}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (TEXT_STYLES.some((option) => option.style === value)) {
+                applyStyle(value as BlogTextStyle);
+              }
+              event.currentTarget.value = "paragraph";
+            }}
+          >
+            {TEXT_STYLES.filter((option) => ["paragraph", "heading2", "heading3"].includes(option.style)).map((option) => <option key={option.style} value={option.style}>{option.label}</option>)}
+          </select>
+          <ChevronDown aria-hidden="true" />
+        </label>
         {([
-          ["bold", "Bold", "bold"],
-          ["italic", "Italic", "italic"],
-          ["underline", "Underline", "underline"],
-          ["strikeThrough", "Strikethrough", "strike"],
-        ] as const).map(([command, label, activeTag]) => (
+          ["bold", "Bold", "bold", Bold],
+          ["italic", "Italic", "italic", Italic],
+          ["underline", "Underline", "underline", Underline],
+          ["strikeThrough", "Strikethrough", "strike", Strikethrough],
+        ] as const).map(([command, label, activeTag, Icon]) => (
           <button
             key={command}
             type="button"
-            className={`button secondary${selectionActive(activeTag === "strike" ? "s,del,strike" : activeTag) ? " is-active" : ""}`}
+            className={`blog-editor-toolbar__button${selectionActive(activeTag === "strike" ? "s,del,strike" : activeTag) ? " is-active" : ""}`}
             aria-label={label}
             aria-pressed={selectionActive(activeTag === "strike" ? "s,del,strike" : activeTag)}
             title={label}
             onMouseDown={(event) => { event.preventDefault(); captureSelection(); }}
             onClick={() => formatMark(command === "strikeThrough" ? "strike" : command as "bold" | "italic" | "underline")}
           >
-            {label}
+            <Icon aria-hidden="true" />
           </button>
         ))}
-        <label className="blog-editor-toolbar__select" title="Font size">
-          <span className="sr-only">Font size</span>
-          <select
-            aria-label="Font size"
-            defaultValue=""
-            onMouseDown={captureSelection}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              if (isBlogFontSize(value)) wrapSelection({ fontSize: `${value}px` });
-              event.currentTarget.value = "";
-            }}
-          >
-            <option value="">Font size</option>
-            {BLOG_FONT_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}
-          </select>
-        </label>
-        <label className="blog-editor-toolbar__select" title="Font family">
-          <span className="sr-only">Font family</span>
-          <select
-            aria-label="Font family"
-            defaultValue=""
-            onMouseDown={captureSelection}
-            onChange={(event) => {
-              if (isBlogFontFamily(event.target.value)) wrapSelection({ fontFamily: event.target.value });
-              event.currentTarget.value = "";
-            }}
-          >
-            <option value="">Font family</option>
-            {BLOG_FONT_FAMILIES.map((family) => <option key={family} value={family}>{family}</option>)}
-          </select>
-        </label>
-        <label className="blog-editor-toolbar__color" title="Text colour">
-          <span className="sr-only">Text colour</span>
-          <input type="color" aria-label="Text colour" defaultValue="#102b51" onMouseDown={captureSelection} onChange={(event) => wrapSelection({ color: event.target.value })} />
-        </label>
-        <label className="blog-editor-toolbar__select" title="Text colour presets">
-          <span className="sr-only">Text colour presets</span>
-          <select aria-label="Text colour presets" defaultValue="" onMouseDown={captureSelection} onChange={(event) => {
-            if (isSafeBlogColor(event.target.value)) wrapSelection({ color: event.target.value });
-            event.currentTarget.value = "";
-          }}>
-            <option value="">Colour presets</option>
-            {TEXT_COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
-          </select>
-        </label>
-        <label className="blog-editor-toolbar__color" title="Text highlighting">
-          <span className="sr-only">Text highlighting</span>
-          <input type="color" aria-label="Text highlighting" defaultValue="#fff3a3" onMouseDown={captureSelection} onChange={(event) => wrapSelection({ backgroundColor: event.target.value })} />
-        </label>
-        <label className="blog-editor-toolbar__select" title="Highlight presets">
-          <span className="sr-only">Highlight presets</span>
-          <select aria-label="Highlight presets" defaultValue="" onMouseDown={captureSelection} onChange={(event) => {
-            if (isSafeBlogColor(event.target.value)) wrapSelection({ backgroundColor: event.target.value });
-            event.currentTarget.value = "";
-          }}>
-            <option value="">Highlight presets</option>
-            {HIGHLIGHT_COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
-          </select>
-        </label>
-        <button type="button" className="button secondary" title="Insert or edit link" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={applyLink}>Link</button>
-        <button type="button" className="button secondary" title="Remove link" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={() => { const range = currentRange(); if (!range) return; restoreRange(range); document.execCommand("unlink", false); emit(); }}>Unlink</button>
-        <button type="button" className="button secondary" title="Clear inline formatting" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={clearFormatting}>Clear</button>
-        {TEXT_STYLES.map((option) => (
-          <button
-            key={option.style}
-            type="button"
-            className="button secondary"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyStyle(option.style)}
-          >
-            {option.label}
+        <span className="blog-editor-toolbar__divider" aria-hidden="true" />
+        <button type="button" className="blog-editor-toolbar__button" title="Bulleted list" aria-label="Bulleted list" onMouseDown={(event) => event.preventDefault()} onClick={() => applyStyle("bulleted")}><List aria-hidden="true" /></button>
+        <button type="button" className="blog-editor-toolbar__button" title="Numbered list" aria-label="Numbered list" onMouseDown={(event) => event.preventDefault()} onClick={() => applyStyle("numbered")}><ListOrdered aria-hidden="true" /></button>
+        <button type="button" className="blog-editor-toolbar__button" title="Insert or edit link" aria-label="Insert or edit link" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={applyLink}><Link2 aria-hidden="true" /></button>
+        <button type="button" className="blog-editor-toolbar__button" title="Insert image" aria-label="Insert image" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={onRequestImage}><ImageIcon aria-hidden="true" /></button>
+        <div className="blog-editor-toolbar__more">
+          <button ref={moreButtonRef} type="button" className="blog-editor-toolbar__button blog-editor-toolbar__more-button" aria-expanded={advancedOpen} aria-haspopup="true" onMouseDown={(event) => event.preventDefault()} onClick={() => setAdvancedOpen((open) => !open)}>
+            <MoreHorizontal aria-hidden="true" /><span>More options</span><ChevronDown aria-hidden="true" />
           </button>
-        ))}
-        <button
-          type="button"
-          className="button secondary"
-          onMouseDown={(event) => {
-            event.preventDefault();
-            captureSelection();
-          }}
-          onClick={onRequestImage}
-        >
-          Insert image
-        </button>
+          {advancedOpen && typeof document !== "undefined" && createPortal(
+            <div ref={menuRef} className={`blog-editor-toolbar__menu ${styles.advancedMenu}`} role="group" aria-label="Advanced text formatting" style={{ left: menuPosition.left, top: menuPosition.top }}>
+              <strong>Text formatting</strong>
+              <label className="blog-editor-toolbar__select" title="Font size">
+                <span className="sr-only">Font size</span>
+                <select aria-label="Font size" defaultValue="" onMouseDown={captureSelection} onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (isBlogFontSize(value)) wrapSelection({ fontSize: `${value}px` });
+                  event.currentTarget.value = "";
+                }}>
+                  <option value="">Font size</option>
+                  {BLOG_FONT_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}
+                </select>
+              </label>
+              <label className="blog-editor-toolbar__select" title="Font family">
+                <span className="sr-only">Font family</span>
+                <select aria-label="Font family" defaultValue="" onMouseDown={captureSelection} onChange={(event) => {
+                  if (isBlogFontFamily(event.target.value)) wrapSelection({ fontFamily: event.target.value });
+                  event.currentTarget.value = "";
+                }}>
+                  <option value="">Font family</option>
+                  {BLOG_FONT_FAMILIES.map((family) => <option key={family} value={family}>{family}</option>)}
+                </select>
+              </label>
+              <label className="blog-editor-toolbar__color" title="Text colour"><span>Text colour</span><input type="color" aria-label="Text colour" defaultValue="#102b51" onMouseDown={captureSelection} onChange={(event) => wrapSelection({ color: event.target.value })} /></label>
+              <label className="blog-editor-toolbar__select" title="Text colour presets">
+                <span className="sr-only">Text colour presets</span>
+                <select aria-label="Text colour presets" defaultValue="" onMouseDown={captureSelection} onChange={(event) => {
+                  if (isSafeBlogColor(event.target.value)) wrapSelection({ color: event.target.value });
+                  event.currentTarget.value = "";
+                }}>
+                  <option value="">Colour presets</option>
+                  {TEXT_COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
+                </select>
+              </label>
+              <label className="blog-editor-toolbar__color" title="Text highlighting"><span>Highlight</span><input type="color" aria-label="Text highlighting" defaultValue="#fff3a3" onMouseDown={captureSelection} onChange={(event) => wrapSelection({ backgroundColor: event.target.value })} /></label>
+              <label className="blog-editor-toolbar__select" title="Highlight presets">
+                <span className="sr-only">Highlight presets</span>
+                <select aria-label="Highlight presets" defaultValue="" onMouseDown={captureSelection} onChange={(event) => {
+                  if (isSafeBlogColor(event.target.value)) wrapSelection({ backgroundColor: event.target.value });
+                  event.currentTarget.value = "";
+                }}>
+                  <option value="">Highlight presets</option>
+                  {HIGHLIGHT_COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
+                </select>
+              </label>
+              <button type="button" className="button secondary" title="Remove link" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={() => { const range = currentRange(); if (!range) return; restoreRange(range); document.execCommand("unlink", false); emit(); }}>Unlink</button>
+              <button type="button" className="button secondary" title="Clear inline formatting" onMouseDown={(event) => { event.preventDefault(); captureSelection(); }} onClick={clearFormatting}>Clear formatting</button>
+            </div>,
+            document.body,
+          )}
+        </div>
       </div>
       <div
         ref={canvasRef}

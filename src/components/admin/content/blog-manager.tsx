@@ -3,13 +3,26 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Empty, Picture } from "@/components/ui";
-import { Field, TextField } from "@/components/forms/controls";
+import { DemoFailure, Field, Notice, TextField } from "@/components/forms/controls";
 import { Dialog } from "@/components/dialog";
 import { UnsavedGuard } from "../unsaved";
 import { deleteContent, saveContent, useDemoStore } from "@/lib/mock-store";
 import type { BlogAuthor, BlogContentBlock, ContentItem, MediaAsset } from "@/lib/contracts";
-import { ModuleShell } from "./shared/module-shell";
 import { MediaLibraryPicker } from "./shared/media-library-picker";
+import { ModuleShell } from "./shared/module-shell";
+import {
+  ArrowRight,
+  CalendarDays,
+  ChevronRight,
+  Eye,
+  FileText,
+  Image as ImageIcon,
+  Link2,
+  Save,
+  Send,
+  UserRound,
+} from "lucide-react";
+import styles from "./blog-manager.module.css";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
 import { deleteLiveBlog, saveLiveContent } from "@/lib/website/actions";
@@ -382,99 +395,140 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
 
   return (
     <>
+      <div className={styles.blogAdmin}>
       <UnsavedGuard dirty={dirty} />
-      <ModuleShell
-        title={item ? "Edit Article" : "New Article"}
-        description={form.title || undefined}
-        backHref="/admin/content/blog"
-        backLabel="Blog"
-        badge={<span className="badge">{dirty ? "Unsaved changes" : published ? form.status === "Draft" ? "Published · draft changes" : "Published" : form.status}</span>}
-        error={error}
-        success={success}
-      />
+      <header className={styles.pageHeader}>
+        <div className={styles.breadcrumbs} aria-label="Breadcrumb">
+          <Link href="/admin/content">Website Content</Link><ChevronRight aria-hidden="true" />
+          <Link href="/admin/content/blog">Blog</Link><ChevronRight aria-hidden="true" />
+          <span>{item ? "Edit Article" : "Create Article"}</span>
+        </div>
+        <div className={styles.headingRow}>
+          <div className={styles.headingCopy}>
+            <span className={styles.headingIcon}><FileText aria-hidden="true" /></span>
+            <div>
+              <h1>{item ? "Edit Blog Article" : "Create Blog Article"}</h1>
+              <p>{item ? "Update and manage your article." : "Publish a new article to your website blog."}</p>
+              <span className={styles.statusLine}>{dirty ? "Unsaved changes" : published ? form.status === "Draft" ? "Published · draft changes" : "Published" : form.status}</span>
+            </div>
+          </div>
+          <nav className={styles.headerActions} aria-label="Article actions">
+            <Link className={`${styles.actionButton} ${styles.secondaryAction}`} href="/admin/content/blog">Cancel</Link>
+            <button type="button" className={`${styles.actionButton} ${styles.secondaryAction}`} disabled={busy || !canSaveDraft} onClick={() => void save("draft")}><Save aria-hidden="true" />Save Draft</button>
+            <button type="button" className={`${styles.actionButton} ${styles.secondaryAction}`} onClick={() => setPreview(true)}><Eye aria-hidden="true" />Preview</button>
+            {showPublish && <button type="button" className={`${styles.actionButton} ${styles.primaryAction}`} disabled={busy} onClick={() => setConfirm("publish")}><Send aria-hidden="true" />Publish</button>}
+          </nav>
+        </div>
+      </header>
+      {error && <Notice error>{error}</Notice>}
+      {success && <Notice success>{success}</Notice>}
       <form
-        className="admin-columns"
+        className={styles.editorLayout}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
           void save("draft");
         }}
       >
-        <div className="panel form-stack">
+        <section className={`${styles.card} ${styles.articleCard}`} aria-labelledby="article-details-heading">
+          <h2 id="article-details-heading">Article Details</h2>
           {field("title", "Title *")}
-          {!item && <small>Website link: /blog/{form.slug || "your-article-name"} (created from the title)</small>}
-          {field("summary", "Summary *")}
-          <section className="form-stack">
-            <h2>Article body</h2>
+          <TextField
+            id="article-slug"
+            label="Website URL / slug"
+            value={form.slug}
+            maxLength={254}
+            onChange={(event) => change("slug", slugify(event.target.value))}
+          />
+          <small className={styles.slugHelp}><Link2 aria-hidden="true" /> Your article URL: /blog/{form.slug || "your-article-name"}</small>
+          <Field id="article-summary" label="Summary *">
+            <textarea
+              id="article-summary"
+              value={form.summary}
+              onChange={(event) => change("summary", event.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="A short summary that appears in the blog list and previews."
+            />
+            <span className={styles.characterCount}>{form.summary.length} / 2000</span>
+          </Field>
+          <div className={styles.articleBody}>
+            <div className={styles.sectionDivider} />
+            <h2>Article Body</h2>
             <BlogEditor
               ref={editorRef}
               blocks={form.contentBlocks ?? editorBlocks(form)}
               onChange={changeBlocks}
               onRequestImage={() => setMediaTarget("content")}
             />
-            <small>
+            <small className={styles.editorHint}>
               The featured image is optional and separate from the body. Images inserted into the
               canvas appear only where you place them, and HTML is never executed.
             </small>
-          </section>
-          <small>Newer articles appear first on the blog page after publishing.</small>
-        </div>
-        <div className="stack">
-          <section className="panel form-stack">
-            <h2>Featured Media</h2>
-            {form.image && <Picture photo={{ src: form.image, alt: form.alt }} sizes="(max-width: 700px) 100vw, 420px" />}
-            <button type="button" className="button secondary" onClick={() => setMediaTarget("featured")}>
-              {form.image ? "Replace from Media Library" : "Select from Media Library"}
+            <small className={styles.editorHint}>Newer articles appear first on the blog page after publishing.</small>
+          </div>
+        </section>
+        <aside className={styles.sidebar} aria-label="Article settings">
+          <section className={`${styles.card} ${styles.sidebarCard}`} aria-labelledby="publication-heading">
+            <h2 id="publication-heading"><CalendarDays aria-hidden="true" />Publication</h2>
+            <button type="button" className={`${styles.publishChoice} ${!published ? styles.choiceSelected : ""}`} disabled={busy} onClick={() => setConfirm("publish")}>
+              <span className={styles.choiceRadio}>{!published && <span />}</span><span><strong>Publish now</strong><small>{published ? "Article is live" : "Make this article public"}</small></span><ArrowRight aria-hidden="true" />
             </button>
-            {form.image && <button type="button" className="button secondary" onClick={() => { setForm((current) => ({ ...current, image: "", alt: "", imageMediaId: undefined })); setSuccess(""); }}>Remove featured image</button>}
-            {field("alt", form.image ? "Featured image alt text *" : "Featured image alt text")}
-            {form.publishedAt && <small>First published {new Date(form.publishedAt).toLocaleDateString("en-GH", { dateStyle: "long", timeZone: "UTC" })}</small>}
+            <button type="button" className={`${styles.publishChoice} ${published ? styles.choiceSelected : ""}`} disabled={busy || !canSaveDraft} onClick={() => void save("draft")}>
+              <span className={styles.choiceRadio}>{published && <span />}</span><span><strong>Save as draft</strong><small>Keep this article unpublished</small></span><Save aria-hidden="true" />
+            </button>
+            {published && <small className={styles.publishedAt}>First published {form.publishedAt ? new Date(form.publishedAt).toLocaleDateString("en-GH", { dateStyle: "long", timeZone: "UTC" }) : ""}</small>}
           </section>
-          <section className="panel form-stack">
-            <h2>Author (optional)</h2>
+          <section className={`${styles.card} ${styles.sidebarCard}`} aria-labelledby="featured-heading">
+            <h2 id="featured-heading"><ImageIcon aria-hidden="true" />Featured Media</h2>
+            {form.image ? (
+              <div className={styles.featuredPreview}>
+                <Picture photo={{ src: form.image, alt: form.alt }} sizes="(max-width: 700px) 100vw, 420px" />
+                <button type="button" className={styles.replaceMedia} onClick={() => setMediaTarget("featured")}>Change image</button>
+              </div>
+            ) : (
+              <button type="button" className={styles.mediaDropzone} onClick={() => setMediaTarget("featured")}>
+                <ImageIcon aria-hidden="true" /><strong>Select from Media Library</strong><span>Choose an image for your article</span><small>Recommended: 1200 × 630</small>
+              </button>
+            )}
+            {form.image && <button type="button" className={`${styles.actionButton} ${styles.secondaryAction} ${styles.fullButton}`} onClick={() => { setForm((current) => ({ ...current, image: "", alt: "", imageMediaId: undefined })); setSuccess(""); }}>Remove featured image</button>}
+            {field("alt", form.image ? "Featured image alt text *" : "Featured image alt text")}
+          </section>
+          <section className={`${styles.card} ${styles.sidebarCard}`} aria-labelledby="author-heading">
+            <h2 id="author-heading"><UserRound aria-hidden="true" />Author <span>(Optional)</span></h2>
             <TextField
               id="article-author-name"
               label="Author name"
               value={form.author?.name ?? ""}
               maxLength={160}
               onChange={(event) => changeAuthor("name", event.target.value)}
+              placeholder="Enter author name"
             />
-            <Field id="article-author-bio" label="Biography (optional)">
+            <Field id="article-author-bio" label="Biography">
               <textarea
                 id="article-author-bio"
                 value={form.author?.bio ?? ""}
                 onChange={(event) => changeAuthor("bio", event.target.value)}
                 rows={3}
                 maxLength={2000}
+                placeholder="A short bio about the author"
               />
+              <span className={styles.characterCount}>{(form.author?.bio ?? "").length} / 2000</span>
             </Field>
-            {form.author?.image && <Picture photo={{ src: form.author.image, alt: form.author.imageAlt || form.author.name }} sizes="96px" />}
-            <button type="button" className="button secondary" onClick={() => setMediaTarget("author")}>
-              {form.author?.image ? "Replace profile image" : "Choose profile image"}
+            {form.author?.image && <div className={styles.authorPreview}><Picture photo={{ src: form.author.image, alt: form.author.imageAlt || form.author.name }} sizes="96px" /></div>}
+            <button type="button" className={`${styles.actionButton} ${styles.secondaryAction} ${styles.fullButton}`} onClick={() => setMediaTarget("author")}>
+              <UserRound aria-hidden="true" />{form.author?.image ? "Replace profile image" : "Choose profile image"}
             </button>
           </section>
-          <section className="panel form-stack">
-            {showPublish ? (
-              <>
-                <button type="button" className="button" disabled={busy} onClick={() => setConfirm("publish")}>Publish</button>
-                <button type="button" className="button secondary" disabled={busy || !canSaveDraft} onClick={() => void save("draft")}>Save Draft</button>
-              </>
-            ) : (
-              <button type="submit" className="button" disabled={busy || !canSaveDraft}>Save Draft</button>
-            )}
-            <button type="button" className="button secondary" onClick={() => setPreview(true)}>Preview</button>
-            {published && <button type="button" className="button secondary" disabled={busy} onClick={() => void save("unpublish")}>Unpublish</button>}
-            {form.id && !archived && <button type="button" className="button secondary" disabled={busy} onClick={() => setConfirm("archive")}>Archive</button>}
-            {demoMode && form.id && !published && <button type="button" className="button danger" disabled={busy} onClick={() => setConfirm("delete")}>Delete Draft</button>}
-            {form.id && !demoMode && (
-              <button type="button" className="button danger" disabled={busy} onClick={() => setConfirm("delete")}>
-                Delete Article
-              </button>
-            )}
-            <Link className="button secondary" href="/admin/content/blog">Cancel</Link>
+          <section className={`${styles.card} ${styles.sidebarCard} ${styles.moreActions}`} aria-label="More article actions">
+            {published && <button type="button" className={`${styles.actionButton} ${styles.secondaryAction} ${styles.fullButton}`} disabled={busy} onClick={() => void save("unpublish")}>Unpublish</button>}
+            {form.id && !archived && <button type="button" className={`${styles.actionButton} ${styles.secondaryAction} ${styles.fullButton}`} disabled={busy} onClick={() => setConfirm("archive")}>Archive</button>}
+            {demoMode && form.id && !published && <button type="button" className={`${styles.actionButton} ${styles.dangerAction} ${styles.fullButton}`} disabled={busy} onClick={() => setConfirm("delete")}>Delete Draft</button>}
+            {form.id && !demoMode && <button type="button" className={`${styles.actionButton} ${styles.dangerAction} ${styles.fullButton}`} disabled={busy} onClick={() => setConfirm("delete")}>Delete Article</button>}
           </section>
-        </div>
+        </aside>
       </form>
+      <DemoFailure />
       <MediaLibraryPicker
         open={!!mediaTarget}
         title={mediaTarget === "author" ? "Select Author Profile Image" : mediaTarget === "content" ? "Insert Article Image" : "Select Featured Image"}
@@ -524,6 +578,7 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
           </button>
         </div>
       </Dialog>
+      </div>
     </>
   );
 }
