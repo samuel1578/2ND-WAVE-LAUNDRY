@@ -135,6 +135,13 @@ public.email_delivery_status:
 **Validation / invariants**
 
 - Recipient email is trimmed, 3–254 chars, and matches a basic address shape.
+- `private.enqueue_booking_email` validates the reference with the same
+  dual-length pattern. It is called from the `AFTER INSERT` trigger, so a
+  ten-character-only guard rejects every short reference inside the booking
+  transaction: the insert rolls back and the API reports the unmapped database
+  error as `conflict` (HTTP 409). `20261109140000_short_booking_reference_notifications.sql`
+  widens the guard; `tests/email-outbox-integration-db.test.ts` covers a short
+  reference reaching the outbox and a legacy reference still notifying.
 - Payload is an object with exactly `booking_reference` and `status`; the
   reference matches `^2W-([0-9A-HJKMNP-TV-Z]{4}|[0-9A-HJKMNP-TV-Z]{10})$`
   (four characters for new references; ten-character historical references

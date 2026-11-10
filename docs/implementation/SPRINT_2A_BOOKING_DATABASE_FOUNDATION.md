@@ -45,6 +45,8 @@ means a public endpoint cannot become a privileged gateway, even if it is misuse
 | `supabase/migrations/20261011130100_booking_rls.sql` | RLS, grants and the `private.is_active_admin()` helper |
 | `supabase/migrations/20261011130200_booking_functions.sql` | Trusted `booking_*` functions and private scheduling/lifecycle helpers |
 | `supabase/migrations/20261011130300_booking_retention.sql` | Retention job log and read-only due-record helpers |
+| `supabase/migrations/20261109130000_short_booking_references.sql` | Dual-length reference constraints (four or ten characters) and the four-character generator |
+| `supabase/migrations/20261109140000_short_booking_reference_notifications.sql` | Widens the outbox enqueue reference guard so short references can notify |
 
 ### New SQL test script
 
@@ -288,7 +290,13 @@ treated as closed. The same rules are mirrored as pure functions in
 
 References are generated server-side (`2W-` plus four Crockford-safe characters)
 with a unique constraint and bounded retry. References issued before the
-shortening keep their ten-character suffix and remain valid. Submissions are idempotent on
+shortening keep their ten-character suffix and remain valid.
+
+Every consumer of a reference must accept both lengths. The booking check
+constraint, the outbox payload constraint and `private.enqueue_booking_email`
+all use `^2W-([0-9A-HJKMNP-TV-Z]{4}|[0-9A-HJKMNP-TV-Z]{10})$`; the enqueue helper
+runs inside the creation trigger, so a stale ten-character guard there fails the
+whole submission rather than only the notification. Submissions are idempotent on
 `(submission_scope, idempotency_key)`: a replay with the same payload returns the
 original committed result (and is **not** re-evaluated against a later cutoff),
 while a reused key with a different payload raises `BOOKING_IDEMPOTENCY_MISMATCH`.

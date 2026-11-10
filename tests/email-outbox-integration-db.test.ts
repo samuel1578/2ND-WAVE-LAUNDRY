@@ -213,6 +213,28 @@ test("new booking references use the short 2W-XXXX format", async () => {
   assert.match(result.reference, /^2W-[0-9A-HJKMNP-TV-Z]{4}$/);
 });
 
+test("two new bookings with different details both commit with their own short reference", async () => {
+  const first = await submit(payload(), randomUUID());
+  const second = await submit(
+    payload({
+      customer_name: "Kwesi Boateng",
+      customer_phone: "+233201234567",
+      customer_email: "kwesi@example.test",
+      pickup_address: "22 Other Road",
+      item_category: "bedding",
+      load_size: "2 Standard Bags",
+    }),
+    randomUUID(),
+  );
+
+  assert.notEqual(first.booking_id, second.booking_id);
+  assert.notEqual(first.reference, second.reference);
+  assert.match(first.reference, /^2W-[0-9A-HJKMNP-TV-Z]{4}$/);
+  assert.match(second.reference, /^2W-[0-9A-HJKMNP-TV-Z]{4}$/);
+  assert.deepEqual(await templates(first.booking_id), ["booking_created"]);
+  assert.deepEqual(await templates(second.booking_id), ["booking_created"]);
+});
+
 test("short references are collision-checked and remain unique", async () => {
   const { rows } = await db.query<{ reference: string }>(
     "SELECT private.booking_reference() AS reference FROM generate_series(1, 100)",

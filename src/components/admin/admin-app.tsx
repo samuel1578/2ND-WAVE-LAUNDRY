@@ -308,7 +308,7 @@ export function AdminApp({
             <span className="badge">Demo workspace</span>
           )}
         </div>
-        <PasswordUpdatedNotice notice={notice} />
+        <SuccessNotice notice={notice} />
         {dataNotice && <Notice>{dataNotice}</Notice>}
         <Reveal>{content}</Reveal>
       </div>
@@ -321,9 +321,20 @@ function routeLabelFor(href: string): string {
   return resolution.kind === "known" ? resolution.route.label : "Dashboard";
 }
 
-function PasswordUpdatedNotice({ notice }: { notice?: string }) {
-  if (notice !== "password-updated") return null;
-  return <Notice success>Your password has been updated.</Notice>;
+/**
+ * Success messages carried by `?notice=` after an action finished on another
+ * page, e.g. a permanent deletion that returned to its listing.
+ */
+const ADMIN_NOTICES: Record<string, string> = {
+  "password-updated": "Your password has been updated.",
+  "blog-deleted": "The article was permanently deleted.",
+  "service-deleted": "The service was permanently deleted.",
+};
+
+function SuccessNotice({ notice }: { notice?: string }) {
+  const message = notice ? ADMIN_NOTICES[notice] : undefined;
+  if (!message) return null;
+  return <Notice success>{message}</Notice>;
 }
 
 function Auth({

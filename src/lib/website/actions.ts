@@ -4,7 +4,7 @@ import { getCurrentAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
 import type { ContentItem, FaqItem, GalleryCollection, GalleryPlacement, LocationRecord, PromotionRecord, Settings } from "@/lib/contracts";
 import { checkRequestOrigin } from "@/lib/security/request-origin";
-import { writeFaqs, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia, deleteMedia as deleteMediaRecord } from "./repository";
+import { writeFaqs, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia, deleteMedia as deleteMediaRecord, deleteBlog, deleteService } from "./repository";
 import { writeGalleryWorkspace } from "./gallery-write";
 import { galleryWorkspaceError } from "./gallery-collections";
 import type { MediaAsset } from "@/lib/contracts";
@@ -197,6 +197,33 @@ export async function saveLiveContent(item: ContentItem, action: "draft" | "publ
   );
   return saved;
 }
+
+/**
+ * Permanently deletes one blog article.
+ *
+ * Only administrators holding `content.manage` may delete, the origin of the
+ * request is verified, and the Media Library is left untouched: shared images
+ * remain available to other content. The public blog is revalidated so the
+ * article disappears from the website immediately.
+ */
+export async function deleteLiveBlog(item: ContentItem) {
+  await assertWebsiteWritesEnabled();
+  const admin = await actor("content.manage");
+  if (
+    !item ||
+    item.module !== "Blog" ||
+    typeof item.slug !== "string" ||
+    item.slug.length > 180
+  ) {
+    throw new Error("Article is invalid.");
+  }
+  consumeWebsiteWrite(admin.userId);
+  await deleteBlog(item);
+  revalidatePublicPaths(
+    ["/", "/blog", `/blog/${item.slug.trim()}`],
+    PUBLIC_WRITE_TAGS.content,
+  );
+}
 export async function saveLivePromotion(item: PromotionRecord) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
@@ -328,6 +355,33 @@ export async function saveLiveService(
     () => writeService(admin.userId, item, action),
     ["/", "/services", `/services/${item.slug}`],
     undefined,
+    PUBLIC_WRITE_TAGS.service,
+  );
+}
+
+/**
+ * Permanently deletes one service from the catalogue.
+ *
+ * The repository refuses the delete when any booking still references the
+ * service, and its error message explains that the service must be archived
+ * instead, so historical booking records are never rewritten or removed.
+ * Unreferenced services are deleted and the affected public pages revalidated.
+ */
+export async function deleteLiveService(item: ContentItem) {
+  await assertWebsiteWritesEnabled();
+  const admin = await actor("content.manage");
+  if (
+    !item ||
+    item.module !== "Services" ||
+    typeof item.slug !== "string" ||
+    item.slug.length > 180
+  ) {
+    throw new Error("Service is invalid.");
+  }
+  consumeWebsiteWrite(admin.userId);
+  await deleteService(item);
+  revalidatePublicPaths(
+    ["/", "/services", `/services/${item.slug}`],
     PUBLIC_WRITE_TAGS.service,
   );
 }

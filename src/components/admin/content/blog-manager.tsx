@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Empty, Picture } from "@/components/ui";
 import { Field, TextField } from "@/components/forms/controls";
 import { Dialog } from "@/components/dialog";
@@ -11,7 +12,7 @@ import { ModuleShell } from "./shared/module-shell";
 import { MediaLibraryPicker } from "./shared/media-library-picker";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
-import { saveLiveContent } from "@/lib/website/actions";
+import { deleteLiveBlog, saveLiveContent } from "@/lib/website/actions";
 import { slugify } from "@/lib/content";
 import { BlogBody } from "@/components/blog-body";
 import { BlogEditor, type BlogEditorHandle } from "./blog-editor";
@@ -73,7 +74,66 @@ export function BlogManager({
     }
     return <ArticleEditor key={item?.id || "new"} item={item} />;
   }
+  return (
+    <BlogIndex
+      records={records}
+      state={state}
+      loading={!demoMode && live.loading}
+      loadError={demoMode ? "" : live.error}
+      refresh={() => live.refetch()}
+    />
+  );
+}
+
+/**
+ * Article index with a permanent delete action on every card.
+ *
+ * The listing itself owns the confirmation dialog and the notices so a delete
+ * updates the grid in place: the record disappears, the refreshed list is
+ * fetched again and the outcome is reported at the top of the module.
+ */
+function BlogIndex({
+  records,
+  state,
+  loading,
+  loadError,
+  refresh,
+}: {
+  records: ContentItem[];
+  state?: string;
+  loading: boolean;
+  loadError: string;
+  refresh: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<ContentItem | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const articles = state === "empty" ? [] : records;
+  const pendingLabel = pending?.title?.trim() || "Untitled draft";
+
+  async function confirmDelete() {
+    if (busy || !pending) return;
+    const target = pending;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      if (demoMode) await deleteContent(target.id);
+      else await deleteLiveBlog(target);
+      setPending(null);
+      setSuccess(`"${pendingLabel}" was permanently deleted.`);
+      await refresh();
+    } catch (cause) {
+      setPending(null);
+      setError(
+        (cause as Error).message || "The article could not be deleted. Reload and try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <ModuleShell
@@ -82,27 +142,45 @@ export function BlogManager({
         backHref="/admin/content"
         backLabel="Website Content"
         badge={<Link className="button" href="/admin/content/blog/new">New Article</Link>}
+        error={error}
+        success={success}
       />
-      {!demoMode && live.loading ? (
+      {loading ? (
         <Empty title="Loading articles…" body="Retrieving saved blog content." />
-      ) : live.error && !demoMode ? (
-        <Empty title="Articles could not be loaded" body={live.error} />
+      ) : loadError ? (
+        <Empty title="Articles could not be loaded" body={loadError} />
       ) : articles.length ? (
         <div className="grid two">
           {articles.map((article) => (
-            <Link className="module-card" key={article.id} href={`/admin/content/blog/${article.id}`}>
-              <div>
-                <span className={`badge status-${article.published ? "published" : article.status === "Archived" ? "archived" : "draft"}`}>
-                  {article.published
-                    ? article.status === "Draft" ? "Published · draft changes" : "Published"
-                    : article.status === "Archived" ? "Archived" : "Draft"}
-                </span>
-                <h2>{article.title || "Untitled draft"}</h2>
-                <p>{article.summary}</p>
-                {article.published && article.status === "Draft" && <small>Published version remains live</small>}
+            <div className="module-card" key={article.id}>
+              <Link className="module-card__link" href={`/admin/content/blog/${article.id}`}>
+                <div>
+                  <span className={`badge status-${article.published ? "published" : article.status === "Archived" ? "archived" : "draft"}`}>
+                    {article.published
+                      ? article.status === "Draft" ? "Published · draft changes" : "Published"
+                      : article.status === "Archived" ? "Archived" : "Draft"}
+                  </span>
+                  <h2>{article.title || "Untitled draft"}</h2>
+                  <p>{article.summary}</p>
+                  {article.published && article.status === "Draft" && <small>Published version remains live</small>}
+                </div>
+                <span className="text-link">Edit Article</span>
+              </Link>
+              <div className="module-card__actions">
+                <button
+                  type="button"
+                  className="button danger"
+                  disabled={busy}
+                  onClick={() => {
+                    setError("");
+                    setSuccess("");
+                    setPending(article);
+                  }}
+                >
+                  Delete
+                </button>
               </div>
-              <span className="text-link">Edit Article</span>
-            </Link>
+            </div>
           ))}
         </div>
       ) : (
@@ -111,6 +189,40 @@ export function BlogManager({
           body="Published articles appear on the public blog after publishing."
         />
       )}
+      <Dialog
+        open={!!pending}
+        onClose={() => {
+          if (!busy) setPending(null);
+        }}
+        title="Delete this article?"
+      >
+        <p>
+          Permanently delete &ldquo;{pendingLabel}&rdquo;? It is removed from the website
+          and from this article list.
+        </p>
+        <p>
+          Images used by this article stay in the Media Library, because other
+          content may still use them.
+        </p>
+        <div className="actions">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy}
+            onClick={() => setPending(null)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="button danger"
+            disabled={busy}
+            onClick={() => void confirmDelete()}
+          >
+            {busy ? "Deleting…" : "Delete Article"}
+          </button>
+        </div>
+      </Dialog>
     </>
   );
 }
@@ -118,6 +230,7 @@ export function BlogManager({
 type MediaTarget = "featured" | "author" | "content";
 
 function ArticleEditor({ item }: { item?: ContentItem }) {
+  const router = useRouter();
   const store = useDemoStore();
   const mediaData = useAdminWebsiteData<MediaAsset>("media", [], { enabled: !demoMode });
   const [form, setForm] = useState<ContentItem>(() => normalizeItem(item));
@@ -226,15 +339,21 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
   }
 
   async function confirmAction() {
+    if (busy) return;
     if (confirm === "publish") return void (await save("publish"));
     if (confirm === "archive") return void (await save("archive"));
     setBusy(true);
     setError("");
     try {
-      if (!demoMode) throw new Error("Delete draft requires a separate confirmed action. Unpublish or archive the article instead.");
-      await deleteContent(form.id);
-      setConfirm(null);
-      setDeleted(true);
+      if (demoMode) {
+        await deleteContent(form.id);
+        setConfirm(null);
+        setDeleted(true);
+      } else {
+        await deleteLiveBlog(form);
+        setConfirm(null);
+        router.push("/admin/content/blog?notice=blog-deleted");
+      }
     } catch (cause) {
       setError((cause as Error).message);
       setConfirm(null);
@@ -346,7 +465,12 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
             <button type="button" className="button secondary" onClick={() => setPreview(true)}>Preview</button>
             {published && <button type="button" className="button secondary" disabled={busy} onClick={() => void save("unpublish")}>Unpublish</button>}
             {form.id && !archived && <button type="button" className="button secondary" disabled={busy} onClick={() => setConfirm("archive")}>Archive</button>}
-            {form.id && !published && <button type="button" className="button danger" disabled={busy} onClick={() => setConfirm("delete")}>Delete Draft</button>}
+            {demoMode && form.id && !published && <button type="button" className="button danger" disabled={busy} onClick={() => setConfirm("delete")}>Delete Draft</button>}
+            {form.id && !demoMode && (
+              <button type="button" className="button danger" disabled={busy} onClick={() => setConfirm("delete")}>
+                Delete Article
+              </button>
+            )}
             <Link className="button secondary" href="/admin/content/blog">Cancel</Link>
           </section>
         </div>
@@ -376,19 +500,27 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
       <Dialog
         open={!!confirm}
         onClose={() => setConfirm(null)}
-        title={confirm === "publish" ? "Publish this article?" : confirm === "archive" ? "Archive this article?" : "Delete this draft?"}
+        title={
+          confirm === "publish"
+            ? "Publish this article?"
+            : confirm === "archive"
+              ? "Archive this article?"
+              : "Delete this article?"
+        }
       >
         <p>
           {confirm === "publish"
             ? "It will become visible on the website."
             : confirm === "archive"
               ? "It will be removed from the website."
-              : "This removes the unpublished draft from the demo workspace."}
+              : demoMode
+                ? "This removes the unpublished draft from the demo workspace."
+                : `Permanently remove "${form.title || "Untitled draft"}" from the website and the article list? Images stay in the Media Library.`}
         </p>
         <div className="actions">
           <button type="button" className="button secondary" onClick={() => setConfirm(null)}>Cancel</button>
           <button type="button" className={confirm === "delete" ? "button danger" : "button"} disabled={busy} onClick={() => void confirmAction()}>
-            {confirm === "publish" ? "Publish" : confirm === "archive" ? "Archive" : "Delete Draft"}
+            {confirm === "publish" ? "Publish" : confirm === "archive" ? "Archive" : demoMode ? "Delete Draft" : "Delete Article"}
           </button>
         </div>
       </Dialog>

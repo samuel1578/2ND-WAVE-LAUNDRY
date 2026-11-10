@@ -5,6 +5,7 @@ import { promotionImageError } from "./promotion-image";
 import { promotionCtaError } from "@/lib/rules";
 import type { ContentItem, FaqItem, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
 import { buildBlogPayload, blogMediaIds } from "./blog-content";
+import { blogDeletionTarget, serviceDeletionTarget, serviceReferenceDeletionError } from "./content-deletion";
 import { defaultSettings, toContent, toFaq, toGallery, toPromotion, type PublicSettings } from "./types";
 
 const fail = (message = "The website content service is unavailable."): never => { throw new Error(message); };
@@ -391,9 +392,68 @@ export async function deleteMedia(id: string, knownUses: string[] = []) {
   await removeMarketingStorageObject(client, asset.public_url);
 }
 
-export async function deleteBlog(actor: string, item: ContentItem) {
+/**
+ * Permanently removes one blog record from `website_content`.
+ *
+ * The row disappears from the admin list and the public blog on the next read.
+ * Media Library assets are deliberately left alone: featured and inline images
+ * may be shared with other content, so they stay in the library.
+ */
+export async function deleteBlog(item: ContentItem) {
+  const target = blogDeletionTarget(item);
+  if (!target.ok) return fail(target.error);
   const client = createSupabaseAdminClient();
-  if (item.published) return fail("Unpublish this article before deleting it.");
-  const { error } = await client.rpc("website_content_upsert", { p_actor: actor, p_module: "blog", p_key: item.slug, p_payload: { ...item, deleted: true }, p_published: false, p_sort_order: item.sort, p_expected_version: item.version });
-  if (error) return fail("Article could not be removed.");
+  const { data, error } = await client
+    .from("website_content")
+    .delete()
+    .eq("module", "blog")
+    .eq("record_key", target.key)
+    .select("id,record_key");
+  if (error) return fail("Article could not be deleted. Reload and try again.");
+  if (!data?.length) {
+    return fail("This article no longer exists. Reload the page to see the latest list.");
+  }
+}
+
+/**
+ * Permanently removes one service from the catalogue.
+ *
+ * A service any booking still references is refused before a single row is
+ * touched, so historical bookings keep their recorded service name and slug.
+ * Unreferenced services are removed outright; the `booking_services` foreign
+ * key stays `ON DELETE SET NULL` so booking history can never be damaged.
+ */
+export async function deleteService(item: ContentItem) {
+  const recordId = serviceRecordId(item);
+  const target = serviceDeletionTarget(item, recordId);
+  if (!target.ok) return fail(target.error);
+  const client = createSupabaseAdminClient();
+
+  const { data: references, error: referenceError } = await client
+    .from("booking_services")
+    .select("id")
+    .eq("service_id", target.key)
+    .limit(1);
+  if (referenceError) {
+    return fail("Service usage could not be verified. Reload and try again.");
+  }
+  const blocked = serviceReferenceDeletionError(references?.length ?? 0);
+  if (blocked) return fail(blocked);
+
+  const { data: deleted, error: deleteError } = await client
+    .from("services")
+    .delete()
+    .eq("id", target.key)
+    .select("id")
+    .maybeSingle();
+  if (deleteError) {
+    return fail(
+      deleteError.code === "23503"
+        ? serviceReferenceDeletionError(1)
+        : "Service could not be deleted. Reload and try again.",
+    );
+  }
+  if (!deleted) {
+    return fail("This service no longer exists. Reload the page to see the latest list.");
+  }
 }

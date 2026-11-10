@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Empty, Picture } from "@/components/ui";
 import { Field, TextField } from "@/components/forms/controls";
 import { Dialog } from "@/components/dialog";
@@ -11,7 +12,7 @@ import { ModuleShell } from "./shared/module-shell";
 import { MediaLibraryPicker } from "./shared/media-library-picker";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
-import { saveLiveService } from "@/lib/website/actions";
+import { deleteLiveService, saveLiveService } from "@/lib/website/actions";
 import { seededServices } from "@/lib/website/types";
 import { slugify } from "@/lib/content";
 
@@ -46,8 +47,67 @@ export function ServicesManager({
       );
     return <ServiceEditor key={item?.id || "new"} item={item} />;
   }
-  const services =
-    state === "empty" ? [] : records;
+  return (
+    <ServicesIndex
+      records={records}
+      state={state}
+      loading={!demoMode && live.loading}
+      loadError={demoMode ? "" : live.error}
+      refresh={() => live.refetch()}
+    />
+  );
+}
+
+/**
+ * Service index with a permanent delete action on every card.
+ *
+ * Deletion is refused by the server while any booking still references the
+ * service; that message is shown here unchanged so the administrator is told to
+ * archive the service instead. Every other service is removed in place and the
+ * listing is fetched again.
+ */
+function ServicesIndex({
+  records,
+  state,
+  loading,
+  loadError,
+  refresh,
+}: {
+  records: ContentItem[];
+  state?: string;
+  loading: boolean;
+  loadError: string;
+  refresh: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<ContentItem | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const services = state === "empty" ? [] : records;
+  const pendingLabel = pending?.title?.trim() || "Untitled service";
+
+  async function confirmDelete() {
+    if (busy || !pending) return;
+    const target = pending;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      if (demoMode) await deleteContent(target.id);
+      else await deleteLiveService(target);
+      setPending(null);
+      setSuccess(`"${pendingLabel}" was permanently deleted.`);
+      await refresh();
+    } catch (cause) {
+      setPending(null);
+      setError(
+        (cause as Error).message || "The service could not be deleted. Reload and try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <ModuleShell
@@ -60,32 +120,49 @@ export function ServicesManager({
             New Service
           </Link>
         }
+        error={error}
+        success={success}
       />
-      {!demoMode && live.loading ? (
+      {loading ? (
         <Empty title="Loading services…" body="Retrieving saved services." />
-      ) : !demoMode && live.error ? (
-        <Empty title="Services could not be loaded" body={live.error} />
+      ) : loadError ? (
+        <Empty title="Services could not be loaded" body={loadError} />
       ) : services.length ? (
         <div className="grid two">
           {services.map((service) => (
-            <Link
-              className="module-card"
-              key={service.id}
-              href={`/admin/content/services/${service.id}`}
-            >
-              <div>
-                <span className={`badge status-${service.published ? "published" : service.status === "Archived" ? "archived" : "draft"}`}>
-                  {service.published
-                    ? "Published"
-                    : service.status === "Archived"
-                      ? "Archived"
-                      : "Draft"}
-                </span>
-                <h2>{service.title || "Untitled draft"}</h2>
-                <p>{service.summary}</p>
+            <div className="module-card" key={service.id}>
+              <Link
+                className="module-card__link"
+                href={`/admin/content/services/${service.id}`}
+              >
+                <div>
+                  <span className={`badge status-${service.published ? "published" : service.status === "Archived" ? "archived" : "draft"}`}>
+                    {service.published
+                      ? "Published"
+                      : service.status === "Archived"
+                        ? "Archived"
+                        : "Draft"}
+                  </span>
+                  <h2>{service.title || "Untitled draft"}</h2>
+                  <p>{service.summary}</p>
+                </div>
+                <span className="text-link">Edit Service</span>
+              </Link>
+              <div className="module-card__actions">
+                <button
+                  type="button"
+                  className="button danger"
+                  disabled={busy}
+                  onClick={() => {
+                    setError("");
+                    setSuccess("");
+                    setPending(service);
+                  }}
+                >
+                  Delete
+                </button>
               </div>
-              <span className="text-link">Edit Service</span>
-            </Link>
+            </div>
           ))}
         </div>
       ) : (
@@ -94,10 +171,45 @@ export function ServicesManager({
           body="Published services appear on the public website and in the booking catalogue."
         />
       )}
+      <Dialog
+        open={!!pending}
+        onClose={() => {
+          if (!busy) setPending(null);
+        }}
+        title="Delete this service?"
+      >
+        <p>
+          Permanently delete &ldquo;{pendingLabel}&rdquo;? It disappears from the
+          public website and from this service list.
+        </p>
+        <p>
+          If bookings still reference this service, the delete is refused and the
+          service must be archived instead, so booking history is never changed.
+        </p>
+        <div className="actions">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy}
+            onClick={() => setPending(null)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="button danger"
+            disabled={busy}
+            onClick={() => void confirmDelete()}
+          >
+            {busy ? "Deleting…" : "Delete Service"}
+          </button>
+        </div>
+      </Dialog>
     </>
   );
 }
 function ServiceEditor({ item }: { item?: ContentItem }) {
+  const router = useRouter();
   const store = useDemoStore();
   const mediaData = useAdminWebsiteData<MediaAsset>("media", [], {
     enabled: !demoMode,
@@ -219,15 +331,21 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
     }
   }
   async function confirmAction() {
+    if (busy) return;
     if (confirm === "publish") return void (await save("publish"));
     if (confirm === "archive") return void (await save("archive"));
     setBusy(true);
     setError("");
     try {
-      if (!demoMode) throw new Error("Existing operational services cannot be deleted here.");
-      await deleteContent(form.id);
-      setConfirm(null);
-      setDeleted(true);
+      if (demoMode) {
+        await deleteContent(form.id);
+        setConfirm(null);
+        setDeleted(true);
+      } else {
+        await deleteLiveService(form);
+        setConfirm(null);
+        router.push("/admin/content/services?notice=service-deleted");
+      }
     } catch (err) {
       setError((err as Error).message);
       setConfirm(null);
@@ -405,6 +523,16 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
                 Delete Draft
               </button>
             )}
+            {!demoMode && form.id && (
+              <button
+                type="button"
+                className="button danger"
+                disabled={busy}
+                onClick={() => setConfirm("delete")}
+              >
+                Delete Service
+              </button>
+            )}
             <Link
               className="button secondary"
               href="/admin/content/services"
@@ -447,7 +575,7 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
             ? "Publish this service?"
             : confirm === "archive"
               ? "Archive this service?"
-              : "Delete this draft?"
+              : "Delete this service?"
         }
       >
         <p>
@@ -455,7 +583,9 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
             ? "The service will become visible on the public website."
             : confirm === "archive"
               ? "The service will be marked archived in this demo workspace."
-              : "This removes the unpublished draft from the demo workspace."}
+              : demoMode
+                ? "This removes the unpublished draft from the demo workspace."
+                : `Permanently remove "${form.title || "Untitled draft"}" from the public website and this service list? A service that existing bookings still reference cannot be deleted and must be archived instead.`}
         </p>
         <div className="actions">
           <button
@@ -475,7 +605,9 @@ function ServiceEditor({ item }: { item?: ContentItem }) {
               ? "Publish"
               : confirm === "archive"
                 ? "Archive"
-                : "Delete Draft"}
+                : demoMode
+                  ? "Delete Draft"
+                  : "Delete Service"}
           </button>
         </div>
       </Dialog>
