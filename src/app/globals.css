@@ -4915,6 +4915,19 @@ tbody tr:hover {
   overflow: hidden;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.pagination > span {
+  color: var(--muted, #5b6570);
+  font-size: 0.95rem;
+}
+
 .gallery-cascade .swiper-pagination {
   position: static;
   margin-top: 16px;

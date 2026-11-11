@@ -44,7 +44,7 @@ export const PUBLIC_LIMITS = {
   faqs: 200,
   gallery: 200,
   galleryCollections: 100,
-  blog: 50,
+  blog: 500,
   promotions: 20,
 } as const;
 

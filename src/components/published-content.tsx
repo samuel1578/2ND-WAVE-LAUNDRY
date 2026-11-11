@@ -22,6 +22,9 @@ import type {
 } from "@/lib/website/public-queries";
 import { BrandedText } from "@/lib/brand-highlight";
 import { BlogBody } from "./blog-body";
+import { sortBlogItems } from "@/lib/website/blog-order";
+
+const BLOG_PAGE_SIZE = 9;
 
 function displayDate(value?: string): string {
   if (!value || Number.isNaN(Date.parse(value))) return "";
@@ -76,10 +79,20 @@ export function PublishedBlog({ posts = [] }: { posts?: PublicBlogSummary[] }) {
       order: c.sort,
       version: c.version,
     }));
-  const list = demoMode ? demoPosts : posts;
+  const list = sortBlogItems(demoMode ? demoPosts : posts, (post) => ({
+    order: post.order,
+    id: post.id,
+  }));
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(list.length / BLOG_PAGE_SIZE));
+  const pageItems = list.slice((page - 1) * BLOG_PAGE_SIZE, page * BLOG_PAGE_SIZE);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
   return list.length ? (
-    <div className="grid three">
-      {list.map((p) => (
+    <>
+      <div className="grid three">
+      {pageItems.map((p) => (
         <Link href={`/blog/${p.slug}`} className="service-card" key={p.id}>
           {p.image ? (
             <Picture
@@ -97,7 +110,19 @@ export function PublishedBlog({ posts = [] }: { posts?: PublicBlogSummary[] }) {
           </div>
         </Link>
       ))}
-    </div>
+      </div>
+      {totalPages > 1 && (
+        <nav className="pagination" aria-label="Blog pages">
+          <button type="button" className="button secondary" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>
+            Previous
+          </button>
+          <span aria-live="polite">Page {page} of {totalPages}</span>
+          <button type="button" className="button secondary" disabled={page === totalPages} onClick={() => setPage((current) => current + 1)}>
+            Next
+          </button>
+        </nav>
+      )}
+    </>
   ) : (
     <Empty title={copy("12", "Empty heading")} body={copy("12", "Empty body")}>
       <div className="actions">

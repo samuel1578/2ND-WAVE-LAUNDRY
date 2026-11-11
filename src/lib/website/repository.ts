@@ -6,6 +6,7 @@ import { promotionCtaError } from "@/lib/rules";
 import type { ContentItem, FaqItem, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
 import { buildBlogPayload, blogMediaIds } from "./blog-content";
 import { blogDeletionTarget, serviceDeletionTarget, serviceReferenceDeletionError } from "./content-deletion";
+import { sortBlogItems } from "./blog-order";
 import { defaultSettings, toContent, toFaq, toGallery, toPromotion, type PublicSettings } from "./types";
 
 const fail = (message = "The website content service is unavailable."): never => { throw new Error(message); };
@@ -167,6 +168,18 @@ export async function writeContent(actor: string, item: ContentItem, action: "dr
   } else {
     trustedItem = { ...item, published: undefined, publishedAt: undefined, modifiedAt: undefined };
   }
+  if (trustedItem.version === 0 && trustedItem.sort === 0) {
+    const { data: last, error: orderError } = await client
+      .from("website_content")
+      .select("sort_order")
+      .eq("module", "blog")
+      .order("sort_order", { ascending: false })
+      .order("record_key", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (orderError) return fail("The article order could not be determined. Reload and try again.");
+    trustedItem = { ...trustedItem, sort: Number(last?.sort_order ?? 0) + 1 };
+  }
   const { payload, published } = buildBlogPayload(trustedItem, action);
   const mediaIds = blogMediaIds(trustedItem);
   if (mediaIds.length) {
@@ -190,6 +203,27 @@ export async function writeContent(actor: string, item: ContentItem, action: "dr
   if (error) return fail(isConflict(error) ? "Article changed while editing. Reload and try again." : "Article could not be saved.");
   return toContent({ id: data.id, key: data.key, module: "blog", payload: data.payload, published: data.published, sort_order: data.sort_order, version: data.version });
 }
+export async function reorderBlog(actor: string, items: Array<{ id: string; version: number }>) {
+  const client = createSupabaseAdminClient();
+  const payload = items.map((item) => ({ key: item.id, version: item.version }));
+  const { data, error } = await client.rpc("website_blog_reorder", {
+    p_actor: actor,
+    p_items: payload,
+  });
+  if (error) return fail(isConflict(error) ? "Articles changed while sorting. Reload the list and try again." : "Article order could not be saved.");
+  const rows = (Array.isArray(data) ? data : []) as RpcContentRow[];
+  const articles: ContentItem[] = rows.map((row) => toContent({
+    id: row.id,
+    key: row.key,
+    module: "blog",
+    payload: row.payload,
+    published: row.published,
+    sort_order: row.sort_order,
+    version: row.version,
+  }));
+  return sortBlogItems(articles, (item) => ({ order: item.sort, id: item.id }));
+}
+
 export async function writePromotion(actor: string, item: PromotionRecord) {
   const ctaError = promotionCtaError(item);
   if (ctaError) throw new Error(ctaError);

@@ -4,7 +4,7 @@ import { getCurrentAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
 import type { ContentItem, FaqItem, GalleryCollection, GalleryPlacement, LocationRecord, PromotionRecord, Settings } from "@/lib/contracts";
 import { checkRequestOrigin } from "@/lib/security/request-origin";
-import { writeFaqs, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia, deleteMedia as deleteMediaRecord, deleteBlog, deleteService } from "./repository";
+import { writeFaqs, writeContent, writePromotion, writeSettings, writeLocation, writeService, writeMedia, deleteMedia as deleteMediaRecord, deleteBlog, deleteService, reorderBlog } from "./repository";
 import { writeGalleryWorkspace } from "./gallery-write";
 import { galleryWorkspaceError } from "./gallery-collections";
 import type { MediaAsset } from "@/lib/contracts";
@@ -123,6 +123,22 @@ export async function saveLiveGalleryWorkspace(
     PUBLIC_WRITE_TAGS.gallery,
   );
 }
+export async function saveLiveBlogOrder(items: Array<{ id: string; version: number }>) {
+  await assertWebsiteWritesEnabled();
+  const admin = await actor("content.manage");
+  if (!Array.isArray(items) || items.length > 500 || items.some((item) =>
+    !item || typeof item.id !== "string" || item.id.length < 1 || item.id.length > 180 ||
+    !Number.isInteger(item.version) || item.version < 1
+  )) throw new Error("Article order is invalid. Reload the list and try again.");
+  consumeWebsiteWrite(admin.userId);
+  return writeAndRevalidate(
+    () => reorderBlog(admin.userId, items),
+    ["/", "/blog"],
+    undefined,
+    PUBLIC_WRITE_TAGS.content,
+  );
+}
+
 export async function saveLiveContent(item: ContentItem, action: "draft" | "publish" | "archive" | "unpublish") {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");

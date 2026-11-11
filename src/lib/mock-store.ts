@@ -424,6 +424,9 @@ export async function saveContent(
     )
   )
     throw Error("This slug is already used in this module.");
+  const articleOrder = item.module === "Blog" && !previous && item.sort === 0
+    ? Math.max(0, ...state.content.filter((content) => content.module === "Blog").map((content) => content.sort)) + 1
+    : item.sort;
   const now = new Date().toISOString();
   const publishedAt =
     action === "publish"
@@ -435,6 +438,7 @@ export async function saveContent(
       : item.modifiedAt ?? previous?.published?.modifiedAt;
   const next: ContentItem = {
     ...item,
+    sort: articleOrder,
     id: item.id || crypto.randomUUID(),
     version: item.version + 1,
     status:
@@ -471,6 +475,20 @@ export async function saveContent(
   notify();
   return next;
 }
+export async function reorderBlogContent(ids: string[]) {
+  await operation();
+  const articles = state.content.filter((item) => item.module === "Blog");
+  if (ids.length !== articles.length || new Set(ids).size !== ids.length || ids.some((id) => !articles.some((item) => item.id === id))) {
+    throw Error("Article order changed. Reload the list and try again.");
+  }
+  const positions = new Map(ids.map((id, index) => [id, index + 1]));
+  state.content = state.content.map((item) => {
+    const sort = positions.get(item.id);
+    return sort === undefined ? item : { ...item, sort, version: item.version + 1 };
+  });
+  notify();
+}
+
 export async function deleteContent(id: string) {
   await operation();
   const item = state.content.find((c) => c.id === id);

@@ -9,6 +9,7 @@ import { buildBlogPayload } from "../src/lib/website/blog-content";
 import { mapBlogPostRow } from "../src/lib/website/public-queries";
 import { articleSchema } from "../src/lib/seo/schema";
 import { toContent, type WebsiteRow } from "../src/lib/website/types";
+import { sortBlogItems } from "../src/lib/website/blog-order";
 
 const MIGRATIONS_DIR = "supabase/migrations";
 const PRELUDE = `
@@ -85,6 +86,49 @@ async function stored(slug: string): Promise<RpcResult | undefined> {
 
 const date1 = "2026-10-01T09:00:00.000Z";
 const date2 = "2026-11-03T12:30:00.000Z";
+
+test("Blog reorder RPC persists compact order, advances versions and excludes stale sets", async () => {
+    const createItem = (slug: string, sort: number): ContentItem => ({
+        id: "",
+        module: "Blog",
+        title: `${slug} title`,
+        slug,
+        summary: `${slug} summary`,
+        body: `${slug} body`,
+        image: "",
+        alt: "",
+        status: "Draft",
+        sort,
+        version: 0,
+        extra: {},
+    });
+    const first = await save(createItem("order-first", 1), "publish", date1);
+    const second = await save(createItem("order-second", 2), "publish", date2);
+    const ordered = [
+        { key: second.key, version: second.version },
+        { key: first.key, version: first.version },
+    ];
+    const result = await db.query<{ result: RpcResult[] }>(
+        "SELECT public.website_blog_reorder($1::uuid,$2::jsonb) AS result",
+        [actor, JSON.stringify(ordered)],
+    );
+    assert.deepEqual(result.rows[0].result.map((row) => [row.key, row.sort_order]), [
+        [second.key, 1],
+        [first.key, 2],
+    ]);
+    assert.ok(result.rows[0].result.every((row) => row.version === 2));
+    const adminOrder = sortBlogItems(result.rows[0].result.map(adminItem), (item) => ({ order: item.sort, id: item.id }));
+    const publicOrder = sortBlogItems(result.rows[0].result.filter((row) => row.published).map((row) => ({ id: row.key, order: row.sort_order })), (item) => item);
+    assert.deepEqual(adminOrder.map((item) => item.id), publicOrder.map((item) => item.id));
+    const refreshed = await db.query<RpcResult>(
+        "SELECT id,record_key AS key,payload,published,sort_order,version FROM public.website_content WHERE module='blog' ORDER BY sort_order,record_key",
+    );
+    assert.deepEqual(refreshed.rows.map((row) => row.key), [second.key, first.key]);
+    await assert.rejects(
+        db.query("SELECT public.website_blog_reorder($1::uuid,$2::jsonb)", [actor, JSON.stringify(ordered)]),
+        (error: unknown) => (error as { code?: string }).code === "40001",
+    );
+});
 
 test("Blog structured data includes author and only known publication dates", () => {
     const authored = articleSchema({

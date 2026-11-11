@@ -6,7 +6,7 @@ import { Empty, Picture } from "@/components/ui";
 import { DemoFailure, Field, Notice, TextField } from "@/components/forms/controls";
 import { Dialog } from "@/components/dialog";
 import { UnsavedGuard } from "../unsaved";
-import { deleteContent, saveContent, useDemoStore } from "@/lib/mock-store";
+import { deleteContent, reorderBlogContent, saveContent, useDemoStore } from "@/lib/mock-store";
 import type { BlogAuthor, BlogContentBlock, ContentItem, MediaAsset } from "@/lib/contracts";
 import { MediaLibraryPicker } from "./shared/media-library-picker";
 import { ModuleShell } from "./shared/module-shell";
@@ -25,7 +25,8 @@ import {
 import styles from "./blog-manager.module.css";
 import { demoMode } from "@/lib/demo-mode";
 import { useAdminWebsiteData } from "@/lib/website/use-admin-data";
-import { deleteLiveBlog, saveLiveContent } from "@/lib/website/actions";
+import { deleteLiveBlog, saveLiveBlogOrder, saveLiveContent } from "@/lib/website/actions";
+import { compactBlogOrder, moveBlogItem, sortBlogItems } from "@/lib/website/blog-order";
 import { slugify } from "@/lib/content";
 import { BlogBody } from "@/components/blog-body";
 import { BlogEditor, type BlogEditorHandle } from "./blog-editor";
@@ -122,8 +123,33 @@ function BlogIndex({
   const [pending, setPending] = useState<ContentItem | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const articles = state === "empty" ? [] : records;
+  const articles = state === "empty" ? [] : sortBlogItems(records, (article) => ({
+    order: article.sort,
+    id: article.id,
+  }));
   const pendingLabel = pending?.title?.trim() || "Untitled draft";
+
+  async function saveOrder(nextArticles: ContentItem[]) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const ordered = compactBlogOrder(nextArticles);
+      if (demoMode) {
+        await reorderBlogContent(ordered.map((article) => article.id));
+      } else {
+        await saveLiveBlogOrder(ordered.map((article) => ({ id: article.id, version: article.version })));
+      }
+      setSuccess("Article order saved.");
+      await refresh();
+    } catch (cause) {
+      setError((cause as Error).message || "Article order could not be saved. Reload and try again.");
+      if (!demoMode) await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function confirmDelete() {
     if (busy || !pending) return;
@@ -180,6 +206,24 @@ function BlogIndex({
                 <span className="text-link">Edit Article</span>
               </Link>
               <div className="module-card__actions">
+                <button
+                  type="button"
+                  className="button secondary"
+                  aria-label={`Move ${article.title || "Untitled draft"} up`}
+                  disabled={busy || articles.indexOf(article) === 0}
+                  onClick={() => void saveOrder(moveBlogItem(articles, articles.indexOf(article), -1))}
+                >
+                  Move up
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  aria-label={`Move ${article.title || "Untitled draft"} down`}
+                  disabled={busy || articles.indexOf(article) === articles.length - 1}
+                  onClick={() => void saveOrder(moveBlogItem(articles, articles.indexOf(article), 1))}
+                >
+                  Move down
+                </button>
                 <button
                   type="button"
                   className="button danger"
@@ -465,7 +509,7 @@ function ArticleEditor({ item }: { item?: ContentItem }) {
               The featured image is optional and separate from the body. Images inserted into the
               canvas appear only where you place them, and HTML is never executed.
             </small>
-            <small className={styles.editorHint}>Newer articles appear first on the blog page after publishing.</small>
+            <small className={styles.editorHint}>Articles appear on the blog page in the saved display order.</small>
           </div>
         </section>
         <aside className={styles.sidebar} aria-label="Article settings">

@@ -39,6 +39,7 @@ import type { FaqItem } from "../src/lib/contracts";
 import { toGallery, toPromotion } from "../src/lib/website/types";
 import { buildPromotionView, formatPromotionEndDate } from "../src/lib/website/promotion-view";
 import { validatePromotionServiceSlug } from "../src/lib/website/promotion-service-validation";
+import { compareBlogOrder, compactBlogOrder, moveBlogItem, sortBlogItems } from "../src/lib/website/blog-order";
 import {
   detectPromotionImageMime,
   promotionImageError,
@@ -65,6 +66,19 @@ function promotionFromPayload(payload: Record<string, unknown>) {
     version: 1,
   });
 }
+
+test("blog ordering is shared, deterministic and supports persisted manual moves", () => {
+  const posts = [
+    { id: "b", order: 1 },
+    { id: "a", order: 1 },
+    { id: "c", order: 3, publishedAt: "2026-03-01T00:00:00.000Z" },
+  ];
+  const current = sortBlogItems(posts, (post) => post);
+  assert.deepEqual(current.map((post) => post.id), ["a", "b", "c"]);
+  const moved = compactBlogOrder(moveBlogItem(current, 2, -1));
+  assert.deepEqual(moved.map((post) => [post.id, post.sort]), [["a", 1], ["c", 2], ["b", 3]]);
+  assert.equal(compareBlogOrder({ order: 1, id: "same" }, { order: 1, id: "same" }), 0);
+});
 
 test("blog inline formatting normalizes safely and preserves legacy blocks", () => {
   const blocks = normalizeBlogBlocks([
@@ -381,6 +395,24 @@ test("loaded FAQ saves its record key and version", () => {
   assert.equal(savedInput.id, "04.00-02");
   assert.equal(savedInput.version, 1);
 });
+test("Blog admin and public index use the shared saved order with persistent controls and pagination", () => {
+  const admin = readFileSync("src/components/admin/content/blog-manager.tsx", "utf8");
+  const publicPage = readFileSync("src/components/published-content.tsx", "utf8");
+  const publicLoader = readFileSync("src/lib/website/public.ts", "utf8");
+  const migration = readFileSync("supabase/migrations/20261111100000_blog_manual_order.sql", "utf8");
+  assert.match(admin, /sortBlogItems\(records/);
+  assert.match(admin, /saveLiveBlogOrder/);
+  assert.match(admin, /Move up/);
+  assert.match(admin, /Move down/);
+  assert.match(publicPage, /sortBlogItems\(demoMode \? demoPosts : posts/);
+  assert.match(publicPage, /BLOG_PAGE_SIZE = 9/);
+  assert.match(publicPage, /setPage\(\(current\) => current \+ 1\)/);
+  assert.match(publicLoader, /\.eq\("published", true\)/);
+  assert.match(publicLoader, /\.order\("sort_order", \{ ascending: true \}\)/);
+  assert.match(migration, /SET sort_order = v_position/);
+  assert.match(migration, /SET sort_order = v_position,[\s\S]*version = version \+ 1/);
+});
+
 test("public revalidation runs after a successful save", async () => {
   const paths: string[] = [];
   const saved = await writeAndRevalidate(

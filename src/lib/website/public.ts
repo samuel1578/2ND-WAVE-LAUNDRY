@@ -48,6 +48,7 @@ import {
 export type { PublicSiteSettings } from "./public-queries";
 import { PUBLIC_TAGS } from "./revalidation-tags";
 import { defaultSettings, toPromotion } from "./types";
+import { sortBlogItems } from "./blog-order";
 
 /**
  * Cached loaders for the public website.
@@ -249,13 +250,17 @@ async function readBlogList(): Promise<PublicBlogSummary[]> {
     .select(BLOG_LIST_COLUMNS)
     .eq("module", "blog")
     .eq("published", true)
-    .order("sort_order")
+    .order("sort_order", { ascending: true })
+    .order("record_key", { ascending: true })
     .limit(PUBLIC_LIMITS.blog);
   if (error) {
     reportQueryError("website_content", error);
     return [];
   }
-  return ((data ?? []) as unknown as BlogListRow[]).map(summariseBlogRow);
+  return sortBlogItems(
+    ((data ?? []) as unknown as BlogListRow[]).map(summariseBlogRow),
+    (post) => ({ order: post.order, id: post.id }),
+  );
 }
 
 async function readBlogPost(slug: string): Promise<PublicBlogPost | null> {
