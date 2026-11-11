@@ -66,7 +66,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ settings: { email: site.data.business_email, phone: site.data.phone, whatsapp: site.data.whatsapp, instagram: site.data.instagram, tiktok: site.data.tiktok, facebook: site.data.facebook, newsletter: site.data.newsletter_visible, version: site.data.version, acceptBookings: booking.data.accept_public_bookings, start: String(booking.data.pickup_start).slice(0, 5), end: String(booking.data.pickup_end).slice(0, 5), cutoff: String(booking.data.express_cutoff).slice(0, 5) } }, { headers });
     }
     if (contentModule === "gallery") {
-      const { data, error } = await client.from("website_content").select("id,record_key,payload,published,sort_order,version,website_gallery_media(id,public_url,name,alt,caption,source,permission,archived)").eq("module", "gallery").eq("published", true).order("sort_order").limit(limit);
+      const { data, error } = await client.from("website_content").select("id,record_key,payload,published,sort_order,version,website_gallery_media(id,public_url,name,alt,caption,source,permission,archived)").eq("module", "gallery").eq("published", true).order("sort_order", { ascending: true }).order("record_key", { ascending: true }).limit(limit);
       if (error) throw Error("read failed");
       const items = (data ?? []).flatMap(row => {
         const media = Array.isArray(row.website_gallery_media) ? row.website_gallery_media[0] : row.website_gallery_media;

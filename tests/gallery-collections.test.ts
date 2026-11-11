@@ -15,6 +15,7 @@ import {
   galleryWorkspaceError,
   groupGalleryImages,
   moveGalleryImage,
+  moveGalleryImageRelative,
   nextCategorySlug,
   normalizeGallerySlug,
   removeImagesFromCategory,
@@ -284,6 +285,43 @@ test("moving an image keeps all of its category placements together", () => {
   // Moving past either end is a no-op.
   assert.equal(moveGalleryImage({ placements: rows, mediaId: "media-1", offset: -1 }), rows);
   assert.equal(moveGalleryImage({ placements: rows, mediaId: "media-3", offset: 1 }), rows);
+});
+
+test("drag reorder places a grouped multi-category image globally before or after the target", () => {
+  const rows = [
+    placement({ id: "p1", mediaId: "media-1", collectionKey: "laundry", order: 1 }),
+    placement({ id: "p2", mediaId: "media-2", collectionKey: "laundry", order: 2 }),
+    placement({ id: "p3", mediaId: "media-1", collectionKey: "shoe-care", order: 3 }),
+    placement({ id: "p4", mediaId: "media-3", collectionKey: "others", order: 4 }),
+  ];
+  const moved = moveGalleryImageRelative({ placements: rows, mediaId: "media-1", targetMediaId: "media-3" });
+  assert.deepEqual(moved.map((row) => [row.id, row.order]), [["p2", 1], ["p1", 2], ["p3", 3], ["p4", 4]]);
+  const afterTarget = moveGalleryImageRelative({ placements: rows, mediaId: "media-1", targetMediaId: "media-2", after: true });
+  assert.deepEqual(afterTarget.map((row) => row.mediaId), ["media-2", "media-1", "media-1", "media-3"]);
+  assert.deepEqual(groupGalleryImages(afterTarget).map((group) => group.mediaId), ["media-2", "media-1", "media-3"]);
+});
+
+test("Gallery admin exposes accessible draft reordering without adding a write route", () => {
+  const manager = readFileSync("src/components/admin/content/gallery-manager.tsx", "utf8");
+  assert.match(manager, /moveGalleryImageRelative\(\{ placements, mediaId, targetMediaId, after \}\)/);
+  assert.match(manager, /reorderImageRelative\(group\.mediaId, activeGroups\[categoryIndex - 1\]/);
+  assert.match(manager, /reorderImageRelative\(group\.mediaId, activeGroups\[categoryIndex \+ 1\]/);
+  assert.match(manager, /onDrop=\{\(event\) => dropImage/);
+  assert.match(manager, /Move Up/);
+  assert.match(manager, /Move Down/);
+  assert.match(manager, /Undo last move/);
+  assert.match(manager, /saveLiveGalleryWorkspace/);
+  assert.match(manager, /Save Changes/);
+  assert.match(manager, /Unsaved/);
+  assert.doesNotMatch(manager, /saveLiveGalleryOrder/);
+  const publicLoader = readFileSync("src/lib/website/public.ts", "utf8");
+  const adminRoute = readFileSync("src/app/api/admin/website/route.ts", "utf8");
+  const publicRoute = readFileSync("src/app/api/website/route.ts", "utf8");
+  assert.match(publicLoader, /\.eq\("module", "gallery"\)[\s\S]*?\.order\("sort_order", \{ ascending: true \}\)\s*\.order\("record_key", \{ ascending: true \}\)/);
+  assert.match(publicLoader, /\.eq\("module", "gallery_collection"\)[\s\S]*?\.order\("sort_order", \{ ascending: true \}\)\s*\.order\("record_key", \{ ascending: true \}\)/);
+  assert.match(adminRoute, /\.eq\("module", "gallery"\)\.order\("sort_order", \{ ascending: true \}\)\.order\("record_key", \{ ascending: true \}\)/);
+  assert.match(adminRoute, /\.eq\("module", "gallery_collection"\)\.order\("sort_order", \{ ascending: true \}\)\.order\("record_key", \{ ascending: true \}\)/);
+  assert.match(publicRoute, /\.eq\("module", "gallery"\)[\s\S]*?\.order\("sort_order", \{ ascending: true \}\)\.order\("record_key", \{ ascending: true \}\)/);
 });
 
 test("hiding a category or an image is a saveable change that keeps the image", () => {

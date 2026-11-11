@@ -1,0 +1,256 @@
+.count {
+    display: block;
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.description {
+    margin-top: 8px;
+    color: var(--muted);
+}
+
+.row {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+.thumb {
+    position: relative;
+    width: 150px;
+    aspect-ratio: 4 / 3;
+    flex-shrink: 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--tint);
+}
+
+.thumb :global(.picture) {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+}
+
+.rowBody {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 14px;
+}
+
+.detailRows {
+    display: grid;
+    gap: 8px;
+    margin: 10px 0 14px;
+}
+
+.detailRow {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.detailRow span {
+    color: var(--muted);
+}
+
+.hoursGrid {
+    display: grid;
+    gap: 10px;
+}
+
+.hoursRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 10px;
+    align-items: end;
+}
+
+.cardActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.twoColumnGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.galleryOrderToolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--tint);
+}
+
+.galleryOrderToolbar>div {
+    display: grid;
+    gap: 4px;
+}
+
+.visuallyHidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.galleryOrderToolbar>div>span,
+.galleryOrderHeader small {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.galleryOrderCard {
+    position: relative;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.galleryOrderCard:has(.galleryDragHandle[draggable="true"]) {
+    border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+}
+
+.galleryDragging {
+    opacity: 0.52;
+    transform: scale(0.985);
+}
+
+.galleryOrderHeader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.galleryOrderHeader>div {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.galleryPosition {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    place-items: center;
+    border-radius: 12px;
+    color: var(--accent-contrast, #fff);
+    background: var(--accent);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.galleryDragHandle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--muted);
+    background: var(--surface);
+    cursor: grab;
+    touch-action: none;
+}
+
+.galleryDragHandle:active {
+    cursor: grabbing;
+}
+
+.galleryDragHandle:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.galleryDragHandle svg {
+    width: 18px;
+    height: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .galleryOrderCard {
+        transition: none;
+    }
+}
+
+.inlineNote {
+    color: var(--muted);
+    font-size: 14px;
+}
+
+@media (max-width: 700px) {
+    .twoColumnGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .galleryOrderToolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .galleryDragHandle span {
+        display: none;
+    }
+
+    .galleryDragHandle {
+        min-width: 42px;
+        min-height: 42px;
+        justify-content: center;
+    }
+
+    .row {
+        flex-direction: column;
+    }
+
+    .thumb {
+        width: 100%;
+    }
+
+    .hoursRow {
+        grid-template-columns: 1fr;
+    }
+}
+
+.promotionPreview {
+    display: block;
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 4 / 3;
+    object-fit: contain;
+    background: var(--surface);
+    border-radius: 10px;
+}
+
+.faqPreview {
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--tint);
+}
+
+.faqPreview p {
+    margin: 8px 0 0;
+}
+
+.brandingGuide {
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: 14px;
+}

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type DragEvent, type FormEvent } from "react";
 import { Empty, Picture } from "@/components/ui";
 import { Submit, TextField } from "@/components/forms/controls";
+import { GripVertical } from "lucide-react";
 import { Dialog } from "@/components/dialog";
 import { UnsavedGuard } from "../unsaved";
 import {
@@ -24,6 +25,7 @@ import {
   galleryWorkspaceDataReady,
   galleryWorkspaceError,
   groupGalleryImages,
+  moveGalleryImageRelative,
   nextCategorySlug,
   unassignCategory,
 } from "@/lib/website/gallery-collections";
@@ -81,6 +83,9 @@ export function GalleryManager({ state }: { state?: string }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+  const [undoPlacements, setUndoPlacements] = useState<GalleryPlacement[] | null>(null);
+  const [draggingMediaId, setDraggingMediaId] = useState<string | null>(null);
+  const [reorderAnnouncement, setReorderAnnouncement] = useState("");
 
   const dirty = snapshot(orderCategories(categories), orderedPlacements(placements)) !== baseline;
   const loading = !demoMode && (liveCategories.loading || liveGallery.loading);
@@ -213,8 +218,37 @@ export function GalleryManager({ state }: { state?: string }) {
     }
   }
 
+  function reorderImageRelative(mediaId: string, targetMediaId: string, after = false) {
+    const next = moveGalleryImageRelative({ placements, mediaId, targetMediaId, after });
+    if (next === placements) return;
+    const position = groupGalleryImages(next).findIndex((group) => group.mediaId === mediaId) + 1;
+    setUndoPlacements(placements);
+    setPlacements(next);
+    setReorderAnnouncement(`Image moved to global position ${position}.`);
+    change();
+  }
+
+  function dropImage(targetMediaId: string, event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    const mediaId = event.dataTransfer.getData("text/plain") || draggingMediaId;
+    if (!mediaId || mediaId === targetMediaId) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const after = event.clientY > bounds.top + bounds.height / 2;
+    reorderImageRelative(mediaId, targetMediaId, after);
+    setDraggingMediaId(null);
+  }
+
+  function undoReorder() {
+    if (!undoPlacements) return;
+    setPlacements(undoPlacements);
+    setUndoPlacements(null);
+    setReorderAnnouncement("Last image move undone.");
+    change();
+  }
+
   function removePlacement(id: string) {
     setPlacements((rows) => orderedPlacements(rows.filter((row) => row.id !== id)));
+    setUndoPlacements(null);
     setConfirmRemove(null);
     change();
   }
@@ -226,6 +260,7 @@ export function GalleryManager({ state }: { state?: string }) {
     };
     setCategories(structuredClone(previous.categories));
     setPlacements(structuredClone(previous.placements));
+    setUndoPlacements(null);
     setActiveCategory(null);
     setEditingCategory(null);
     setEditingMedia(null);
@@ -266,6 +301,7 @@ export function GalleryManager({ state }: { state?: string }) {
       setCategories(saved.collections);
       setPlacements(saved.placements);
       setBaseline(snapshot(saved.collections, saved.placements));
+      setUndoPlacements(null);
       setSuccess("Changes saved. The website gallery now matches this view.");
     } catch (cause) {
       setError((cause as Error).message);
@@ -280,8 +316,16 @@ export function GalleryManager({ state }: { state?: string }) {
     const currentPlacement = group.placements.find(
       (placement) => placement.collectionKey === activeCategory,
     );
+    const globalPosition = groups.findIndex((entry) => entry.mediaId === group.mediaId) + 1;
+    const categoryIndex = activeGroups.findIndex((entry) => entry.mediaId === group.mediaId);
+    const groupedPlacements = group.placements.length > 1;
     return (
-      <article className="panel form-stack" key={group.mediaId}>
+      <article
+        className={`${styles.galleryOrderCard} panel form-stack${draggingMediaId === group.mediaId ? ` ${styles.galleryDragging}` : ""}`}
+        key={group.mediaId}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => dropImage(group.mediaId, event)}
+      >
         <div className={styles.row}>
           <div className={styles.thumb}>
             {asset ? (
@@ -289,7 +333,49 @@ export function GalleryManager({ state }: { state?: string }) {
             ) : <p className={styles.inlineNote}>Image unavailable</p>}
           </div>
           <div className={styles.rowBody}>
+            <div className={styles.galleryOrderHeader}>
+              <span className={styles.galleryPosition} aria-label={`Global position ${globalPosition}`}>{globalPosition}</span>
+              <div>
+                <strong>Position {globalPosition}</strong>
+                {groupedPlacements && <small>Moves in All and {group.collectionKeys.length} categories</small>}
+              </div>
+              <button
+                type="button"
+                className={styles.galleryDragHandle}
+                draggable={!busy && canWrite}
+                disabled={busy || !canWrite}
+                aria-label={`Drag to reorder ${group.alt || "image"} at position ${globalPosition}`}
+                title="Drag image to reorder"
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", group.mediaId);
+                  setDraggingMediaId(group.mediaId);
+                }}
+                onDragEnd={() => setDraggingMediaId(null)}
+              >
+                <GripVertical aria-hidden="true" />
+                <span>Drag to reorder</span>
+              </button>
+            </div>
             <div className={styles.cardActions}>
+              <button
+                type="button"
+                className="button secondary"
+                aria-label={`Move ${group.alt || "image"} up`}
+                disabled={busy || !canWrite || categoryIndex <= 0}
+                onClick={() => reorderImageRelative(group.mediaId, activeGroups[categoryIndex - 1]?.mediaId)}
+              >
+                Move Up
+              </button>
+              <button
+                type="button"
+                className="button secondary"
+                aria-label={`Move ${group.alt || "image"} down`}
+                disabled={busy || !canWrite || categoryIndex === activeGroups.length - 1}
+                onClick={() => reorderImageRelative(group.mediaId, activeGroups[categoryIndex + 1]?.mediaId, true)}
+              >
+                Move Down
+              </button>
               <button
                 type="button"
                 className="button secondary"
@@ -402,7 +488,7 @@ export function GalleryManager({ state }: { state?: string }) {
                   Add Images
                 </button>
               )}
-              <Submit busy={busy} disabled={!canWrite} label="Save Changes" busyLabel="Saving…" />
+              <Submit busy={busy} disabled={!canWrite || !dirty} label="Save Changes" busyLabel="Saving…" />
               <button type="button" className="button secondary" disabled={busy || !dirty} onClick={cancel}>
                 Cancel
               </button>
@@ -490,7 +576,20 @@ export function GalleryManager({ state }: { state?: string }) {
               </div>
             </div>
             {liveGallery.loading && !demoMode && <div className="panel" role="status">Loading images…</div>}
-            {activeGroups.length ? <div className={styles.twoColumnGrid}>{activeGroups.map(imageCard)}</div> : (
+            {activeGroups.length ? (
+              <>
+                <div className={styles.galleryOrderToolbar}>
+                  <div>
+                    <strong>{dirty ? "Unsaved changes" : "Saved order"}</strong>
+                    <span>One global order is shared by All and every category. Reordering a shared image moves all its placements together.</span>
+                    {dirty && <span role="status">Your changes are not public until you save.</span>}
+                  </div>
+                  <button type="button" className="button secondary" disabled={!undoPlacements || busy} onClick={undoReorder}>Undo last move</button>
+                </div>
+                <span className={styles.visuallyHidden} aria-live="polite">{reorderAnnouncement}</span>
+                <div className={styles.twoColumnGrid}>{activeGroups.map(imageCard)}</div>
+              </>
+            ) : (
               <Empty title="No images in this category yet." body="Choose Add Images to select existing Media Library assets." />
             )}
           </section>

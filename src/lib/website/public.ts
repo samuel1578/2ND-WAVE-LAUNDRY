@@ -183,14 +183,16 @@ async function readGallery(): Promise<PublicGallery> {
       .select(GALLERY_COLLECTION_COLUMNS)
       .eq("module", "gallery_collection")
       .eq("published", true)
-      .order("sort_order")
+      .order("sort_order", { ascending: true })
+      .order("record_key", { ascending: true })
       .limit(PUBLIC_LIMITS.galleryCollections),
     db
       .from("website_content")
       .select(CONTENT_COLUMNS)
       .eq("module", "gallery")
       .eq("published", true)
-      .order("sort_order")
+      .order("sort_order", { ascending: true })
+      .order("record_key", { ascending: true })
       .limit(PUBLIC_LIMITS.gallery),
   ]);
   if (placementResult.error) {

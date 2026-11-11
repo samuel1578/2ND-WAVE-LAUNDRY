@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     }
     if (contentModule === "gallery") {
       const [galleryResult, mediaResult] = await Promise.all([
-        db.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "gallery").order("sort_order"),
+        db.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "gallery").order("sort_order", { ascending: true }).order("record_key", { ascending: true }),
         db.from("website_gallery_media").select("id,public_url,name,alt,caption,source,permission,archived"),
       ]);
       if (galleryResult.error || mediaResult.error) throw Error();
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
       }, { headers: NO_STORE });
     }
     if (contentModule === "gallery-collections") {
-      const { data, error } = await db.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "gallery_collection").order("sort_order");
+      const { data, error } = await db.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "gallery_collection").order("sort_order", { ascending: true }).order("record_key", { ascending: true });
       if (error) throw Error();
       const countByKey = new Map(
         (data ?? []).map((row) => [row.record_key, 0]),

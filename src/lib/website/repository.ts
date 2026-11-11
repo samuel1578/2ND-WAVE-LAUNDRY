@@ -89,7 +89,7 @@ export async function readPublicContent(module: string) {
 export async function readPublicGallery() {
   const client = createSupabaseAdminClient();
   const [galleryResult, mediaResult] = await Promise.all([
-    client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "gallery").eq("published", true).order("sort_order", { ascending: true }),
+    client.from("website_content").select("id,record_key,payload,published,sort_order,version").eq("module", "gallery").eq("published", true).order("sort_order", { ascending: true }).order("record_key", { ascending: true }),
     client.from("website_gallery_media").select("id,public_url,name,alt,caption,source,permission,archived"),
   ]);
   if (galleryResult.error || mediaResult.error || !Array.isArray(galleryResult.data)) return fail();

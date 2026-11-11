@@ -131,7 +131,7 @@ export type GalleryImageGroup = {
 export function groupGalleryImages(
   placements: GalleryPlacement[],
 ): GalleryImageGroup[] {
-  const ordered = [...placements].sort((a, b) => a.order - b.order);
+  const ordered = [...placements].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
   const groups = new Map<string, GalleryImageGroup>();
   for (const placement of ordered) {
     const key = placement.collectionKey ?? "";
@@ -268,7 +268,7 @@ export function moveGalleryImage(input: {
   mediaId: string;
   offset: number;
 }): GalleryPlacement[] {
-  const ordered = [...input.placements].sort((a, b) => a.order - b.order);
+  const ordered = [...input.placements].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
   const mediaOrder: string[] = [];
   const byMedia = new Map<string, GalleryPlacement[]>();
   for (const row of ordered) {
@@ -288,4 +288,27 @@ export function moveGalleryImage(input: {
   ];
   const reordered = mediaOrder.flatMap((mediaId) => byMedia.get(mediaId)!);
   return reordered.map((row, position) => ({ ...row, order: position + 1 }));
+}
+
+/** Place one grouped media asset before/after another in the single global order. */
+export function moveGalleryImageRelative(input: {
+  placements: GalleryPlacement[];
+  mediaId: string;
+  targetMediaId: string;
+  after?: boolean;
+}): GalleryPlacement[] {
+  if (input.mediaId === input.targetMediaId) return input.placements;
+  let reordered = [...input.placements].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  const orderedMediaIds = () => [...new Set(reordered.map((placement) => placement.mediaId))];
+  const targetIndex = orderedMediaIds().indexOf(input.targetMediaId);
+  if (targetIndex < 0 || !orderedMediaIds().includes(input.mediaId)) return input.placements;
+  while (true) {
+    const mediaOrder = orderedMediaIds();
+    const sourceIndex = mediaOrder.indexOf(input.mediaId);
+    const currentTargetIndex = mediaOrder.indexOf(input.targetMediaId);
+    const beforeTarget = input.after ? sourceIndex === currentTargetIndex + 1 : sourceIndex === currentTargetIndex - 1;
+    if (beforeTarget) return reordered;
+    const offset = sourceIndex < currentTargetIndex ? 1 : -1;
+    reordered = moveGalleryImage({ placements: reordered, mediaId: input.mediaId, offset });
+  }
 }
