@@ -650,6 +650,28 @@ export async function saveGalleryWorkspace(input: {
   notify();
   return { collections, placements };
 }
+/** Admin Website Content — persist only the Gallery category order. */
+export async function saveGalleryCategoryOrder(items: Array<{ id: string; version: number }>) {
+  await operation();
+  if (!Array.isArray(items) || items.length !== state.websiteContent.collections.length) {
+    throw Error(conflict("gallery category order"));
+  }
+  const currentById = new Map(state.websiteContent.collections.map((item) => [item.id, item]));
+  if (
+    new Set(items.map((item) => item.id)).size !== items.length ||
+    items.some((item) => currentById.get(item.id)?.version !== item.version)
+  ) {
+    throw Error(conflict("gallery category order"));
+  }
+  const collections = items.map((item, index) => {
+    const current = currentById.get(item.id)!;
+    return { ...current, order: index + 1, version: current.version + 1 };
+  });
+  state.websiteContent = { ...state.websiteContent, collections };
+  notify();
+  return collections;
+}
+
 /** Admin Website Content — commit the FAQ collection. */
 export async function saveFaqs(items: FaqItem[]) {
   await operation();

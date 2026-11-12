@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { persistGalleryCategoryOrder } from "./gallery-category-order";
+import { moveGalleryCategory, moveGalleryCategoryRelative } from "@/lib/website/gallery-category-order";
 import { Empty, Picture } from "@/components/ui";
 import { Submit, TextField } from "@/components/forms/controls";
-import { GripVertical } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, GripVertical, Image as ImageIcon, Pencil } from "lucide-react";
 import { Dialog } from "@/components/dialog";
 import { UnsavedGuard } from "../unsaved";
 import {
@@ -39,6 +41,24 @@ const orderCategories = (rows: GalleryCollection[]) =>
 const orderedPlacements = (rows: GalleryPlacement[]) =>
   [...rows].sort((a, b) => a.order - b.order).map((row, index) => ({ ...row, order: index + 1 }));
 
+function categoryThumbnail(
+  category: GalleryCollection,
+  placements: GalleryPlacement[],
+  media: MediaAsset[],
+  livePlacements: Array<GalleryPlacement & { asset?: MediaAsset }> = [],
+): string | undefined {
+  // Use the first assigned image that still resolves to media, so one missing
+  // or archived asset does not blank out a category thumbnail.
+  for (const placement of placements) {
+    if (placement.collectionKey !== category.id) continue;
+    const src =
+      livePlacements.find((item) => item.mediaId === placement.mediaId)?.asset?.src ??
+      media.find((asset) => asset.id === placement.mediaId)?.src;
+    if (src) return src;
+  }
+  return undefined;
+}
+
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `gallery-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -58,7 +78,6 @@ export function GalleryManager({ state }: { state?: string }) {
   const liveMedia = useAdminWebsiteData<MediaAsset>(
     "media",
     demoMode ? seededMedia : [],
-    { enabled: demoMode },
   );
   const [categories, setCategories] = useState<GalleryCollection[]>(() =>
     demoMode && !demoEmpty ? structuredClone(getGalleryCollections()) : [],
@@ -84,7 +103,22 @@ export function GalleryManager({ state }: { state?: string }) {
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [undoPlacements, setUndoPlacements] = useState<GalleryPlacement[] | null>(null);
+  const categoryOrderSaveLock = useRef(false);
+  const categoryOrderConfirmed = useRef<GalleryCollection[]>([]);
+  const [categoryOrderSaving, setCategoryOrderSaving] = useState(false);
+  const [categoryOrderError, setCategoryOrderError] = useState("");
+  const [categoryOrderSaved, setCategoryOrderSaved] = useState(false);
+  const [categorySaveError, setCategorySaveError] = useState("");
+  const [categoryUndoAvailable, setCategoryUndoAvailable] = useState(false);
+  const categoryPreviousOrder = useRef<GalleryCollection[] | null>(null);
+  const categoryUndoLock = useRef(false);
+  // Tracks the exact server arrays already applied. A successful reorder makes
+  // `dirty` false again; without this guard the hydration effect would re-apply
+  // the stale pre-reorder server list and silently undo the move on screen.
+  const appliedCategoryData = useRef<GalleryCollection[] | null>(null);
+  const appliedPlacementData = useRef<Array<GalleryPlacement & { asset?: MediaAsset }> | null>(null);
   const [draggingMediaId, setDraggingMediaId] = useState<string | null>(null);
+  const [draggingCategoryId, setDraggingCategoryId] = useState<string | null>(null);
   const [reorderAnnouncement, setReorderAnnouncement] = useState("");
 
   const dirty = snapshot(orderCategories(categories), orderedPlacements(placements)) !== baseline;
@@ -127,6 +161,12 @@ export function GalleryManager({ state }: { state?: string }) {
   const pendingCategoryCount = pendingCategory ? countFor(pendingCategory) : 0;
 
   useEffect(() => {
+    if (hydrated && !categoryOrderSaving && !dirty) {
+      categoryOrderConfirmed.current = structuredClone(orderCategories(categories));
+    }
+  }, [categories, categoryOrderSaving, dirty, hydrated]);
+
+  useEffect(() => {
     if (
       demoMode ||
       !galleryWorkspaceDataReady({
@@ -137,6 +177,12 @@ export function GalleryManager({ state }: { state?: string }) {
       }) ||
       dirty
     ) return;
+    if (
+      appliedCategoryData.current === liveCategories.items &&
+      appliedPlacementData.current === liveGallery.items
+    ) return;
+    appliedCategoryData.current = liveCategories.items;
+    appliedPlacementData.current = liveGallery.items;
     const nextCategories = structuredClone(liveCategories.items);
     const nextPlacements = liveGallery.items.map((item) => ({
       id: item.id,
@@ -177,14 +223,119 @@ export function GalleryManager({ state }: { state?: string }) {
     change();
   }
 
+  async function persistCategoryOrder(ordered: GalleryCollection[]) {
+    if (categoryOrderSaveLock.current || !canWrite || busy) return;
+    if (dirty) {
+      setCategorySaveError("Save or cancel other Gallery edits before changing category order.");
+      return;
+    }
+    categoryOrderSaveLock.current = true;
+    setCategoryOrderSaving(true);
+    setCategoryOrderError("");
+    setCategoryOrderSaved(false);
+    setCategoryUndoAvailable(false);
+    const confirmed = categoryOrderConfirmed.current.length
+      ? structuredClone(categoryOrderConfirmed.current)
+      : structuredClone(orderCategories(categories));
+    categoryPreviousOrder.current = confirmed;
+    try {
+      const nextCategories = await persistGalleryCategoryOrder({
+        ordered,
+        confirmed,
+      });
+      setCategories(nextCategories);
+      setBaseline((value) => {
+        const current = JSON.parse(value) as { categories: GalleryCollection[]; placements: GalleryPlacement[] };
+        return snapshot(nextCategories, current.placements);
+      });
+      categoryOrderConfirmed.current = structuredClone(nextCategories);
+      setCategoryOrderSaved(true);
+      setCategoryUndoAvailable(true);
+      setCategoryOrderError("");
+      setCategorySaveError("");
+      setReorderAnnouncement("Category order saved successfully.");
+    } catch (cause) {
+      categoryOrderConfirmed.current = confirmed;
+      setCategories(confirmed);
+      setCategoryUndoAvailable(false);
+      setCategoryOrderError("Unable to save. Please try again.");
+      setCategorySaveError((cause as Error).message || "Unable to save. Please try again.");
+      setCategoryOrderSaved(false);
+      setReorderAnnouncement("Category order could not be saved. Previous order restored.");
+    } finally {
+      categoryOrderSaveLock.current = false;
+      setCategoryOrderSaving(false);
+    }
+  }
+
+  async function undoCategoryOrder() {
+    const previous = categoryPreviousOrder.current;
+    if (!previous || categoryUndoLock.current || categoryOrderSaving || busy) return;
+    categoryUndoLock.current = true;
+    setCategoryOrderSaving(true);
+    setCategoryOrderError("");
+    setCategoryOrderSaved(false);
+    try {
+      const restored = await persistGalleryCategoryOrder({
+        ordered: previous,
+        confirmed: categoryOrderConfirmed.current,
+      });
+      setCategories(restored);
+      setBaseline((value) => {
+        const current = JSON.parse(value) as { categories: GalleryCollection[]; placements: GalleryPlacement[] };
+        return snapshot(restored, current.placements);
+      });
+      categoryOrderConfirmed.current = structuredClone(restored);
+      categoryPreviousOrder.current = null;
+      setCategoryUndoAvailable(false);
+      setCategoryOrderSaved(true);
+      setCategoryOrderError("");
+      setCategorySaveError("");
+      setReorderAnnouncement("Last category move undone and saved.");
+    } catch (cause) {
+      setCategoryOrderError("Unable to undo. Please try again.");
+      setCategorySaveError((cause as Error).message || "Unable to undo. Please try again.");
+      setCategoryOrderSaved(false);
+    } finally {
+      categoryUndoLock.current = false;
+      setCategoryOrderSaving(false);
+    }
+  }
+
   function moveCategory(id: string, delta: number) {
+    if (categoryOrderSaveLock.current || busy || !canWrite || dirty) return;
     const ordered = orderCategories(categories);
     const index = ordered.findIndex((category) => category.id === id);
     const target = index + delta;
-    if (index < 0 || target < 0 || target >= ordered.length) return;
-    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
-    setCategories(orderCategories(ordered));
-    change();
+    const next = moveGalleryCategory(categories, id, delta);
+    if (index < 0 || !next) return;
+    setCategories(next);
+    setCategoryOrderError("");
+    setCategorySaveError("");
+    setCategoryOrderSaved(false);
+    setReorderAnnouncement(`${ordered[index].name} moved to position ${target + 1}. Saving…`);
+    void persistCategoryOrder(next);
+  }
+
+  function dropCategory(targetCategoryId: string, event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    if (categoryOrderSaveLock.current || busy || !canWrite || dirty) return;
+    const categoryId = event.dataTransfer.getData("text/plain") || draggingCategoryId;
+    if (!categoryId || categoryId === targetCategoryId) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const after = event.clientY > bounds.top + bounds.height / 2;
+    const next = moveGalleryCategoryRelative(categories, categoryId, targetCategoryId, after);
+    if (!next) return;
+    const moved = categories.find((category) => category.id === categoryId);
+    if (!moved) return;
+    setCategories(next);
+    const position = next.findIndex((category) => category.id === categoryId) + 1;
+    setCategoryOrderError("");
+    setCategorySaveError("");
+    setCategoryOrderSaved(false);
+    setReorderAnnouncement(`${moved.name} moved to position ${position}. Saving…`);
+    setDraggingCategoryId(null);
+    void persistCategoryOrder(next);
   }
 
   function addCategory() {
@@ -502,46 +653,148 @@ export function GalleryManager({ state }: { state?: string }) {
           <div className="panel" role="status">Gallery data is unavailable. Retry loading before making changes.</div>
         )}
         {(hydrated || demoMode) && !activeCategory && (
-          <section className="panel form-stack" aria-labelledby="gallery-categories-heading">
-            <h2 id="gallery-categories-heading">Gallery Categories</h2>
-            <p className={styles.inlineNote}>
-              Each count is the number of saved image assignments. An image in two categories is counted once in each.
-            </p>
-            <div className={styles.twoColumnGrid}>
+          <section className={`panel ${styles.galleryCategories}`} aria-labelledby="gallery-categories-heading">
+            <div className={styles.galleryCategoriesHeader}>
+              <div className={styles.galleryCategoriesHeading}>
+                <h2 id="gallery-categories-heading">Category Order ({categories.length})</h2>
+                <p>
+                  Drag and drop or use the move buttons to reorder. Changes are{" "}
+                  <strong>saved in real time</strong>.
+                </p>
+              </div>
+              <div className={styles.galleryCategoriesStatus}>
+                <span
+                  className={`${styles.gallerySavedPill}${categoryOrderError || categorySaveError ? ` ${styles.gallerySavedPillError}` : ""}`}
+                  role="status"
+                >
+                  <CheckCircle2 aria-hidden="true" />
+                  {categoryOrderSaving
+                    ? "Saving…"
+                    : categoryOrderError || categorySaveError
+                      ? "Not saved"
+                      : categoryOrderSaved
+                        ? "Changes saved"
+                        : "Up to date"}
+                </span>
+                <button
+                  type="button"
+                  className={styles.galleryCategoryUndo}
+                  disabled={!categoryUndoAvailable || categoryOrderSaving || busy}
+                  onClick={() => void undoCategoryOrder()}
+                >
+                  Undo category move
+                </button>
+              </div>
+            </div>
+            {categorySaveError && <p className={styles.galleryCategoryError} role="alert">{categorySaveError}</p>}
+            <span className={styles.visuallyHidden} aria-live="polite">{reorderAnnouncement}</span>
+            <div className={styles.galleryCategoryTable} role="group" aria-label="Reorder Gallery categories">
+              <div className={styles.galleryCategoryHeadRow} aria-hidden="true">
+                <span />
+                <span>#</span>
+                <span>Category</span>
+                <span>Images</span>
+                <span>Visibility</span>
+                <span>Actions</span>
+              </div>
               {categories.map((category, index) => {
                 const editing = editingCategory === category.id;
+                const thumbnail = categoryThumbnail(category, placements, allMedia, liveGallery.items);
+                const count = countFor(category);
                 return (
-                  <article className="panel form-stack" key={category.id}>
-                    <div className={styles.cardActions}>
-                      <div>
+                  <article
+                    className={`${styles.galleryCategoryRow}${editing ? ` ${styles.galleryCategoryRowEditing}` : ""}${draggingCategoryId === category.id ? ` ${styles.galleryCategoryRowDragging}` : ""}`}
+                    key={category.id}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => dropCategory(category.id, event)}
+                  >
+                    <button
+                      type="button"
+                      className={styles.galleryCategoryGrip}
+                      draggable={!busy && !categoryOrderSaving && canWrite && !dirty}
+                      disabled={busy || categoryOrderSaving || !canWrite || dirty}
+                      aria-label={`Drag to reorder ${category.name} at position ${index + 1}`}
+                      title="Drag category to reorder"
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", category.id);
+                        setDraggingCategoryId(category.id);
+                      }}
+                      onDragEnd={() => setDraggingCategoryId(null)}
+                    >
+                      <GripVertical aria-hidden="true" />
+                    </button>
+                    <span className={styles.galleryCategoryIndex} aria-label={`Category position ${index + 1}`}>{index + 1}</span>
+                    <div className={styles.galleryCategoryIdentity}>
+                      {thumbnail ? (
+                        <div className={styles.galleryCategoryThumb}>
+                          <Picture photo={{ src: thumbnail, alt: `${category.name} category thumbnail` }} sizes="96px" />
+                        </div>
+                      ) : (
+                        <div className={styles.galleryCategoryThumbPlaceholder} aria-hidden="true">{category.name.slice(0, 1)}</div>
+                      )}
+                      <div className={styles.galleryCategoryName}>
                         <h3>{category.name}</h3>
-                        <span className="badge">{countFor(category)} {countFor(category) === 1 ? "image" : "images"}</span>{" "}
-                        <span className={`badge status-${category.visible ? "visible" : "hidden"}`}>
-                          {category.visible ? "Shown on website" : "Hidden from website"}
-                        </span>
+                        <p>{category.description || "No description"}</p>
                       </div>
-                      <button type="button" className="button" onClick={() => openCategory(category.id)}>
-                        Open Category
-                      </button>
                     </div>
-                    {category.description && <p className={styles.inlineNote}>{category.description}</p>}
-                    <div className={styles.cardActions}>
-                      <button type="button" className="button secondary" onClick={() => setEditingCategory(editing ? null : category.id)}>
-                        {editing ? "Close details" : "Edit Category"}
+                    <span className={styles.galleryCategoryCount}>
+                      <ImageIcon aria-hidden="true" />
+                      {count} {count === 1 ? "image" : "images"}
+                    </span>
+                    <span className={`${styles.galleryCategoryVisibility} ${category.visible ? styles.galleryCategoryVisible : styles.galleryCategoryHidden}`}>
+                      {category.visible ? "Published" : "Hidden"}
+                    </span>
+                    <div className={styles.galleryCategoryTools}>
+                      <button
+                        type="button"
+                        className={styles.galleryCategoryTool}
+                        title="Open Category"
+                        aria-label={`Open ${category.name} to manage its images`}
+                        disabled={busy}
+                        onClick={() => openCategory(category.id)}
+                      >
+                        <ImageIcon aria-hidden="true" />
                       </button>
-                      <button type="button" className="button danger" disabled={busy} onClick={() => setConfirmCategory(category.id)}>
-                        Delete Category
+                      <button
+                        type="button"
+                        className={styles.galleryCategoryTool}
+                        title="Move Up"
+                        aria-label={`Move ${category.name} up`}
+                        disabled={busy || categoryOrderSaving || !canWrite || dirty || index === 0}
+                        onClick={() => moveCategory(category.id, -1)}
+                      >
+                        <ArrowUp aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.galleryCategoryTool}
+                        title="Move Down"
+                        aria-label={`Move ${category.name} down`}
+                        disabled={busy || categoryOrderSaving || !canWrite || dirty || index === categories.length - 1}
+                        onClick={() => moveCategory(category.id, 1)}
+                      >
+                        <ArrowDown aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.galleryCategoryTool}
+                        title={editing ? "Close details" : "Edit Category"}
+                        aria-label={`${editing ? "Close details for" : "Edit"} ${category.name}`}
+                        aria-expanded={editing}
+                        onClick={() => setEditingCategory(editing ? null : category.id)}
+                      >
+                        <Pencil aria-hidden="true" />
                       </button>
                     </div>
                     {editing && (
-                      <div className="form-stack">
+                      <div className={`${styles.galleryCategoryEditor} form-stack`}>
                         <TextField id={`category-name-${index}`} label="Category name *" value={category.name} maxLength={80} onChange={(event) => patchCategory(category.id, { name: event.target.value })} />
                         <TextField id={`category-description-${index}`} label="Description (optional)" value={category.description} maxLength={300} onChange={(event) => patchCategory(category.id, { description: event.target.value })} />
                         <div className={styles.cardActions}>
                           <button type="button" className="button secondary" disabled={busy || category.visible} onClick={() => patchCategory(category.id, { visible: true })}>Show on Website</button>
                           <button type="button" className="button secondary" disabled={busy || !category.visible} onClick={() => patchCategory(category.id, { visible: false })}>Hide from Website</button>
-                          <button type="button" className="button secondary" disabled={busy || index === 0} onClick={() => moveCategory(category.id, -1)}>Move up</button>
-                          <button type="button" className="button secondary" disabled={busy || index === categories.length - 1} onClick={() => moveCategory(category.id, 1)}>Move down</button>
+                          <button type="button" className="button danger" disabled={busy} onClick={() => setConfirmCategory(category.id)}>Delete Category</button>
                         </div>
                       </div>
                     )}
@@ -549,9 +802,15 @@ export function GalleryManager({ state }: { state?: string }) {
                 );
               })}
             </div>
-            <div className={styles.cardActions}>
-              <TextField id="new-category-name" label="New category name" value={newCategoryName} maxLength={80} onChange={(event) => setNewCategoryName(event.target.value)} />
-              <button type="button" className="button secondary" disabled={busy || !canWrite || !newCategoryName.trim()} onClick={addCategory}>Add Category</button>
+            <div className={styles.galleryCategoryFooter}>
+              <p className={styles.inlineNote}>
+                All always appears first on the public Gallery. Each count is the number of saved assignments;
+                an image in two categories is counted once in each. Reordering categories does not change image order.
+              </p>
+              <div className={styles.cardActions}>
+                <TextField id="new-category-name" label="New category name" value={newCategoryName} maxLength={80} onChange={(event) => setNewCategoryName(event.target.value)} />
+                <button type="button" className="button secondary" disabled={busy || !canWrite || !newCategoryName.trim()} onClick={addCategory}>Add Category</button>
+              </div>
             </div>
           </section>
         )}

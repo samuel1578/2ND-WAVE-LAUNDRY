@@ -11,6 +11,8 @@ import type { MediaAsset } from "@/lib/contracts";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { validatePromotionServiceSlug } from "./promotion-service-validation";
+import { GALLERY_COLLECTION_LIMITS, GALLERY_COLLECTION_SLUG } from "./gallery-collections";
+import { saveLiveGalleryCategoryOrder as writeLiveGalleryCategoryOrder } from "./gallery-category-write";
 import { isBlogImageAlign, isBlogImageSize, isBlogTextStyle, isValidBlogSegments } from "./blog-blocks";
 import { settingsForWrite } from "./settings-validation";
 import { assertWebsiteWritesEnabled, consumeWebsiteWrite } from "./write-guard";
@@ -123,6 +125,24 @@ export async function saveLiveGalleryWorkspace(
     PUBLIC_WRITE_TAGS.gallery,
   );
 }
+export async function saveLiveGalleryCategoryOrder(items: Array<{ id: string; version: number }>) {
+  await assertWebsiteWritesEnabled();
+  const admin = await actor("content.manage");
+  if (!Array.isArray(items) || items.length > GALLERY_COLLECTION_LIMITS.collections || items.some((item) =>
+    !item || typeof item.id !== "string" || item.id.length > GALLERY_COLLECTION_LIMITS.slug ||
+    !GALLERY_COLLECTION_SLUG.test(item.id) || !Number.isSafeInteger(item.version) || item.version < 1
+  ) || new Set(items.map((item) => item.id)).size !== items.length) {
+    throw new Error("Gallery category order is invalid. Reload and try again.");
+  }
+  consumeWebsiteWrite(admin.userId);
+  return writeAndRevalidate(
+    () => writeLiveGalleryCategoryOrder(admin.userId, items),
+    ["/", "/gallery"],
+    undefined,
+    PUBLIC_WRITE_TAGS.gallery,
+  );
+}
+
 export async function saveLiveBlogOrder(items: Array<{ id: string; version: number }>) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("content.manage");
