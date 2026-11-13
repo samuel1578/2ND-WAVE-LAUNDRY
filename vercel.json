@@ -4,6 +4,10 @@
     {
       "path": "/api/internal/email/worker",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/internal/retention/photos",
+      "schedule": "0 1 * * *"
     }
   ]
 }

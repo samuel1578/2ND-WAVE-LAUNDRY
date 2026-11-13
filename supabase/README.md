@@ -92,6 +92,52 @@ image-viewing flow passed an end-to-end test. The migration's verification query
 reports bucket limits and lists all `storage.objects` policies for review; confirm
 the output and migration history separately for each deployment environment.
 
+## Booking photo retention (90 days)
+
+Migration `20261113170000_booking_photo_retention.sql` adds the service_role-only
+functions used by the protected route `/api/internal/retention/photos`
+(`src/lib/retention/booking-photos.ts`). Apply it manually like the others.
+
+What one run does:
+
+1. Opens a `public.retention_jobs` row (`job_name = 'booking_photos_90_day'`).
+2. Takes photos whose `delete_due_at` has passed (uploaded + 90 days), 50 at a
+   time. It removes their objects from the `booking-photos` bucket through the
+   Storage API, then deletes the `booking_photos` rows. The database re-checks
+   the deadline, so nothing is deleted early. If Storage fails for a batch,
+   those rows are kept and counted as `retry_count`; the next run retries them.
+3. Removes orphaned `booking-photos` objects: older than 24 hours, with no
+   `booking_photos` row referencing them, 100 at a time.
+4. Closes the job row as `succeeded`, `partial` (a Storage failure, or the
+   45-second time budget ran out with work left) or `failed` (unexpected error).
+   One aggregate `audit_events` row is written per deletion call
+   (`retention.booking_photos_deleted`) and one for the orphan sweep
+   (`retention.booking_photo_objects_deleted`), counts only.
+
+Schedule: daily at 01:00 UTC by Vercel Cron (`vercel.json`). It uses the same
+bearer secrets as the email worker (`CRON_SECRET` or `EMAIL_WORKER_SECRET`).
+
+Dry run (counts only; deletes nothing and writes no job row):
+
+```sh
+curl -H "Authorization: Bearer <CRON_SECRET>" \
+  "https://www.2ndwavelaundry.com/api/internal/retention/photos?dry_run=1"
+```
+
+Read the job log in the SQL editor:
+
+```sql
+SELECT id, job_name, started_at, finished_at, outcome,
+       scanned_count, deleted_count, retry_count, error_summary
+FROM public.retention_jobs
+ORDER BY started_at DESC
+LIMIT 10;
+```
+
+Not implemented: booking (12-month) retention. `bookings.expires_at` is still
+not acted on, and bookings cannot be deleted while their append-only history and
+notes exist (see `docs/handover/analysis/04-database.md` §6).
+
 ## Security notes
 
 - `private` is not exposed by the Supabase Data API, so the security-definer

@@ -1,0 +1,3838 @@
+{
+  "enums": [
+    {
+      "type": "admin_role",
+      "values": [
+        "full_admin",
+        "operational_admin"
+      ]
+    },
+    {
+      "type": "booking_status",
+      "values": [
+        "pending",
+        "confirmed",
+        "scheduled",
+        "picked_up",
+        "processing",
+        "ready",
+        "out_for_delivery",
+        "completed",
+        "cancelled"
+      ]
+    },
+    {
+      "type": "service_kind",
+      "values": [
+        "laundry",
+        "modifier",
+        "information",
+        "commercial"
+      ]
+    },
+    {
+      "type": "email_template",
+      "values": [
+        "booking_created",
+        "booking_confirmed",
+        "booking_processing_started",
+        "booking_ready",
+        "booking_completed",
+        "booking_cancelled",
+        "staff_order_pending",
+        "staff_order_processing",
+        "staff_order_ready",
+        "staff_order_completed",
+        "staff_order_cancelled",
+        "newsletter_interest_received",
+        "enquiry_received"
+      ]
+    },
+    {
+      "type": "email_delivery_status",
+      "values": [
+        "pending",
+        "sending",
+        "sent",
+        "retryable_failed",
+        "dead"
+      ]
+    },
+    {
+      "type": "email_delivery_event",
+      "values": [
+        "delivered",
+        "deferred",
+        "bounced",
+        "complained"
+      ]
+    },
+    {
+      "type": "review_moderation_status",
+      "values": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    {
+      "type": "review_reply_status",
+      "values": [
+        "none",
+        "draft",
+        "published"
+      ]
+    }
+  ],
+  "views": [
+    {
+      "def": " SELECT id,\n    customer_name,\n    rating,\n    branch,\n    body_published,\n    published_at,\n    published_version,\n        CASE\n            WHEN (reply_status = 'published'::review_reply_status) THEN reply_body\n            ELSE NULL::text\n        END AS reply_body,\n        CASE\n            WHEN (reply_status = 'published'::review_reply_status) THEN reply_published_at\n            ELSE NULL::timestamp with time zone\n        END AS reply_published_at\n   FROM review_submissions\n  WHERE ((moderation_status = 'approved'::review_moderation_status) AND (consent IS TRUE) AND (body_published IS NOT NULL) AND (deleted_at IS NULL));",
+      "view": "published_reviews"
+    }
+  ],
+  "tables": [
+    {
+      "table": "admin_invitations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "role",
+          "type": "admin_role",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'pending'::text",
+          "nullable": false
+        },
+        {
+          "name": "invited_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "auth_user_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "correlation_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "failure_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "accepted_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX admin_invitations_pkey ON public.admin_invitations USING btree (id)",
+        "CREATE UNIQUE INDEX admin_invitations_open_email_idx ON public.admin_invitations USING btree (lower(email)) WHERE (status = ANY (ARRAY['pending'::text, 'sent'::text]))",
+        "CREATE INDEX admin_invitations_status_idx ON public.admin_invitations USING btree (status, created_at DESC)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (auth_user_id) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "admin_invitations_auth_user_id_fkey"
+        },
+        {
+          "def": "CHECK (((email = lower(btrim(email))) AND ((char_length(email) >= 3) AND (char_length(email) <= 254))))",
+          "name": "admin_invitations_email_normalised"
+        },
+        {
+          "def": "CHECK (((failure_reason IS NULL) OR (char_length(failure_reason) <= 300)))",
+          "name": "admin_invitations_failure_reason_length"
+        },
+        {
+          "def": "FOREIGN KEY (invited_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "admin_invitations_invited_by_fkey"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "admin_invitations_pkey"
+        },
+        {
+          "def": "CHECK ((status = ANY (ARRAY['pending'::text, 'sent'::text, 'accepted'::text, 'failed'::text, 'revoked'::text])))",
+          "name": "admin_invitations_status_check"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "admin_profiles",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "role",
+          "type": "admin_role",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "disabled_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX admin_profiles_pkey ON public.admin_profiles USING btree (user_id)",
+        "CREATE INDEX admin_profiles_active_role_idx ON public.admin_profiles USING btree (role) WHERE (disabled_at IS NULL)",
+        "CREATE INDEX admin_profiles_email_idx ON public.admin_profiles USING btree (lower(email)) WHERE (email IS NOT NULL)"
+      ],
+      "est_rows": 1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "admin_profiles_created_by_fkey"
+        },
+        {
+          "def": "CHECK ((char_length(display_name) <= 120))",
+          "name": "admin_profiles_display_name_length"
+        },
+        {
+          "def": "PRIMARY KEY (user_id)",
+          "name": "admin_profiles_pkey"
+        },
+        {
+          "def": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE RESTRICT",
+          "name": "admin_profiles_user_id_fkey"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "audit_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "actor_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "entity_type",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "entity_id",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "before_state",
+          "type": "jsonb",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "after_state",
+          "type": "jsonb",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "correlation_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX audit_events_pkey ON public.audit_events USING btree (id)",
+        "CREATE INDEX audit_events_created_at_idx ON public.audit_events USING btree (created_at DESC)",
+        "CREATE INDEX audit_events_entity_idx ON public.audit_events USING btree (entity_type, entity_id, created_at DESC)",
+        "CREATE INDEX audit_events_actor_idx ON public.audit_events USING btree (actor_id, created_at DESC)"
+      ],
+      "est_rows": 170,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK ((action ~ '^[a-z]+(\\.[a-z_]+)+$'::text))",
+          "name": "audit_events_action_format"
+        },
+        {
+          "def": "FOREIGN KEY (actor_id) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "audit_events_actor_id_fkey"
+        },
+        {
+          "def": "CHECK (((char_length(entity_type) >= 1) AND (char_length(entity_type) <= 64)))",
+          "name": "audit_events_entity_type_length"
+        },
+        {
+          "def": "CHECK (((COALESCE(pg_column_size(before_state), 0) <= 8192) AND (COALESCE(pg_column_size(after_state), 0) <= 8192)))",
+          "name": "audit_events_payload_size"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "audit_events_pkey"
+        },
+        {
+          "def": "CHECK (((reason IS NULL) OR (char_length(reason) <= 500)))",
+          "name": "audit_events_reason_length"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "booking_alert_recipients",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "label",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX booking_alert_recipients_pkey ON public.booking_alert_recipients USING btree (id)",
+        "CREATE UNIQUE INDEX booking_alert_recipients_email_unique ON public.booking_alert_recipients USING btree (email)",
+        "CREATE INDEX booking_alert_recipients_enabled_idx ON public.booking_alert_recipients USING btree (enabled) WHERE enabled"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK ((email = lower(btrim(email))))",
+          "name": "booking_alert_recipients_email_normalised"
+        },
+        {
+          "def": "CHECK ((((char_length(email) >= 3) AND (char_length(email) <= 254)) AND (email ~ '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$'::text)))",
+          "name": "booking_alert_recipients_email_shape"
+        },
+        {
+          "def": "UNIQUE (email)",
+          "name": "booking_alert_recipients_email_unique"
+        },
+        {
+          "def": "CHECK ((char_length(label) <= 80))",
+          "name": "booking_alert_recipients_label_length"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "booking_alert_recipients_pkey"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "booking_alert_recipients_version"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "booking_notes",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "booking_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX booking_notes_pkey ON public.booking_notes USING btree (id)",
+        "CREATE INDEX booking_notes_booking_idx ON public.booking_notes USING btree (booking_id, created_at)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "booking_notes_author_id_fkey"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(body)) >= 1) AND (char_length(btrim(body)) <= 4000)))",
+          "name": "booking_notes_body_length"
+        },
+        {
+          "def": "FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE",
+          "name": "booking_notes_booking_id_fkey"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "booking_notes_pkey"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "booking_photos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "booking_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "storage_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "mime_type",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "byte_size",
+          "type": "integer",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "width",
+          "type": "integer",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "height",
+          "type": "integer",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "processing_state",
+          "type": "text",
+          "default": "'pending'::text",
+          "nullable": false
+        },
+        {
+          "name": "uploaded_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "delete_due_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX booking_photos_pkey ON public.booking_photos USING btree (id)",
+        "CREATE UNIQUE INDEX booking_photos_storage_key_key ON public.booking_photos USING btree (storage_key)",
+        "CREATE INDEX booking_photos_booking_idx ON public.booking_photos USING btree (booking_id)",
+        "CREATE INDEX booking_photos_delete_due_idx ON public.booking_photos USING btree (delete_due_at)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE",
+          "name": "booking_photos_booking_id_fkey"
+        },
+        {
+          "def": "CHECK ((mime_type = ANY (ARRAY['image/jpeg'::text, 'image/png'::text, 'image/webp'::text])))",
+          "name": "booking_photos_mime"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "booking_photos_pkey"
+        },
+        {
+          "def": "CHECK (((byte_size > 0) AND (byte_size <= 5000000)))",
+          "name": "booking_photos_size"
+        },
+        {
+          "def": "CHECK ((processing_state = ANY (ARRAY['pending'::text, 'available'::text, 'rejected'::text])))",
+          "name": "booking_photos_state"
+        },
+        {
+          "def": "UNIQUE (storage_key)",
+          "name": "booking_photos_storage_key_key"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "booking_rate_limits",
+      "columns": [
+        {
+          "name": "bucket",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "window_start",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "hits",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX booking_rate_limits_pkey ON public.booking_rate_limits USING btree (bucket, window_start)",
+        "CREATE INDEX booking_rate_limits_window_idx ON public.booking_rate_limits USING btree (window_start)"
+      ],
+      "est_rows": 40,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((char_length(bucket) >= 1) AND (char_length(bucket) <= 200)))",
+          "name": "booking_rate_limits_bucket_length"
+        },
+        {
+          "def": "CHECK ((hits >= 0))",
+          "name": "booking_rate_limits_hits"
+        },
+        {
+          "def": "PRIMARY KEY (bucket, window_start)",
+          "name": "booking_rate_limits_pkey"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "booking_services",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "booking_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "service_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "service_slug",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "service_title",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX booking_services_booking_idx ON public.booking_services USING btree (booking_id)",
+        "CREATE UNIQUE INDEX booking_services_pkey ON public.booking_services USING btree (id)",
+        "CREATE UNIQUE INDEX booking_services_unique_selection ON public.booking_services USING btree (booking_id, service_slug)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE",
+          "name": "booking_services_booking_id_fkey"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "booking_services_pkey"
+        },
+        {
+          "def": "FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL",
+          "name": "booking_services_service_id_fkey"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(service_slug)) >= 1) AND (char_length(btrim(service_slug)) <= 80)))",
+          "name": "booking_services_slug_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(service_title)) >= 1) AND (char_length(btrim(service_title)) <= 120)))",
+          "name": "booking_services_title_length"
+        },
+        {
+          "def": "UNIQUE (booking_id, service_slug)",
+          "name": "booking_services_unique_selection"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "booking_settings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "pickup_start",
+          "type": "time without time zone",
+          "default": "'07:00:00'::time without time zone",
+          "nullable": false
+        },
+        {
+          "name": "pickup_end",
+          "type": "time without time zone",
+          "default": "'17:00:00'::time without time zone",
+          "nullable": false
+        },
+        {
+          "name": "express_cutoff",
+          "type": "time without time zone",
+          "default": "'11:00:00'::time without time zone",
+          "nullable": false
+        },
+        {
+          "name": "timezone",
+          "type": "text",
+          "default": "'Africa/Accra'::text",
+          "nullable": false
+        },
+        {
+          "name": "accept_public_bookings",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX booking_settings_pkey ON public.booking_settings USING btree (id)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK ((pickup_start < pickup_end))",
+          "name": "booking_settings_pickup_order"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "booking_settings_pkey"
+        },
+        {
+          "def": "CHECK (id)",
+          "name": "booking_settings_singleton"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "booking_settings_version_positive"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "booking_status_history",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "booking_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "from_status",
+          "type": "booking_status",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "to_status",
+          "type": "booking_status",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "actor_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "actor_kind",
+          "type": "text",
+          "default": "'admin'::text",
+          "nullable": false
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX booking_status_history_pkey ON public.booking_status_history USING btree (id)",
+        "CREATE INDEX booking_status_history_booking_idx ON public.booking_status_history USING btree (booking_id, created_at)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (actor_id) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "booking_status_history_actor_id_fkey"
+        },
+        {
+          "def": "CHECK ((actor_kind = ANY (ARRAY['customer'::text, 'system'::text, 'admin'::text])))",
+          "name": "booking_status_history_actor_kind"
+        },
+        {
+          "def": "FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE",
+          "name": "booking_status_history_booking_id_fkey"
+        },
+        {
+          "def": "CHECK (((from_status IS NOT NULL) OR (to_status = 'pending'::booking_status)))",
+          "name": "booking_status_history_creation_shape"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "booking_status_history_pkey"
+        },
+        {
+          "def": "CHECK (((reason IS NULL) OR (char_length(reason) <= 2000)))",
+          "name": "booking_status_history_reason_length"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "bookings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "reference",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "submission_scope",
+          "type": "text",
+          "default": "'public_booking_form'::text",
+          "nullable": false
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "submission_hash",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "customer_name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "customer_phone",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "customer_email",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "whatsapp_phone",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "same_whatsapp",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "contact_method",
+          "type": "text",
+          "default": "'phone'::text",
+          "nullable": false
+        },
+        {
+          "name": "item_category",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "load_size",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "customer_notes",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "pickup_address",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "pickup_landmark",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "pickup_map_url",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "transport_preference",
+          "type": "text",
+          "default": "'no_preference'::text",
+          "nullable": false
+        },
+        {
+          "name": "requested_date",
+          "type": "date",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "requested_time",
+          "type": "time without time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "express_requested",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "requested_timezone",
+          "type": "text",
+          "default": "'Africa/Accra'::text",
+          "nullable": false
+        },
+        {
+          "name": "assigned_branch_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "booking_status",
+          "default": "'pending'::booking_status",
+          "nullable": false
+        },
+        {
+          "name": "agreed_pickup_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "agreed_fee",
+          "type": "numeric(10,2)",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "agreed_fee_currency",
+          "type": "text",
+          "default": "'GHS'::text",
+          "nullable": false
+        },
+        {
+          "name": "zero_fee_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "service_charge",
+          "type": "numeric(10,2)",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "contact_outcome",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "confirmation_note",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "return_details",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "cancellation_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "cancelled_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "notice_version",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "scheduled_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "picked_up_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "processing_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "ready_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "out_for_delivery_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "default": "(now() + '1 year'::interval)",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX bookings_pkey ON public.bookings USING btree (id)",
+        "CREATE UNIQUE INDEX bookings_reference_key ON public.bookings USING btree (reference)",
+        "CREATE UNIQUE INDEX bookings_idempotency_unique ON public.bookings USING btree (submission_scope, idempotency_key)",
+        "CREATE INDEX bookings_status_requested_idx ON public.bookings USING btree (status, requested_date)",
+        "CREATE INDEX bookings_branch_requested_idx ON public.bookings USING btree (assigned_branch_id, requested_date)",
+        "CREATE INDEX bookings_created_at_idx ON public.bookings USING btree (created_at DESC)",
+        "CREATE INDEX bookings_expires_at_idx ON public.bookings USING btree (expires_at)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((char_length(btrim(pickup_address)) >= 1) AND (char_length(btrim(pickup_address)) <= 500)))",
+          "name": "bookings_address_length"
+        },
+        {
+          "def": "FOREIGN KEY (assigned_branch_id) REFERENCES branches(id) ON DELETE SET NULL",
+          "name": "bookings_assigned_branch_id_fkey"
+        },
+        {
+          "def": "CHECK (((status <> 'cancelled'::booking_status) OR ((cancellation_reason IS NOT NULL) AND (btrim(cancellation_reason) <> ''::text))))",
+          "name": "bookings_cancellation_reason"
+        },
+        {
+          "def": "FOREIGN KEY (cancelled_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "bookings_cancelled_by_fkey"
+        },
+        {
+          "def": "CHECK ((contact_method = ANY (ARRAY['phone'::text, 'whatsapp'::text])))",
+          "name": "bookings_contact_method"
+        },
+        {
+          "def": "CHECK ((customer_phone IS NOT NULL))",
+          "name": "bookings_customer_contact_required"
+        },
+        {
+          "def": "CHECK (((customer_email IS NULL) OR ((char_length(customer_email) >= 3) AND (char_length(customer_email) <= 254))))",
+          "name": "bookings_email_length"
+        },
+        {
+          "def": "CHECK ((agreed_fee_currency = 'GHS'::text))",
+          "name": "bookings_fee_currency"
+        },
+        {
+          "def": "CHECK (((agreed_fee IS NULL) OR (agreed_fee >= (0)::numeric)))",
+          "name": "bookings_fee_nonnegative"
+        },
+        {
+          "def": "CHECK (((char_length(idempotency_key) >= 16) AND (char_length(idempotency_key) <= 128)))",
+          "name": "bookings_idempotency_key_length"
+        },
+        {
+          "def": "UNIQUE (submission_scope, idempotency_key)",
+          "name": "bookings_idempotency_unique"
+        },
+        {
+          "def": "CHECK ((item_category = ANY (ARRAY['clothing'::text, 'bedding'::text, 'both'::text, 'other'::text])))",
+          "name": "bookings_item_category"
+        },
+        {
+          "def": "CHECK ((char_length(pickup_landmark) <= 200))",
+          "name": "bookings_landmark_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(load_size)) >= 1) AND (char_length(btrim(load_size)) <= 200)))",
+          "name": "bookings_load_size_length"
+        },
+        {
+          "def": "CHECK (((pickup_map_url IS NULL) OR (char_length(pickup_map_url) <= 2048)))",
+          "name": "bookings_map_url_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(customer_name)) >= 1) AND (char_length(btrim(customer_name)) <= 120)))",
+          "name": "bookings_name_length"
+        },
+        {
+          "def": "CHECK ((char_length(customer_notes) <= 4000))",
+          "name": "bookings_notes_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(customer_phone)) >= 7) AND (char_length(btrim(customer_phone)) <= 20)))",
+          "name": "bookings_phone_length"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "bookings_pkey"
+        },
+        {
+          "def": "CHECK ((reference ~ '^2W-([0-9A-HJKMNP-TV-Z]{4}|[0-9A-HJKMNP-TV-Z]{10})$'::text))",
+          "name": "bookings_reference_format"
+        },
+        {
+          "def": "UNIQUE (reference)",
+          "name": "bookings_reference_key"
+        },
+        {
+          "def": "CHECK (((char_length(submission_scope) >= 3) AND (char_length(submission_scope) <= 60)))",
+          "name": "bookings_scope_length"
+        },
+        {
+          "def": "CHECK (((service_charge IS NULL) OR (service_charge >= (0)::numeric)))",
+          "name": "bookings_service_charge_nonnegative"
+        },
+        {
+          "def": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+          "name": "bookings_staff_alert_created"
+        },
+        {
+          "def": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+          "name": "bookings_staff_alert_status_changed"
+        },
+        {
+          "def": "CHECK ((char_length(submission_hash) = 32))",
+          "name": "bookings_submission_hash_length"
+        },
+        {
+          "def": "CHECK ((requested_timezone = 'Africa/Accra'::text))",
+          "name": "bookings_timezone_fixed"
+        },
+        {
+          "def": "CHECK ((transport_preference = ANY (ARRAY['no_preference'::text, 'cab'::text, 'motorbike'::text, 'courier'::text])))",
+          "name": "bookings_transport_preference"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "bookings_version_positive"
+        },
+        {
+          "def": "CHECK (((whatsapp_phone IS NULL) OR ((char_length(btrim(whatsapp_phone)) >= 7) AND (char_length(btrim(whatsapp_phone)) <= 20))))",
+          "name": "bookings_whatsapp_length"
+        },
+        {
+          "def": "CHECK (((agreed_fee IS NULL) OR (agreed_fee <> (0)::numeric) OR ((zero_fee_reason IS NOT NULL) AND (btrim(zero_fee_reason) <> ''::text))))",
+          "name": "bookings_zero_fee_reason"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "branch_operating_hours",
+      "columns": [
+        {
+          "name": "branch_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "weekday",
+          "type": "smallint",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "opens",
+          "type": "time without time zone",
+          "default": "'07:00:00'::time without time zone",
+          "nullable": false
+        },
+        {
+          "name": "closes",
+          "type": "time without time zone",
+          "default": "'20:00:00'::time without time zone",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX branch_operating_hours_pkey ON public.branch_operating_hours USING btree (branch_id, weekday)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE",
+          "name": "branch_operating_hours_branch_id_fkey"
+        },
+        {
+          "def": "CHECK ((opens < closes))",
+          "name": "branch_operating_hours_order"
+        },
+        {
+          "def": "PRIMARY KEY (branch_id, weekday)",
+          "name": "branch_operating_hours_pkey"
+        },
+        {
+          "def": "CHECK (((weekday >= 1) AND (weekday <= 7)))",
+          "name": "branch_operating_hours_weekday"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "branch_pickup_exceptions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "branch_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "exception_date",
+          "type": "date",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "opens",
+          "type": "time without time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "closes",
+          "type": "time without time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "is_closed",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX branch_pickup_exceptions_pkey ON public.branch_pickup_exceptions USING btree (id)",
+        "CREATE UNIQUE INDEX branch_pickup_exceptions_unique ON public.branch_pickup_exceptions USING btree (branch_id, exception_date)",
+        "CREATE INDEX branch_pickup_exceptions_date_idx ON public.branch_pickup_exceptions USING btree (exception_date)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE",
+          "name": "branch_pickup_exceptions_branch_id_fkey"
+        },
+        {
+          "def": "CHECK ((is_closed OR ((opens IS NOT NULL) AND (closes IS NOT NULL) AND (opens < closes))))",
+          "name": "branch_pickup_exceptions_order"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "branch_pickup_exceptions_pkey"
+        },
+        {
+          "def": "CHECK ((char_length(reason) <= 200))",
+          "name": "branch_pickup_exceptions_reason_length"
+        },
+        {
+          "def": "UNIQUE (branch_id, exception_date)",
+          "name": "branch_pickup_exceptions_unique"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "branch_pickup_windows",
+      "columns": [
+        {
+          "name": "branch_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "weekday",
+          "type": "smallint",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "opens",
+          "type": "time without time zone",
+          "default": "'07:00:00'::time without time zone",
+          "nullable": false
+        },
+        {
+          "name": "closes",
+          "type": "time without time zone",
+          "default": "'17:00:00'::time without time zone",
+          "nullable": false
+        },
+        {
+          "name": "is_closed",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX branch_pickup_windows_pkey ON public.branch_pickup_windows USING btree (branch_id, weekday)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE",
+          "name": "branch_pickup_windows_branch_id_fkey"
+        },
+        {
+          "def": "CHECK ((is_closed OR (opens < closes)))",
+          "name": "branch_pickup_windows_order"
+        },
+        {
+          "def": "PRIMARY KEY (branch_id, weekday)",
+          "name": "branch_pickup_windows_pkey"
+        },
+        {
+          "def": "CHECK (((weekday >= 1) AND (weekday <= 7)))",
+          "name": "branch_pickup_windows_weekday"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "branches",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "label",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "sort_order",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "is_primary",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "public_map_url",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "public_hours",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX branches_pkey ON public.branches USING btree (id)",
+        "CREATE UNIQUE INDEX branches_slug_key ON public.branches USING btree (slug)",
+        "CREATE INDEX branches_active_order_idx ON public.branches USING btree (active, sort_order)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK ((char_length(label) <= 60))",
+          "name": "branches_label_length"
+        },
+        {
+          "def": "CHECK ((char_length(phone) <= 32))",
+          "name": "branches_phone_length"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "branches_pkey"
+        },
+        {
+          "def": "CHECK ((slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'::text))",
+          "name": "branches_slug_format"
+        },
+        {
+          "def": "UNIQUE (slug)",
+          "name": "branches_slug_key"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(title)) >= 1) AND (char_length(btrim(title)) <= 120)))",
+          "name": "branches_title_length"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "branches_version_positive"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "email_delivery_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "outbox_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "event",
+          "type": "email_delivery_event",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "dedupe_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "provider_event_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX email_delivery_events_pkey ON public.email_delivery_events USING btree (id)",
+        "CREATE UNIQUE INDEX email_delivery_events_dedupe_unique ON public.email_delivery_events USING btree (dedupe_key)",
+        "CREATE INDEX email_delivery_events_outbox_idx ON public.email_delivery_events USING btree (outbox_id, received_at DESC)",
+        "CREATE INDEX email_delivery_events_event_idx ON public.email_delivery_events USING btree (event, received_at DESC)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK ((dedupe_key ~ '^[0-9a-f]{64}$'::text))",
+          "name": "email_delivery_events_dedupe_shape"
+        },
+        {
+          "def": "UNIQUE (dedupe_key)",
+          "name": "email_delivery_events_dedupe_unique"
+        },
+        {
+          "def": "CHECK (((provider_event_at IS NULL) OR (provider_event_at > '2000-01-01 00:00:00+00'::timestamp with time zone)))",
+          "name": "email_delivery_events_event_time"
+        },
+        {
+          "def": "FOREIGN KEY (outbox_id) REFERENCES email_outbox(id) ON DELETE CASCADE",
+          "name": "email_delivery_events_outbox_id_fkey"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "email_delivery_events_pkey"
+        },
+        {
+          "def": "CHECK (((reason IS NULL) OR ((char_length(reason) <= 200) AND (reason !~ '[\\r\\n]'::text))))",
+          "name": "email_delivery_events_reason"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "email_outbox",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "booking_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "booking_version",
+          "type": "integer",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "template",
+          "type": "email_template",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "recipient_email",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "email_delivery_status",
+          "default": "'pending'::email_delivery_status",
+          "nullable": false
+        },
+        {
+          "name": "attempt_count",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "max_attempts",
+          "type": "integer",
+          "default": "5",
+          "nullable": false
+        },
+        {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "locked_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "locked_by",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "provider_message_id",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "last_attempt_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "is_test",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "test_context",
+          "type": "jsonb",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "resend_of",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX email_outbox_pkey ON public.email_outbox USING btree (id)",
+        "CREATE UNIQUE INDEX email_outbox_idempotency_unique ON public.email_outbox USING btree (idempotency_key)",
+        "CREATE INDEX email_outbox_dispatch_idx ON public.email_outbox USING btree (status, next_attempt_at)",
+        "CREATE INDEX email_outbox_booking_idx ON public.email_outbox USING btree (booking_id)",
+        "CREATE INDEX email_outbox_lease_idx ON public.email_outbox USING btree (lease_expires_at) WHERE (status = 'sending'::email_delivery_status)",
+        "CREATE INDEX email_outbox_created_idx ON public.email_outbox USING btree (created_at)",
+        "CREATE UNIQUE INDEX email_outbox_booking_event_recipient_unique ON public.email_outbox USING btree (booking_id, template, booking_version, recipient_email) WHERE ((booking_id IS NOT NULL) AND (booking_version IS NOT NULL) AND (resend_of IS NULL))"
+      ],
+      "est_rows": 62,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK ((((max_attempts >= 1) AND (max_attempts <= 20)) AND ((attempt_count >= 0) AND (attempt_count <= max_attempts))))",
+          "name": "email_outbox_attempts"
+        },
+        {
+          "def": "FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE",
+          "name": "email_outbox_booking_id_fkey"
+        },
+        {
+          "def": "CHECK ((((booking_id IS NULL) AND (booking_version IS NULL)) OR ((booking_id IS NOT NULL) AND (booking_version IS NOT NULL) AND (booking_version >= 1))))",
+          "name": "email_outbox_booking_link"
+        },
+        {
+          "def": "CHECK (((status <> 'dead'::email_delivery_status) OR (attempt_count >= 1)))",
+          "name": "email_outbox_dead_attempts"
+        },
+        {
+          "def": "CHECK (((last_error IS NULL) OR ((char_length(last_error) <= 500) AND (last_error !~ '[\\r\\n]'::text))))",
+          "name": "email_outbox_error_sanitised"
+        },
+        {
+          "def": "CHECK (((status <> ALL (ARRAY['retryable_failed'::email_delivery_status, 'dead'::email_delivery_status])) OR ((last_error IS NOT NULL) AND (btrim(last_error) <> ''::text))))",
+          "name": "email_outbox_failure_reason"
+        },
+        {
+          "def": "CHECK (((idempotency_key = btrim(idempotency_key)) AND ((char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200))))",
+          "name": "email_outbox_idempotency_key_shape"
+        },
+        {
+          "def": "UNIQUE (idempotency_key)",
+          "name": "email_outbox_idempotency_unique"
+        },
+        {
+          "def": "CHECK (((status = 'sending'::email_delivery_status) OR ((locked_at IS NULL) AND (locked_by IS NULL) AND (lease_expires_at IS NULL))))",
+          "name": "email_outbox_lease_cleared"
+        },
+        {
+          "def": "CHECK (((status <> 'sending'::email_delivery_status) OR ((locked_at IS NOT NULL) AND (locked_by IS NOT NULL) AND (lease_expires_at IS NOT NULL) AND (lease_expires_at > locked_at))))",
+          "name": "email_outbox_lease_required"
+        },
+        {
+          "def": "CHECK (((locked_by IS NULL) OR ((char_length(btrim(locked_by)) >= 1) AND (char_length(btrim(locked_by)) <= 120))))",
+          "name": "email_outbox_locked_by_length"
+        },
+        {
+          "def": "CHECK (((jsonb_typeof(payload) = 'object'::text) AND (((payload ? 'booking_reference'::text) AND (payload ? 'status'::text) AND (jsonb_typeof((payload -> 'booking_reference'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'status'::text)) = 'string'::text) AND (((template = ANY (ARRAY['booking_created'::email_template, 'booking_confirmed'::email_template, 'booking_processing_started'::email_template, 'booking_ready'::email_template, 'booking_completed'::email_template, 'booking_cancelled'::email_template])) AND (((((payload - 'booking_reference'::text) - 'status'::text) - 'requested_date'::text) - 'requested_time'::text) = '{}'::jsonb)) OR ((template = ANY (ARRAY['staff_order_pending'::email_template, 'staff_order_processing'::email_template, 'staff_order_ready'::email_template, 'staff_order_completed'::email_template, 'staff_order_cancelled'::email_template])) AND (((((((((((payload - 'booking_reference'::text) - 'status'::text) - 'requested_date'::text) - 'requested_time'::text) - 'previous_status'::text) - 'actor_kind'::text) - 'actor_name'::text) - 'actor_role'::text) - 'occurred_at'::text) - 'cancellation_reason'::text) = '{}'::jsonb) AND (jsonb_typeof((payload -> 'previous_status'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'actor_kind'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'actor_name'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'actor_role'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'occurred_at'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'cancellation_reason'::text)) = 'string'::text) AND (char_length((payload ->> 'cancellation_reason'::text)) <= 500))) AND ((NOT (payload ? 'requested_date'::text)) OR ((payload -> 'requested_date'::text) = 'null'::jsonb) OR ((jsonb_typeof((payload -> 'requested_date'::text)) = 'string'::text) AND ((payload ->> 'requested_date'::text) ~ '^\\d{4}-\\d{2}-\\d{2}$'::text))) AND ((NOT (payload ? 'requested_time'::text)) OR ((payload -> 'requested_time'::text) = 'null'::jsonb) OR ((jsonb_typeof((payload -> 'requested_time'::text)) = 'string'::text) AND ((payload ->> 'requested_time'::text) ~ '^([01]\\d|2[0-3]):[0-5]\\d$'::text)))) OR ((template = 'newsletter_interest_received'::email_template) AND (payload ? 'subscriber_email'::text) AND (payload ? 'submitted_at'::text) AND (payload ? 'source'::text) AND ((((payload - 'subscriber_email'::text) - 'submitted_at'::text) - 'source'::text) = '{}'::jsonb) AND (jsonb_typeof((payload -> 'subscriber_email'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'submitted_at'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'source'::text)) = 'string'::text) AND ((payload ->> 'subscriber_email'::text) ~ '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$'::text) AND ((char_length((payload ->> 'subscriber_email'::text)) >= 3) AND (char_length((payload ->> 'subscriber_email'::text)) <= 254)) AND ((payload ->> 'source'::text) = 'public_newsletter_form'::text)) OR ((template = 'enquiry_received'::email_template) AND (payload ? 'enquiry_id'::text) AND (payload ? 'kind'::text) AND (payload ? 'name'::text) AND (payload ? 'business'::text) AND (payload ? 'phone'::text) AND (payload ? 'topic'::text) AND (((((((payload - 'enquiry_id'::text) - 'kind'::text) - 'name'::text) - 'business'::text) - 'phone'::text) - 'topic'::text) = '{}'::jsonb) AND (jsonb_typeof((payload -> 'enquiry_id'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'kind'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'name'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'business'::text)) = ANY (ARRAY['string'::text, 'null'::text])) AND (jsonb_typeof((payload -> 'phone'::text)) = 'string'::text) AND (jsonb_typeof((payload -> 'topic'::text)) = ANY (ARRAY['string'::text, 'null'::text])) AND ((payload ->> 'enquiry_id'::text) ~ '^[0-9a-fA-F-]{36}$'::text) AND ((payload ->> 'kind'::text) = ANY (ARRAY['general'::text, 'commercial'::text])) AND ((char_length((payload ->> 'name'::text)) >= 1) AND (char_length((payload ->> 'name'::text)) <= 120)) AND (((payload -> 'business'::text) = 'null'::jsonb) OR (char_length((payload ->> 'business'::text)) <= 120)) AND ((char_length((payload ->> 'phone'::text)) >= 1) AND (char_length((payload ->> 'phone'::text)) <= 40)) AND (((payload -> 'topic'::text) = 'null'::jsonb) OR (char_length((payload ->> 'topic'::text)) <= 80))))))",
+          "name": "email_outbox_payload_shape"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "email_outbox_pkey"
+        },
+        {
+          "def": "CHECK (((provider_message_id IS NULL) OR ((char_length(btrim(provider_message_id)) >= 1) AND (char_length(btrim(provider_message_id)) <= 200))))",
+          "name": "email_outbox_provider_id_length"
+        },
+        {
+          "def": "CHECK (((recipient_email = btrim(recipient_email)) AND ((char_length(recipient_email) >= 3) AND (char_length(recipient_email) <= 254)) AND (recipient_email ~ '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$'::text)))",
+          "name": "email_outbox_recipient_shape"
+        },
+        {
+          "def": "CHECK (((payload ->> 'booking_reference'::text) ~ '^2W-([0-9A-HJKMNP-TV-Z]{4}|[0-9A-HJKMNP-TV-Z]{10})$'::text))",
+          "name": "email_outbox_reference_shape"
+        },
+        {
+          "def": "FOREIGN KEY (resend_of) REFERENCES email_outbox(id) ON DELETE SET NULL",
+          "name": "email_outbox_resend_of_fkey"
+        },
+        {
+          "def": "CHECK ((((status = 'sent'::email_delivery_status) AND (sent_at IS NOT NULL)) OR ((status <> 'sent'::email_delivery_status) AND (sent_at IS NULL))))",
+          "name": "email_outbox_sent_at"
+        },
+        {
+          "def": "CHECK ((((template = 'booking_created'::email_template) AND ((payload ->> 'status'::text) = 'pending'::text)) OR ((template = 'booking_confirmed'::email_template) AND ((payload ->> 'status'::text) = 'confirmed'::text)) OR ((template = 'booking_processing_started'::email_template) AND ((payload ->> 'status'::text) = 'processing'::text)) OR ((template = 'booking_ready'::email_template) AND ((payload ->> 'status'::text) = 'ready'::text)) OR ((template = 'booking_completed'::email_template) AND ((payload ->> 'status'::text) = 'completed'::text)) OR ((template = 'booking_cancelled'::email_template) AND ((payload ->> 'status'::text) = 'cancelled'::text)) OR ((template = 'staff_order_pending'::email_template) AND ((payload ->> 'status'::text) = 'pending'::text)) OR ((template = 'staff_order_processing'::email_template) AND ((payload ->> 'status'::text) = 'processing'::text)) OR ((template = 'staff_order_ready'::email_template) AND ((payload ->> 'status'::text) = 'ready'::text)) OR ((template = 'staff_order_completed'::email_template) AND ((payload ->> 'status'::text) = 'completed'::text)) OR ((template = 'staff_order_cancelled'::email_template) AND ((payload ->> 'status'::text) = 'cancelled'::text)) OR (template = ANY (ARRAY['newsletter_interest_received'::email_template, 'enquiry_received'::email_template]))))",
+          "name": "email_outbox_template_status"
+        },
+        {
+          "def": "CHECK ((((is_test = false) AND (test_context IS NULL)) OR ((is_test = true) AND (booking_id IS NULL) AND (booking_version IS NULL) AND (test_context IS NOT NULL) AND (jsonb_typeof(test_context) = 'object'::text) AND (test_context ? 'booking'::text) AND (((test_context - 'booking'::text) - 'staff'::text) = '{}'::jsonb) AND (jsonb_typeof((test_context -> 'booking'::text)) = 'object'::text) AND (pg_column_size(test_context) <= 8192))))",
+          "name": "email_outbox_test_context_shape"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "enquiries",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'new'::text",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "business",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "topic",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "details",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "notes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "source_ip_hash",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX enquiries_pkey ON public.enquiries USING btree (id)",
+        "CREATE UNIQUE INDEX enquiries_idempotency_key_key ON public.enquiries USING btree (idempotency_key)",
+        "CREATE INDEX enquiries_kind_created_idx ON public.enquiries USING btree (kind, created_at DESC)",
+        "CREATE INDEX enquiries_status_idx ON public.enquiries USING btree (status)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((business IS NULL) OR (char_length(business) <= 120)))",
+          "name": "enquiries_business_length"
+        },
+        {
+          "def": "CHECK ((octet_length((details)::text) <= 8000))",
+          "name": "enquiries_details_size"
+        },
+        {
+          "def": "CHECK (((email IS NULL) OR (char_length(email) <= 254)))",
+          "name": "enquiries_email_length"
+        },
+        {
+          "def": "UNIQUE (idempotency_key)",
+          "name": "enquiries_idempotency_key_key"
+        },
+        {
+          "def": "CHECK (((char_length(idempotency_key) >= 16) AND (char_length(idempotency_key) <= 128)))",
+          "name": "enquiries_idempotency_shape"
+        },
+        {
+          "def": "CHECK ((kind = ANY (ARRAY['general'::text, 'commercial'::text])))",
+          "name": "enquiries_kind_check"
+        },
+        {
+          "def": "CHECK (((message IS NULL) OR (char_length(message) <= 4000)))",
+          "name": "enquiries_message_length"
+        },
+        {
+          "def": "CHECK (((char_length(name) >= 1) AND (char_length(name) <= 120)))",
+          "name": "enquiries_name_length"
+        },
+        {
+          "def": "CHECK ((jsonb_typeof(notes) = 'array'::text))",
+          "name": "enquiries_notes_array"
+        },
+        {
+          "def": "CHECK (((char_length(phone) >= 1) AND (char_length(phone) <= 40)))",
+          "name": "enquiries_phone_length"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "enquiries_pkey"
+        },
+        {
+          "def": "CHECK (((source_ip_hash IS NULL) OR (source_ip_hash ~ '^[a-f0-9]{32,64}$'::text)))",
+          "name": "enquiries_source_ip_hash_shape"
+        },
+        {
+          "def": "CHECK ((status = ANY (ARRAY['new'::text, 'contacted'::text, 'closed'::text])))",
+          "name": "enquiries_status_check"
+        },
+        {
+          "def": "CHECK (((topic IS NULL) OR (char_length(topic) <= 80)))",
+          "name": "enquiries_topic_length"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "enquiries_version_positive"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "newsletter_interest",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "consent_version",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "default": "'public_newsletter_form'::text",
+          "nullable": false
+        },
+        {
+          "name": "source_ip_hash",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX newsletter_interest_pkey ON public.newsletter_interest USING btree (id)",
+        "CREATE UNIQUE INDEX newsletter_interest_email_unique ON public.newsletter_interest USING btree (email)",
+        "CREATE INDEX newsletter_interest_created_idx ON public.newsletter_interest USING btree (created_at DESC)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((char_length(btrim(consent_version)) >= 1) AND (char_length(btrim(consent_version)) <= 60)))",
+          "name": "newsletter_interest_consent_version_length"
+        },
+        {
+          "def": "CHECK ((email = lower(btrim(email))))",
+          "name": "newsletter_interest_email_normalised"
+        },
+        {
+          "def": "CHECK ((((char_length(email) >= 3) AND (char_length(email) <= 254)) AND (email ~ '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$'::text)))",
+          "name": "newsletter_interest_email_shape"
+        },
+        {
+          "def": "UNIQUE (email)",
+          "name": "newsletter_interest_email_unique"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "newsletter_interest_pkey"
+        },
+        {
+          "def": "CHECK (((source_ip_hash IS NULL) OR (source_ip_hash ~ '^[a-f0-9]{32,64}$'::text)))",
+          "name": "newsletter_interest_source_ip_hash_shape"
+        },
+        {
+          "def": "CHECK ((source = 'public_newsletter_form'::text))",
+          "name": "newsletter_interest_source_shape"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "public_site_settings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "business_email",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "default": "'059 522 4280'::text",
+          "nullable": false
+        },
+        {
+          "name": "whatsapp",
+          "type": "text",
+          "default": "'233595224280'::text",
+          "nullable": false
+        },
+        {
+          "name": "instagram",
+          "type": "text",
+          "default": "'https://www.instagram.com/2ndwave_laundry/'::text",
+          "nullable": false
+        },
+        {
+          "name": "tiktok",
+          "type": "text",
+          "default": "'https://www.tiktok.com/@2ndwave.com'::text",
+          "nullable": false
+        },
+        {
+          "name": "facebook",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "newsletter_visible",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "updated_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX public_site_settings_pkey ON public.public_site_settings USING btree (id)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK ((char_length(business_email) <= 254))",
+          "name": "public_site_settings_email_len"
+        },
+        {
+          "def": "CHECK (id)",
+          "name": "public_site_settings_id_check"
+        },
+        {
+          "def": "CHECK (((char_length(phone) >= 7) AND (char_length(phone) <= 40)))",
+          "name": "public_site_settings_phone_len"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "public_site_settings_pkey"
+        },
+        {
+          "def": "CHECK ((((instagram = ''::text) OR (instagram ~ '^https://'::text)) AND ((tiktok = ''::text) OR (tiktok ~ '^https://'::text)) AND ((facebook = ''::text) OR (facebook ~ '^https://'::text))))",
+          "name": "public_site_settings_social_urls"
+        },
+        {
+          "def": "FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "public_site_settings_updated_by_fkey"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "public_site_settings_version_check"
+        },
+        {
+          "def": "CHECK (((char_length(whatsapp) >= 7) AND (char_length(whatsapp) <= 40)))",
+          "name": "public_site_settings_whatsapp_len"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "retention_jobs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "job_name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "outcome",
+          "type": "text",
+          "default": "'running'::text",
+          "nullable": false
+        },
+        {
+          "name": "scanned_count",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "deleted_count",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "retry_count",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "error_summary",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX retention_jobs_pkey ON public.retention_jobs USING btree (id)",
+        "CREATE INDEX retention_jobs_started_idx ON public.retention_jobs USING btree (started_at DESC)",
+        "CREATE INDEX retention_jobs_job_idx ON public.retention_jobs USING btree (job_name, started_at DESC)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((scanned_count >= 0) AND (deleted_count >= 0) AND (retry_count >= 0) AND (deleted_count <= scanned_count)))",
+          "name": "retention_jobs_counts"
+        },
+        {
+          "def": "CHECK (((error_summary IS NULL) OR (char_length(error_summary) <= 300)))",
+          "name": "retention_jobs_error_summary_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(job_name)) >= 1) AND (char_length(btrim(job_name)) <= 64)))",
+          "name": "retention_jobs_name_length"
+        },
+        {
+          "def": "CHECK ((outcome = ANY (ARRAY['running'::text, 'succeeded'::text, 'failed'::text, 'partial'::text])))",
+          "name": "retention_jobs_outcome"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "retention_jobs_pkey"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "review_reply_revisions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "review_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "reply_published_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "replaced_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "replaced_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX review_reply_revisions_pkey ON public.review_reply_revisions USING btree (id)",
+        "CREATE INDEX review_reply_revisions_review_idx ON public.review_reply_revisions USING btree (review_id, replaced_at DESC)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((char_length(btrim(body)) >= 1) AND (char_length(btrim(body)) <= 4000)))",
+          "name": "review_reply_revision_body_length"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "review_reply_revisions_pkey"
+        },
+        {
+          "def": "FOREIGN KEY (replaced_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "review_reply_revisions_replaced_by_fkey"
+        },
+        {
+          "def": "FOREIGN KEY (review_id) REFERENCES review_submissions(id) ON DELETE CASCADE",
+          "name": "review_reply_revisions_review_id_fkey"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "review_submissions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "customer_name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "body_original",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "rating",
+          "type": "smallint",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "branch",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "consent",
+          "type": "boolean",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "consent_version",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "notice_version",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "source_ip_hash",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "moderation_status",
+          "type": "review_moderation_status",
+          "default": "'pending'::review_moderation_status",
+          "nullable": false
+        },
+        {
+          "name": "moderated_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "moderated_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "moderation_note",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "body_published",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "published_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "published_version",
+          "type": "integer",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "reply_body",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "reply_status",
+          "type": "review_reply_status",
+          "default": "'none'::review_reply_status",
+          "nullable": false
+        },
+        {
+          "name": "reply_published_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "reply_published_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "submission_scope",
+          "type": "text",
+          "default": "'public_review_form'::text",
+          "nullable": false
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "submission_hash",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX review_submissions_pkey ON public.review_submissions USING btree (id)",
+        "CREATE UNIQUE INDEX review_submission_idempotency_unique ON public.review_submissions USING btree (submission_scope, idempotency_key)",
+        "CREATE INDEX review_submissions_moderation_created_idx ON public.review_submissions USING btree (moderation_status, created_at DESC)",
+        "CREATE INDEX review_submissions_publication_idx ON public.review_submissions USING btree (published_at DESC) WHERE ((moderation_status = 'approved'::review_moderation_status) AND consent AND (body_published IS NOT NULL))",
+        "CREATE INDEX review_submissions_updated_idx ON public.review_submissions USING btree (updated_at DESC)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((branch IS NULL) OR (char_length(branch) <= 120)))",
+          "name": "review_branch_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(consent_version)) >= 1) AND (char_length(btrim(consent_version)) <= 60)))",
+          "name": "review_consent_version_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(customer_name)) >= 1) AND (char_length(btrim(customer_name)) <= 120)))",
+          "name": "review_customer_name_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(idempotency_key)) >= 16) AND (char_length(btrim(idempotency_key)) <= 128)))",
+          "name": "review_idempotency_key_length"
+        },
+        {
+          "def": "CHECK ((((moderation_status = 'pending'::review_moderation_status) AND (moderated_at IS NULL) AND (moderated_by IS NULL)) OR (moderation_status <> 'pending'::review_moderation_status)))",
+          "name": "review_moderation_fields_consistent"
+        },
+        {
+          "def": "CHECK (((moderation_note IS NULL) OR (char_length(moderation_note) <= 500)))",
+          "name": "review_moderation_note_length"
+        },
+        {
+          "def": "CHECK (((notice_version IS NULL) OR ((char_length(notice_version) >= 1) AND (char_length(notice_version) <= 60))))",
+          "name": "review_notice_version_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(body_original)) >= 1) AND (char_length(btrim(body_original)) <= 4000)))",
+          "name": "review_original_body_length"
+        },
+        {
+          "def": "CHECK (((body_published IS NULL) OR ((moderation_status = 'approved'::review_moderation_status) AND consent AND (published_at IS NOT NULL) AND (published_version IS NOT NULL))))",
+          "name": "review_publication_fields_consistent"
+        },
+        {
+          "def": "CHECK (((body_published IS NULL) OR ((char_length(btrim(body_published)) >= 1) AND (char_length(btrim(body_published)) <= 4000))))",
+          "name": "review_published_body_length"
+        },
+        {
+          "def": "CHECK (((published_version IS NULL) OR (published_version > 0)))",
+          "name": "review_published_version_positive"
+        },
+        {
+          "def": "CHECK (((rating IS NULL) OR ((rating >= 1) AND (rating <= 5))))",
+          "name": "review_rating_range"
+        },
+        {
+          "def": "CHECK (((reply_body IS NULL) OR ((char_length(btrim(reply_body)) >= 1) AND (char_length(btrim(reply_body)) <= 4000))))",
+          "name": "review_reply_body_length"
+        },
+        {
+          "def": "CHECK (((reply_status = 'none'::review_reply_status) OR (reply_body IS NOT NULL)))",
+          "name": "review_reply_fields_consistent"
+        },
+        {
+          "def": "CHECK (((source_ip_hash IS NULL) OR (source_ip_hash ~ '^[a-f0-9]{32,64}$'::text)))",
+          "name": "review_source_ip_hash_shape"
+        },
+        {
+          "def": "CHECK ((submission_hash ~ '^[a-f0-9]{32}$'::text))",
+          "name": "review_submission_hash_shape"
+        },
+        {
+          "def": "UNIQUE (submission_scope, idempotency_key)",
+          "name": "review_submission_idempotency_unique"
+        },
+        {
+          "def": "CHECK ((submission_scope = 'public_review_form'::text))",
+          "name": "review_submission_scope_shape"
+        },
+        {
+          "def": "FOREIGN KEY (moderated_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "review_submissions_moderated_by_fkey"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "review_submissions_pkey"
+        },
+        {
+          "def": "FOREIGN KEY (published_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "review_submissions_published_by_fkey"
+        },
+        {
+          "def": "FOREIGN KEY (reply_published_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "review_submissions_reply_published_by_fkey"
+        },
+        {
+          "def": "CHECK ((version > 0))",
+          "name": "review_version_positive"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "services",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "summary",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "kind",
+          "type": "service_kind",
+          "default": "'laundry'::service_kind",
+          "nullable": false
+        },
+        {
+          "name": "bookable",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "sort_order",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "public_body",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "public_image",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "public_alt",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX services_pkey ON public.services USING btree (id)",
+        "CREATE UNIQUE INDEX services_slug_key ON public.services USING btree (slug)",
+        "CREATE INDEX services_active_order_idx ON public.services USING btree (active, sort_order)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "services_pkey"
+        },
+        {
+          "def": "CHECK ((slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'::text))",
+          "name": "services_slug_format"
+        },
+        {
+          "def": "UNIQUE (slug)",
+          "name": "services_slug_key"
+        },
+        {
+          "def": "CHECK ((char_length(summary) <= 2000))",
+          "name": "services_summary_length"
+        },
+        {
+          "def": "CHECK (((char_length(btrim(title)) >= 1) AND (char_length(btrim(title)) <= 120)))",
+          "name": "services_title_length"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "services_version_positive"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "website_content",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "module",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "record_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "published",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "sort_order",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "updated_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX website_content_pkey ON public.website_content USING btree (id)",
+        "CREATE UNIQUE INDEX website_content_module_record_key_key ON public.website_content USING btree (module, record_key)",
+        "CREATE INDEX website_content_public_order ON public.website_content USING btree (module, sort_order, updated_at DESC) WHERE published",
+        "CREATE INDEX website_content_gallery_collection_order ON public.website_content USING btree (sort_order, record_key) WHERE (module = 'gallery_collection'::text)"
+      ],
+      "est_rows": 33,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((char_length(btrim(record_key)) >= 1) AND (char_length(btrim(record_key)) <= 180)))",
+          "name": "website_content_key"
+        },
+        {
+          "def": "CHECK ((module = ANY (ARRAY['blog'::text, 'faq'::text, 'promotion'::text, 'gallery'::text, 'gallery_collection'::text])))",
+          "name": "website_content_module"
+        },
+        {
+          "def": "UNIQUE (module, record_key)",
+          "name": "website_content_module_record_key_key"
+        },
+        {
+          "def": "CHECK ((sort_order >= 0))",
+          "name": "website_content_order"
+        },
+        {
+          "def": "CHECK ((jsonb_typeof(payload) = 'object'::text))",
+          "name": "website_content_payload_object"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "website_content_pkey"
+        },
+        {
+          "def": "FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "name": "website_content_updated_by_fkey"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "website_content_version"
+        }
+      ],
+      "rls_enabled": true
+    },
+    {
+      "table": "website_gallery_media",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "storage_path",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "public_url",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "alt",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "caption",
+          "type": "text",
+          "default": "''::text",
+          "nullable": false
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "permission",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "archived",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX website_gallery_media_pkey ON public.website_gallery_media USING btree (id)",
+        "CREATE UNIQUE INDEX website_gallery_media_storage_path_key ON public.website_gallery_media USING btree (storage_path)"
+      ],
+      "est_rows": -1,
+      "rls_forced": false,
+      "constraints": [
+        {
+          "def": "CHECK (((char_length(btrim(alt)) >= 1) AND (char_length(btrim(alt)) <= 1000)))",
+          "name": "website_gallery_media_alt"
+        },
+        {
+          "def": "CHECK ((storage_path !~ '(^/|\\.\\.|\\\\|^booking-photos/)'::text))",
+          "name": "website_gallery_media_path"
+        },
+        {
+          "def": "PRIMARY KEY (id)",
+          "name": "website_gallery_media_pkey"
+        },
+        {
+          "def": "CHECK ((public_url ~ '^(https://|/images/)'::text))",
+          "name": "website_gallery_media_public_url"
+        },
+        {
+          "def": "UNIQUE (storage_path)",
+          "name": "website_gallery_media_storage_path_key"
+        },
+        {
+          "def": "CHECK ((version >= 1))",
+          "name": "website_gallery_media_version"
+        }
+      ],
+      "rls_enabled": true
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "admin_invitations",
+      "using": "private.is_full_admin()",
+      "policy": "admin_invitations_select_full_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "admin_profiles",
+      "using": "private.is_full_admin()",
+      "policy": "admin_profiles_select_full_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "admin_profiles",
+      "using": "(( SELECT auth.uid() AS uid) = user_id)",
+      "policy": "admin_profiles_select_self",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "audit_events",
+      "using": "private.is_full_admin()",
+      "policy": "audit_events_select_full_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "audit_events",
+      "using": "((entity_type = 'review'::text) AND (private.current_admin_role() IS NOT NULL))",
+      "policy": "audit_events_select_review_history",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "booking_notes",
+      "using": "private.is_active_admin()",
+      "policy": "booking_notes_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "booking_photos",
+      "using": "(private.is_active_admin() AND (delete_due_at > now()))",
+      "policy": "booking_photos_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "booking_services",
+      "using": "private.is_active_admin()",
+      "policy": "booking_services_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "booking_settings",
+      "using": "private.is_active_admin()",
+      "policy": "booking_settings_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "booking_status_history",
+      "using": "private.is_active_admin()",
+      "policy": "booking_status_history_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "bookings",
+      "using": "private.is_active_admin()",
+      "policy": "bookings_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "branch_operating_hours",
+      "using": "private.is_active_admin()",
+      "policy": "branch_operating_hours_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "branch_pickup_exceptions",
+      "using": "private.is_active_admin()",
+      "policy": "branch_pickup_exceptions_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "branch_pickup_windows",
+      "using": "private.is_active_admin()",
+      "policy": "branch_pickup_windows_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "branches",
+      "using": "private.is_active_admin()",
+      "policy": "branches_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "public_site_settings",
+      "using": "id",
+      "policy": "public_site_settings_read",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "retention_jobs",
+      "using": "private.is_full_admin()",
+      "policy": "retention_jobs_select_full_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "review_reply_revisions",
+      "using": "(private.current_admin_role() IS NOT NULL)",
+      "policy": "review_reply_revisions_admin_read",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "review_submissions",
+      "using": "(private.current_admin_role() IS NOT NULL)",
+      "policy": "review_submissions_admin_read",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "review_submissions",
+      "using": "((moderation_status = 'approved'::review_moderation_status) AND (consent IS TRUE) AND (body_published IS NOT NULL) AND (deleted_at IS NULL))",
+      "policy": "review_submissions_public_published_read",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "services",
+      "using": "private.is_active_admin()",
+      "policy": "services_select_active_admin",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "website_content",
+      "using": "published",
+      "policy": "website_content_public_published",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "website_gallery_media",
+      "using": "((NOT archived) AND (EXISTS ( SELECT 1\n   FROM website_content c\n  WHERE ((c.module = 'gallery'::text) AND c.published AND ((c.payload ->> 'media_id'::text) = (website_gallery_media.id)::text)))))",
+      "policy": "website_gallery_media_public_active",
+      "schema": "public",
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    }
+  ],
+  "triggers": [
+    {
+      "def": "CREATE TRIGGER admin_profiles_touch BEFORE UPDATE ON public.admin_profiles FOR EACH ROW EXECUTE FUNCTION private.touch_admin_profiles()",
+      "table": "admin_profiles",
+      "trigger": "admin_profiles_touch"
+    },
+    {
+      "def": "CREATE TRIGGER audit_events_immutable BEFORE DELETE OR UPDATE ON public.audit_events FOR EACH ROW EXECUTE FUNCTION private.audit_events_immutable()",
+      "table": "audit_events",
+      "trigger": "audit_events_immutable"
+    },
+    {
+      "def": "CREATE TRIGGER admin_invitations_touch BEFORE UPDATE ON public.admin_invitations FOR EACH ROW EXECUTE FUNCTION private.touch_admin_invitations()",
+      "table": "admin_invitations",
+      "trigger": "admin_invitations_touch"
+    },
+    {
+      "def": "CREATE TRIGGER branches_touch BEFORE UPDATE ON public.branches FOR EACH ROW EXECUTE FUNCTION private.touch_updated_at()",
+      "table": "branches",
+      "trigger": "branches_touch"
+    },
+    {
+      "def": "CREATE TRIGGER services_touch BEFORE UPDATE ON public.services FOR EACH ROW EXECUTE FUNCTION private.touch_updated_at()",
+      "table": "services",
+      "trigger": "services_touch"
+    },
+    {
+      "def": "CREATE TRIGGER booking_settings_touch BEFORE UPDATE ON public.booking_settings FOR EACH ROW EXECUTE FUNCTION private.touch_updated_at()",
+      "table": "booking_settings",
+      "trigger": "booking_settings_touch"
+    },
+    {
+      "def": "CREATE TRIGGER bookings_touch BEFORE UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION private.touch_updated_at()",
+      "table": "bookings",
+      "trigger": "bookings_touch"
+    },
+    {
+      "def": "CREATE TRIGGER booking_photos_due_at BEFORE INSERT OR UPDATE OF uploaded_at, delete_due_at ON public.booking_photos FOR EACH ROW EXECUTE FUNCTION private.set_booking_photo_due_at()",
+      "table": "booking_photos",
+      "trigger": "booking_photos_due_at"
+    },
+    {
+      "def": "CREATE TRIGGER booking_status_history_immutable BEFORE DELETE OR UPDATE ON public.booking_status_history FOR EACH ROW EXECUTE FUNCTION private.booking_rows_immutable()",
+      "table": "booking_status_history",
+      "trigger": "booking_status_history_immutable"
+    },
+    {
+      "def": "CREATE TRIGGER booking_notes_immutable BEFORE DELETE OR UPDATE ON public.booking_notes FOR EACH ROW EXECUTE FUNCTION private.booking_rows_immutable()",
+      "table": "booking_notes",
+      "trigger": "booking_notes_immutable"
+    },
+    {
+      "def": "CREATE TRIGGER email_outbox_touch BEFORE UPDATE ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION private.touch_updated_at()",
+      "table": "email_outbox",
+      "trigger": "email_outbox_touch"
+    },
+    {
+      "def": "CREATE TRIGGER email_outbox_identity_immutable BEFORE UPDATE ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION private.email_outbox_identity_immutable()",
+      "table": "email_outbox",
+      "trigger": "email_outbox_identity_immutable"
+    },
+    {
+      "def": "CREATE TRIGGER bookings_email_created AFTER INSERT ON public.bookings FOR EACH ROW EXECUTE FUNCTION private.queue_booking_email()",
+      "table": "bookings",
+      "trigger": "bookings_email_created"
+    },
+    {
+      "def": "CREATE TRIGGER bookings_email_status_changed AFTER UPDATE OF status ON public.bookings FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION private.queue_booking_email()",
+      "table": "bookings",
+      "trigger": "bookings_email_status_changed"
+    },
+    {
+      "def": "CREATE TRIGGER email_delivery_events_immutable BEFORE UPDATE ON public.email_delivery_events FOR EACH ROW EXECUTE FUNCTION private.email_delivery_events_immutable()",
+      "table": "email_delivery_events",
+      "trigger": "email_delivery_events_immutable"
+    },
+    {
+      "def": "CREATE TRIGGER email_outbox_track_attempt BEFORE UPDATE ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION private.email_outbox_track_attempt()",
+      "table": "email_outbox",
+      "trigger": "email_outbox_track_attempt"
+    },
+    {
+      "def": "CREATE TRIGGER booking_alert_recipients_touch BEFORE UPDATE ON public.booking_alert_recipients FOR EACH ROW EXECUTE FUNCTION private.touch_updated_at()",
+      "table": "booking_alert_recipients",
+      "trigger": "booking_alert_recipients_touch"
+    },
+    {
+      "def": "CREATE TRIGGER booking_alert_recipients_cap BEFORE INSERT OR UPDATE OF enabled ON public.booking_alert_recipients FOR EACH ROW EXECUTE FUNCTION private.enforce_booking_alert_recipient_cap()",
+      "table": "booking_alert_recipients",
+      "trigger": "booking_alert_recipients_cap"
+    },
+    {
+      "def": "CREATE CONSTRAINT TRIGGER bookings_staff_alert_created AFTER INSERT ON public.bookings DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.queue_staff_order_alert()",
+      "table": "bookings",
+      "trigger": "bookings_staff_alert_created"
+    },
+    {
+      "def": "CREATE CONSTRAINT TRIGGER bookings_staff_alert_status_changed AFTER UPDATE OF status ON public.bookings DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION private.queue_staff_order_alert()",
+      "table": "bookings",
+      "trigger": "bookings_staff_alert_status_changed"
+    },
+    {
+      "def": "CREATE TRIGGER review_submission_immutable BEFORE UPDATE ON public.review_submissions FOR EACH ROW EXECUTE FUNCTION private.review_submission_immutable()",
+      "table": "review_submissions",
+      "trigger": "review_submission_immutable"
+    },
+    {
+      "def": "CREATE TRIGGER review_submission_touch_updated_at BEFORE UPDATE ON public.review_submissions FOR EACH ROW EXECUTE FUNCTION private.review_submission_touch_updated_at()",
+      "table": "review_submissions",
+      "trigger": "review_submission_touch_updated_at"
+    },
+    {
+      "def": "CREATE TRIGGER review_reply_revision_immutable BEFORE DELETE OR UPDATE ON public.review_reply_revisions FOR EACH ROW EXECUTE FUNCTION private.review_reply_revision_immutable()",
+      "table": "review_reply_revisions",
+      "trigger": "review_reply_revision_immutable"
+    },
+    {
+      "def": "CREATE TRIGGER newsletter_interest_immutable BEFORE UPDATE ON public.newsletter_interest FOR EACH ROW EXECUTE FUNCTION private.newsletter_interest_immutable()",
+      "table": "newsletter_interest",
+      "trigger": "newsletter_interest_immutable"
+    }
+  ],
+  "functions": [
+    {
+      "args": "p_actor uuid, p_booking uuid, p_expected_version integer, p_body text, p_correlation uuid",
+      "name": "booking_add_note",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "name": "booking_rate_limit_cleanup",
+      "returns": "bigint",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_bucket text, p_limit integer, p_window_seconds integer",
+      "name": "booking_rate_limit_consume",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_expected_version integer, p_pickup_start time without time zone, p_pickup_end time without time zone, p_express_cutoff time without time zone, p_accept_public_bookings boolean",
+      "name": "booking_settings_update",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb, p_services jsonb, p_idempotency_key text, p_submission_scope text, p_correlation uuid",
+      "name": "booking_submit",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_booking uuid, p_expected_version integer, p_next booking_status, p_reason text, p_correlation uuid",
+      "name": "booking_transition",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_booking uuid, p_expected_version integer, p_branch uuid, p_agreed_pickup_at timestamp with time zone, p_agreed_fee numeric, p_zero_fee_reason text, p_service_charge numeric, p_contact_outcome text, p_confirmation_note text, p_return_details text, p_correlation uuid",
+      "name": "booking_update_arrangement",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_worker_id text, p_limit integer, p_lease_seconds integer, p_templates email_template[]",
+      "name": "email_outbox_claim",
+      "returns": "SETOF email_outbox",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_template email_template, p_recipient_email text, p_test_context jsonb, p_actor_id uuid, p_correlation uuid",
+      "name": "email_outbox_create_test_send",
+      "returns": "uuid",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_id uuid, p_actor_id uuid",
+      "name": "email_outbox_manual_retry",
+      "returns": "boolean",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_id uuid, p_worker_id text, p_error text",
+      "name": "email_outbox_mark_dead",
+      "returns": "boolean",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_id uuid, p_worker_id text, p_error text, p_delay_seconds integer",
+      "name": "email_outbox_mark_retry",
+      "returns": "email_delivery_status",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_id uuid, p_worker_id text, p_provider_message_id text",
+      "name": "email_outbox_mark_sent",
+      "returns": "boolean",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer",
+      "name": "email_outbox_reap",
+      "returns": "integer",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_id uuid, p_actor_id uuid, p_reason text, p_correlation uuid",
+      "name": "email_outbox_resend",
+      "returns": "uuid",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_kind text, p_name text, p_business text, p_phone text, p_email text, p_topic text, p_message text, p_details jsonb, p_idempotency_key text, p_source_ip_hash text, p_correlation uuid",
+      "name": "enquiry_submit",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_id uuid, p_expected_version integer, p_new_status text, p_note text, p_actor_user_id uuid, p_correlation uuid",
+      "name": "enquiry_update",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_email text, p_consent boolean, p_consent_version text, p_source_ip_hash text, p_recipient_email text, p_idempotency_key text, p_correlation uuid",
+      "name": "newsletter_interest_submit",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_site_version integer, p_booking_version integer, p_settings jsonb",
+      "name": "phase6_settings_update",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_expected_version integer, p_settings jsonb",
+      "name": "public_site_settings_update",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "name": "retention_due_summary",
+      "returns": "jsonb",
+      "language": "sql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_body text, p_expected_version integer, p_correlation uuid",
+      "name": "review_draft_reply",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_decision text, p_note text, p_expected_version integer, p_correlation uuid",
+      "name": "review_moderate",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_reason text, p_expected_version integer, p_correlation uuid",
+      "name": "review_open",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_operation text, p_reason text, p_body_published text, p_expected_version integer, p_correlation uuid",
+      "name": "review_override",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_action text, p_body_published text, p_expected_version integer, p_correlation uuid",
+      "name": "review_publish",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_expected_version integer, p_correlation uuid",
+      "name": "review_reply_publish",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_customer_name text, p_body_original text, p_rating smallint, p_branch text, p_consent boolean, p_consent_version text, p_notice_version text, p_source_ip_hash text, p_idempotency_key text, p_correlation uuid",
+      "name": "review_submit",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "name": "rls_auto_enable",
+      "returns": "event_trigger",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_target uuid, p_role admin_role, p_expected_updated_at timestamp with time zone, p_reason text, p_correlation uuid",
+      "name": "staff_change_role",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_invitation uuid, p_user_id uuid, p_email text, p_correlation uuid",
+      "name": "staff_complete_invitation",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_email text, p_role admin_role, p_correlation uuid",
+      "name": "staff_create_invitation",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_invitation uuid, p_status text, p_auth_user_id uuid, p_failure_reason text, p_correlation uuid",
+      "name": "staff_mark_invitation",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_invitation uuid, p_correlation uuid",
+      "name": "staff_revoke_invitation",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_target uuid, p_disabled boolean, p_expected_updated_at timestamp with time zone, p_reason text, p_correlation uuid",
+      "name": "staff_set_disabled",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_items jsonb",
+      "name": "website_blog_reorder",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_id uuid, p_expected_version integer, p_title text, p_label text, p_phone text, p_map_url text, p_public_hours jsonb, p_sort_order integer",
+      "name": "website_branch_update",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_module text, p_items jsonb, p_expected_versions jsonb",
+      "name": "website_content_replace",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_module text, p_key text, p_payload jsonb, p_published boolean, p_sort_order integer, p_expected_version integer",
+      "name": "website_content_upsert",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_items jsonb",
+      "name": "website_gallery_collection_reorder",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_collections jsonb, p_collection_versions jsonb, p_placements jsonb, p_placement_versions jsonb",
+      "name": "website_gallery_save",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_id uuid, p_storage_path text, p_public_url text, p_name text, p_alt text, p_caption text, p_source text, p_permission text, p_archived boolean, p_expected_version integer",
+      "name": "website_media_upsert",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_service_id uuid, p_slug text, p_expected_version integer, p_title text, p_summary text, p_body text, p_image text, p_alt text, p_sort_order integer, p_active boolean",
+      "name": "website_service_upsert",
+      "returns": "jsonb",
+      "language": "plpgsql",
+      "security_definer": true
+    }
+  ],
+  "generated_at": "2026-11-13T16:05:54.491168+00:00",
+  "auth_user_count": 6,
+  "storage_buckets": [
+    {
+      "id": "booking-photos",
+      "public": false,
+      "file_size_limit": 5000000,
+      "allowed_mime_types": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ]
+    },
+    {
+      "id": "website-media",
+      "public": true,
+      "file_size_limit": 2097152,
+      "allowed_mime_types": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ]
+    },
+    {
+      "id": "marketing-assets",
+      "public": true,
+      "file_size_limit": 5242880,
+      "allowed_mime_types": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ]
+    }
+  ]
+}

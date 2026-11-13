@@ -1,0 +1,1488 @@
+{
+  "counts": {
+    "bookings": 19,
+    "enquiries": 7,
+    "booking_photos": 4,
+    "open_invitations": 0,
+    "oldest_booking_at": "2026-10-11T17:36:47.03348+00:00",
+    "review_submissions": 3,
+    "newsletter_interest": 9,
+    "bookings_past_expiry": 0,
+    "retention_jobs_total": 0,
+    "last_retention_job_at": null,
+    "admin_profiles_by_role": {
+      "full_admin": 3,
+      "operational_admin": 3
+    },
+    "email_outbox_by_status": {
+      "sent": 65
+    },
+    "photos_past_delete_due": 0,
+    "alert_recipients_enabled": 2,
+    "auth_users_without_admin_profile": 0
+  },
+  "functions": [
+    {
+      "args": "",
+      "name": "active_full_admin_count",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid",
+      "name": "assert_active_admin",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid",
+      "name": "assert_active_full_admin",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_booking bookings",
+      "name": "assert_confirmation_ready",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_date date, p_express boolean, p_now timestamp with time zone",
+      "name": "assert_express_request",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_branch uuid, p_date date, p_time time without time zone, p_now timestamp with time zone",
+      "name": "assert_pickup_request",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_branch uuid, p_date date, p_time time without time zone",
+      "name": "assert_pickup_window",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_full_admin_only boolean",
+      "name": "assert_review_actor",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "audit_events_immutable",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_payload jsonb",
+      "name": "blog_payload_media_ids",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "booking_reference",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_date date, p_time time without time zone",
+      "name": "booking_requested_pickup_json",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "booking_rows_immutable",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_scope text, p_payload jsonb, p_services jsonb",
+      "name": "booking_submission_hash",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_from booking_status, p_to booking_status",
+      "name": "booking_transition_allowed",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "current_admin_role",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": true
+    },
+    {
+      "args": "p_limit integer",
+      "name": "due_bookings",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_limit integer",
+      "name": "due_photos",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "email_delivery_events_immutable",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "email_outbox_identity_immutable",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "email_outbox_track_attempt",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "enforce_booking_alert_recipient_cap",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_booking_id uuid, p_template email_template, p_booking_version integer, p_recipient_email text, p_booking_reference text, p_status text",
+      "name": "enqueue_booking_email",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_booking_id uuid, p_template email_template, p_booking_version integer, p_previous_status text, p_actor_kind text, p_actor_id uuid, p_reason text",
+      "name": "enqueue_staff_order_alert",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_action text, p_entity_type text, p_entity_id text, p_before jsonb, p_after jsonb, p_reason text, p_correlation uuid",
+      "name": "insert_audit_event",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "is_active_admin",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": true
+    },
+    {
+      "args": "",
+      "name": "is_full_admin",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": true
+    },
+    {
+      "args": "",
+      "name": "newsletter_interest_immutable",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_branch uuid, p_date date",
+      "name": "pickup_window",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "queue_booking_email",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "queue_staff_order_alert",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid",
+      "name": "review_actor_role",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "review_reply_revision_immutable",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "review_submission_immutable",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "review_submission_touch_updated_at",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "set_booking_photo_due_at",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "staff_lock",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "touch_admin_invitations",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "touch_admin_profiles",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "touch_updated_at",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "private",
+      "anon_can_execute": false,
+      "security_definer": false,
+      "service_role_can_execute": false,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_booking uuid, p_expected_version integer, p_body text, p_correlation uuid",
+      "name": "booking_add_note",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "booking_rate_limit_cleanup",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_bucket text, p_limit integer, p_window_seconds integer",
+      "name": "booking_rate_limit_consume",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_expected_version integer, p_pickup_start time without time zone, p_pickup_end time without time zone, p_express_cutoff time without time zone, p_accept_public_bookings boolean",
+      "name": "booking_settings_update",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_payload jsonb, p_services jsonb, p_idempotency_key text, p_submission_scope text, p_correlation uuid",
+      "name": "booking_submit",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_booking uuid, p_expected_version integer, p_next booking_status, p_reason text, p_correlation uuid",
+      "name": "booking_transition",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_booking uuid, p_expected_version integer, p_branch uuid, p_agreed_pickup_at timestamp with time zone, p_agreed_fee numeric, p_zero_fee_reason text, p_service_charge numeric, p_contact_outcome text, p_confirmation_note text, p_return_details text, p_correlation uuid",
+      "name": "booking_update_arrangement",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_worker_id text, p_limit integer, p_lease_seconds integer, p_templates email_template[]",
+      "name": "email_outbox_claim",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_template email_template, p_recipient_email text, p_test_context jsonb, p_actor_id uuid, p_correlation uuid",
+      "name": "email_outbox_create_test_send",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_id uuid, p_actor_id uuid",
+      "name": "email_outbox_manual_retry",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_id uuid, p_worker_id text, p_error text",
+      "name": "email_outbox_mark_dead",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_id uuid, p_worker_id text, p_error text, p_delay_seconds integer",
+      "name": "email_outbox_mark_retry",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_id uuid, p_worker_id text, p_provider_message_id text",
+      "name": "email_outbox_mark_sent",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_limit integer",
+      "name": "email_outbox_reap",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_id uuid, p_actor_id uuid, p_reason text, p_correlation uuid",
+      "name": "email_outbox_resend",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_kind text, p_name text, p_business text, p_phone text, p_email text, p_topic text, p_message text, p_details jsonb, p_idempotency_key text, p_source_ip_hash text, p_correlation uuid",
+      "name": "enquiry_submit",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_id uuid, p_expected_version integer, p_new_status text, p_note text, p_actor_user_id uuid, p_correlation uuid",
+      "name": "enquiry_update",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_email text, p_consent boolean, p_consent_version text, p_source_ip_hash text, p_recipient_email text, p_idempotency_key text, p_correlation uuid",
+      "name": "newsletter_interest_submit",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_site_version integer, p_booking_version integer, p_settings jsonb",
+      "name": "phase6_settings_update",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_expected_version integer, p_settings jsonb",
+      "name": "public_site_settings_update",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "retention_due_summary",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_body text, p_expected_version integer, p_correlation uuid",
+      "name": "review_draft_reply",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_decision text, p_note text, p_expected_version integer, p_correlation uuid",
+      "name": "review_moderate",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_reason text, p_expected_version integer, p_correlation uuid",
+      "name": "review_open",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_operation text, p_reason text, p_body_published text, p_expected_version integer, p_correlation uuid",
+      "name": "review_override",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_action text, p_body_published text, p_expected_version integer, p_correlation uuid",
+      "name": "review_publish",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_review uuid, p_expected_version integer, p_correlation uuid",
+      "name": "review_reply_publish",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_customer_name text, p_body_original text, p_rating smallint, p_branch text, p_consent boolean, p_consent_version text, p_notice_version text, p_source_ip_hash text, p_idempotency_key text, p_correlation uuid",
+      "name": "review_submit",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "",
+      "name": "rls_auto_enable",
+      "config": [
+        "search_path=pg_catalog"
+      ],
+      "schema": "public",
+      "anon_can_execute": true,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": true
+    },
+    {
+      "args": "p_actor uuid, p_target uuid, p_role admin_role, p_expected_updated_at timestamp with time zone, p_reason text, p_correlation uuid",
+      "name": "staff_change_role",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_invitation uuid, p_user_id uuid, p_email text, p_correlation uuid",
+      "name": "staff_complete_invitation",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_email text, p_role admin_role, p_correlation uuid",
+      "name": "staff_create_invitation",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_invitation uuid, p_status text, p_auth_user_id uuid, p_failure_reason text, p_correlation uuid",
+      "name": "staff_mark_invitation",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_invitation uuid, p_correlation uuid",
+      "name": "staff_revoke_invitation",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_target uuid, p_disabled boolean, p_expected_updated_at timestamp with time zone, p_reason text, p_correlation uuid",
+      "name": "staff_set_disabled",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_items jsonb",
+      "name": "website_blog_reorder",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_id uuid, p_expected_version integer, p_title text, p_label text, p_phone text, p_map_url text, p_public_hours jsonb, p_sort_order integer",
+      "name": "website_branch_update",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_module text, p_items jsonb, p_expected_versions jsonb",
+      "name": "website_content_replace",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_module text, p_key text, p_payload jsonb, p_published boolean, p_sort_order integer, p_expected_version integer",
+      "name": "website_content_upsert",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_items jsonb",
+      "name": "website_gallery_collection_reorder",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_collections jsonb, p_collection_versions jsonb, p_placements jsonb, p_placement_versions jsonb",
+      "name": "website_gallery_save",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_id uuid, p_storage_path text, p_public_url text, p_name text, p_alt text, p_caption text, p_source text, p_permission text, p_archived boolean, p_expected_version integer",
+      "name": "website_media_upsert",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    },
+    {
+      "args": "p_actor uuid, p_service_id uuid, p_slug text, p_expected_version integer, p_title text, p_summary text, p_body text, p_image text, p_alt text, p_sort_order integer, p_active boolean",
+      "name": "website_service_upsert",
+      "config": [
+        "search_path=\"\""
+      ],
+      "schema": "public",
+      "anon_can_execute": false,
+      "security_definer": true,
+      "service_role_can_execute": true,
+      "authenticated_can_execute": false
+    }
+  ],
+  "extensions": [
+    {
+      "name": "pg_stat_statements",
+      "version": "1.11"
+    },
+    {
+      "name": "pgcrypto",
+      "version": "1.3"
+    },
+    {
+      "name": "plpgsql",
+      "version": "1.0"
+    },
+    {
+      "name": "supabase_vault",
+      "version": "0.3.1"
+    },
+    {
+      "name": "uuid-ossp",
+      "version": "1.1"
+    }
+  ],
+  "generated_at": "2026-11-13T16:07:43.92681+00:00",
+  "table_grants": [
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "admin_invitations",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "admin_profiles",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "audit_events",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "booking_alert_recipients",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "booking_notes",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "booking_photos",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "booking_rate_limits",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "booking_services",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "booking_settings",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "booking_status_history",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "bookings",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "branch_operating_hours",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "branch_pickup_exceptions",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "branch_pickup_windows",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "branches",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "email_delivery_events",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "email_outbox",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "enquiries",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "newsletter_interest",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      },
+      "kind": "r",
+      "table": "public_site_settings",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      },
+      "kind": "v",
+      "table": "published_reviews",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "retention_jobs",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "review_reply_revisions",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "review_submissions",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "kind": "r",
+      "table": "services",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      },
+      "kind": "r",
+      "table": "website_content",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    },
+    {
+      "anon": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      },
+      "kind": "r",
+      "table": "website_gallery_media",
+      "authenticated": {
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    }
+  ],
+  "view_options": [
+    {
+      "view": "published_reviews",
+      "options": [
+        "security_invoker=true"
+      ]
+    }
+  ],
+  "storage_object_policies": []
+}
