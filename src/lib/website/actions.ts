@@ -15,7 +15,17 @@ import { GALLERY_COLLECTION_LIMITS, GALLERY_COLLECTION_SLUG } from "./gallery-co
 import { saveLiveGalleryCategoryOrder as writeLiveGalleryCategoryOrder } from "./gallery-category-write";
 import { isBlogImageAlign, isBlogImageSize, isBlogTextStyle, isValidBlogSegments } from "./blog-blocks";
 import { settingsForWrite } from "./settings-validation";
-import { assertWebsiteWritesEnabled, consumeWebsiteWrite } from "./write-guard";
+import { assertWebsiteWritesEnabled, consumeWebsiteWrite, WebsiteWriteError } from "./write-guard";
+import type { PickupException, PickupWindowDay } from "@/lib/contracts";
+import { writeBranchPickupWindows, writeBranchPickupException, removeBranchPickupException } from "./repository";
+import {
+  SCHEDULE_WRITE_MESSAGES,
+  isCompleteWeek,
+  pickupExceptionErrors,
+  pickupWindowErrors,
+  type ScheduleWriteCode,
+} from "./pickup-schedule";
+import { accraDate } from "@/lib/bookings/scheduling";
 import { revalidatePublicPaths, writeAndRevalidate } from "./revalidation";
 import { PUBLIC_WRITE_TAGS } from "./revalidation-tags";
 
@@ -309,6 +319,103 @@ export async function saveLiveLocation(location: LocationRecord) {
     PUBLIC_WRITE_TAGS.location,
   );
 }
+/* -------------------------------------------------------------------------- */
+/* Branch pickup schedule                                                      */
+/* -------------------------------------------------------------------------- */
+//
+// Same guard as saveLiveLocation (content.manage, origin, write guard, website
+// write limit); the actor always comes from the session. Results are returned,
+// not thrown, so the editor can show the conflict / validation message (thrown
+// Server Action messages are hidden in production builds).
+//
+// No public revalidation: no public page displays pickup windows or exceptions
+// (branch pages show `public_hours` only).
+
+export type ScheduleActionResult<T> =
+  | ({ ok: true } & T)
+  | { ok: false; code: ScheduleWriteCode; message: string };
+
+const scheduleFailure = (code: ScheduleWriteCode, message = SCHEDULE_WRITE_MESSAGES[code]) =>
+  ({ ok: false as const, code, message });
+
+async function scheduleGuard(): Promise<{ ok: true; userId: string } | ReturnType<typeof scheduleFailure>> {
+  try {
+    await assertWebsiteWritesEnabled();
+    const admin = await actor("content.manage");
+    consumeWebsiteWrite(admin.userId);
+    return { ok: true, userId: admin.userId };
+  } catch (cause) {
+    if (cause instanceof WebsiteWriteError)
+      return cause.status === 429 ? scheduleFailure("rate_limited") : scheduleFailure("unavailable", cause.message);
+    return scheduleFailure("forbidden", (cause as Error).message || SCHEDULE_WRITE_MESSAGES.forbidden);
+  }
+}
+
+const isBranchId = (value: unknown): value is string =>
+  typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
+const isVersion = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 1;
+
+export async function saveLiveBranchPickupWindows(
+  branchId: string,
+  expectedVersion: number,
+  windows: PickupWindowDay[],
+): Promise<ScheduleActionResult<{ version: number; windows: PickupWindowDay[] }>> {
+  if (!isBranchId(branchId) || !isVersion(expectedVersion) || !isCompleteWeek(windows))
+    return scheduleFailure("invalid");
+  if (Object.keys(pickupWindowErrors(windows)).length) return scheduleFailure("invalid");
+  const guarded = await scheduleGuard();
+  if (!guarded.ok) return guarded;
+  try {
+    const result = await writeBranchPickupWindows(guarded.userId, branchId, expectedVersion, windows);
+    return result.ok ? { ok: true, ...result.data } : scheduleFailure(result.code);
+  } catch {
+    return scheduleFailure("unavailable");
+  }
+}
+
+export async function saveLiveBranchPickupException(
+  branchId: string,
+  expectedVersion: number,
+  exception: PickupException,
+): Promise<ScheduleActionResult<{ version: number; exception: PickupException }>> {
+  if (
+    !isBranchId(branchId) ||
+    !isVersion(expectedVersion) ||
+    !exception ||
+    typeof exception.date !== "string" ||
+    typeof exception.isClosed !== "boolean" ||
+    typeof exception.reason !== "string" ||
+    Object.keys(pickupExceptionErrors(exception, accraDate(new Date()))).length
+  )
+    return scheduleFailure("invalid");
+  const guarded = await scheduleGuard();
+  if (!guarded.ok) return guarded;
+  try {
+    const result = await writeBranchPickupException(guarded.userId, branchId, expectedVersion, exception);
+    return result.ok ? { ok: true, ...result.data } : scheduleFailure(result.code);
+  } catch {
+    return scheduleFailure("unavailable");
+  }
+}
+
+export async function deleteLiveBranchPickupException(
+  branchId: string,
+  expectedVersion: number,
+  date: string,
+): Promise<ScheduleActionResult<{ version: number }>> {
+  if (!isBranchId(branchId) || !isVersion(expectedVersion) || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    return scheduleFailure("invalid");
+  const guarded = await scheduleGuard();
+  if (!guarded.ok) return guarded;
+  try {
+    const result = await removeBranchPickupException(guarded.userId, branchId, expectedVersion, date);
+    return result.ok ? { ok: true, ...result.data } : scheduleFailure(result.code);
+  } catch {
+    return scheduleFailure("unavailable");
+  }
+}
+
 export async function saveLiveMedia(asset: MediaAsset, expectedVersion?: number) {
   await assertWebsiteWritesEnabled();
   const admin = await actor("media.manage");

@@ -10,9 +10,12 @@ import { checkRequestOrigin } from "@/lib/security/request-origin";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import {
   addBookingNote,
+  readEffectivePickupWindow,
   transitionBooking,
   updateBookingArrangement,
+  type EffectivePickupWindow,
 } from "./repository";
+import { accraDate, isValidDateString } from "./scheduling";
 import { bookingErrorMessage, type BookingErrorCode } from "./errors";
 import {
   cancellationError,
@@ -151,11 +154,17 @@ export async function saveBookingArrangement(input: {
   const arrangement = validated.value;
 
   // The database applies the authoritative pickup window. Mirroring it here gives
-  // a clear, field-level message without introducing an administrator bypass.
+  // a clear, field-level message without introducing an administrator bypass. The
+  // window is the effective one for this branch and date (exception -> weekly ->
+  // Settings); if it cannot be read, the database check alone decides.
   if (arrangement.branchId && arrangement.agreedPickupAt) {
-    const windowError = agreedPickupAtWindowError(arrangement.agreedPickupAt);
-    if (windowError)
-      return failure(windowError.code, { agreedPickupAt: windowError.message });
+    const date = accraDate(new Date(arrangement.agreedPickupAt));
+    const effective = await readEffectivePickupWindow(arrangement.branchId, date);
+    if (effective.ok) {
+      const windowError = agreedPickupAtWindowError(arrangement.agreedPickupAt, effective.data);
+      if (windowError)
+        return failure(windowError.code, { agreedPickupAt: windowError.message });
+    }
   }
 
   const result = await updateBookingArrangement({
@@ -256,4 +265,39 @@ export async function addBookingNoteAction(input: {
 
   revalidateBooking(input.bookingId);
   return { ok: true, version: result.data.version, message: "Note added." };
+}
+
+/**
+ * The pickup window the database will enforce for a branch and agreed date, for
+ * the "Agreed arrangements" hint and browser-side pre-check. Read-only: it needs
+ * `bookings.read` and an origin check, but not the mutation rate limit, because
+ * it runs whenever the branch or date changes. The database remains the authority.
+ */
+export async function getEffectivePickupWindow(input: {
+  branchId: string;
+  date: string;
+}): Promise<
+  | { ok: true; window: EffectivePickupWindow }
+  | Extract<BookingActionResult, { ok: false }>
+> {
+  let actor: AdminIdentity;
+  try {
+    actor = await requireAdmin();
+  } catch {
+    return failure("actor_required");
+  }
+  if (!hasPermission(actor.role, "bookings.read")) return failure("permission_denied");
+  const requestHeaders = await headers();
+  const origin = checkRequestOrigin({
+    origin: requestHeaders.get("origin"),
+    host: requestHeaders.get("host"),
+    forwardedHost: requestHeaders.get("x-forwarded-host"),
+    siteUrl: process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? null,
+  });
+  if (!origin.ok) return failure("permission_denied");
+  if (!isUuid(input.branchId) || !isValidDateString(input.date))
+    return failure("invalid_request");
+  const result = await readEffectivePickupWindow(input.branchId, input.date);
+  if (!result.ok) return failure(result.code);
+  return { ok: true, window: result.data };
 }

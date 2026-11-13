@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { Empty } from "@/components/ui";
-import { Submit, TextField } from "@/components/forms/controls";
+import { Notice, Submit, TextField } from "@/components/forms/controls";
+import { PickupScheduleEditor } from "./pickup-schedule-editor";
 import { UnsavedGuard } from "../unsaved";
 import { getLocations, saveLocation, useDemoStore } from "@/lib/mock-store";
 import { telHref } from "@/lib/rules";
@@ -34,7 +35,14 @@ export function LocationsManager({
           body={live.error || "This branch is not available."}
         />
       );
-    return <LocationEditor key={location.id} location={location} />;
+    // Keyed by version so "Reload latest details" remounts the editor with fresh data.
+    return (
+      <LocationEditor
+        key={`${location.id}:${location.version}`}
+        location={location}
+        onReload={() => void live.refetch()}
+      />
+    );
   }
   const locations = state === "empty" ? [] : demoMode ? getLocations() : [...live.items].sort((a,b)=>a.order-b.order);
   return (
@@ -94,15 +102,31 @@ export function LocationsManager({
     </>
   );
 }
-function LocationEditor({ location }: { location: LocationRecord }) {
+function LocationEditor({
+  location,
+  onReload,
+}: {
+  location: LocationRecord;
+  onReload: () => void;
+}) {
+  // The pickup schedule is edited separately; keep it out of the branch form.
+  const { pickupSchedule, ...details } = location;
   const [form, setForm] = useState<LocationRecord>(() =>
-    structuredClone(location),
+    structuredClone(details),
   );
-  const [baseline, setBaseline] = useState(() => JSON.stringify(location));
+  const [baseline, setBaseline] = useState(() => JSON.stringify(details));
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+  const [scheduleDirty, setScheduleDirty] = useState(false);
   const dirty = JSON.stringify(form) !== baseline;
+
+  // Schedule saves bump the shared branch version; keep the details form current
+  // so its next save does not report a false conflict.
+  const syncVersion = useCallback((version: number) => {
+    setForm((f) => ({ ...f, version }));
+    setBaseline((b) => JSON.stringify({ ...(JSON.parse(b) as LocationRecord), version }));
+  }, []);
   function change(patch: Partial<LocationRecord>) {
     setForm((f) => ({ ...f, ...patch }));
     setSuccess("");
@@ -126,7 +150,7 @@ function LocationEditor({ location }: { location: LocationRecord }) {
   }
   return (
     <>
-      <UnsavedGuard dirty={dirty} />
+      <UnsavedGuard dirty={dirty || scheduleDirty} />
       <ModuleShell
         title="Edit Branch"
         description={form.name}
@@ -260,6 +284,27 @@ function LocationEditor({ location }: { location: LocationRecord }) {
           </section>
         </div>
       </form>
+      {demoMode ? (
+        <p className={styles.inlineNote}>
+          Pickup schedule editing is available in the live console only.
+        </p>
+      ) : pickupSchedule ? (
+        <PickupScheduleEditor
+          branchId={form.id}
+          version={form.version}
+          schedule={pickupSchedule}
+          onVersionChange={syncVersion}
+          onDirtyChange={setScheduleDirty}
+          onReload={onReload}
+        />
+      ) : (
+        <Notice error>
+          The pickup schedule could not be loaded.{" "}
+          <button type="button" className="text-link" onClick={onReload}>
+            Reload latest details
+          </button>
+        </Notice>
+      )}
     </>
   );
 }

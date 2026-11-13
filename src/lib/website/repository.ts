@@ -3,7 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { promotionImageError } from "./promotion-image";
 import { promotionCtaError } from "@/lib/rules";
-import type { ContentItem, FaqItem, LocationRecord, MediaAsset, PromotionRecord, Settings } from "@/lib/contracts";
+import type { BranchPickupSchedule, ContentItem, FaqItem, LocationRecord, MediaAsset, PickupException, PickupWindowDay, PromotionRecord, Settings } from "@/lib/contracts";
+import { completeWeek, scheduleWriteCode, type ScheduleWriteCode } from "./pickup-schedule";
 import { buildBlogPayload, blogMediaIds } from "./blog-content";
 import { blogDeletionTarget, serviceDeletionTarget, serviceReferenceDeletionError } from "./content-deletion";
 import { sortBlogItems } from "./blog-order";
@@ -253,6 +254,120 @@ export async function writeLocation(actor: string, location: LocationRecord) {
   const { data, error } = await client.rpc("website_branch_update", { p_actor: actor, p_id: location.id, p_expected_version: location.version, p_title: location.name, p_label: location.label, p_phone: location.phone, p_map_url: location.map, p_public_hours: location.hours, p_sort_order: location.order });
   if (error) return fail("Branch changed or could not be saved. Reload and try again.");
   return { ...location, id: data.id, slug: data.slug, name: data.title, label: data.label, phone: data.phone, map: data.map_url, hours: data.hours, order: data.sort_order, version: data.version };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Branch pickup schedule (20261113180000_branch_pickup_schedule_admin.sql)    */
+/* -------------------------------------------------------------------------- */
+
+type ScheduleWindowRow = { weekday: number; is_closed: boolean; opens: string; closes: string };
+type ScheduleExceptionRow = { date: string; is_closed: boolean; opens: string | null; closes: string | null; reason: string };
+export type ScheduleWriteResult<T> = { ok: true; data: T } | { ok: false; code: ScheduleWriteCode };
+
+const toWindow = (row: ScheduleWindowRow): PickupWindowDay => ({
+  weekday: Number(row.weekday),
+  isClosed: Boolean(row.is_closed),
+  opens: String(row.opens).slice(0, 5),
+  closes: String(row.closes).slice(0, 5),
+});
+const toException = (row: ScheduleExceptionRow): PickupException => ({
+  date: String(row.date).slice(0, 10),
+  isClosed: Boolean(row.is_closed),
+  opens: row.opens ? String(row.opens).slice(0, 5) : null,
+  closes: row.closes ? String(row.closes).slice(0, 5) : null,
+  reason: String(row.reason ?? ""),
+});
+
+export async function writeBranchPickupWindows(
+  actor: string,
+  branchId: string,
+  expectedVersion: number,
+  windows: PickupWindowDay[],
+): Promise<ScheduleWriteResult<{ version: number; windows: PickupWindowDay[] }>> {
+  const client = createSupabaseAdminClient();
+  const { data, error } = await client.rpc("branch_pickup_windows_save", {
+    p_actor: actor,
+    p_branch: branchId,
+    p_expected_version: expectedVersion,
+    p_windows: windows.map((day) => ({ weekday: day.weekday, is_closed: day.isClosed, opens: day.opens, closes: day.closes })),
+  });
+  if (error) return { ok: false, code: scheduleWriteCode(error.code) };
+  const saved = data as { version: number; windows: ScheduleWindowRow[] };
+  return { ok: true, data: { version: Number(saved.version), windows: saved.windows.map(toWindow) } };
+}
+
+export async function writeBranchPickupException(
+  actor: string,
+  branchId: string,
+  expectedVersion: number,
+  exception: PickupException,
+): Promise<ScheduleWriteResult<{ version: number; exception: PickupException }>> {
+  const client = createSupabaseAdminClient();
+  const { data, error } = await client.rpc("branch_pickup_exception_upsert", {
+    p_actor: actor,
+    p_branch: branchId,
+    p_expected_version: expectedVersion,
+    p_date: exception.date,
+    p_is_closed: exception.isClosed,
+    p_opens: exception.isClosed ? null : exception.opens,
+    p_closes: exception.isClosed ? null : exception.closes,
+    p_reason: exception.reason.trim(),
+  });
+  if (error) return { ok: false, code: scheduleWriteCode(error.code) };
+  const saved = data as { version: number; exception: ScheduleExceptionRow };
+  return { ok: true, data: { version: Number(saved.version), exception: toException(saved.exception) } };
+}
+
+export async function removeBranchPickupException(
+  actor: string,
+  branchId: string,
+  expectedVersion: number,
+  date: string,
+): Promise<ScheduleWriteResult<{ version: number }>> {
+  const client = createSupabaseAdminClient();
+  const { data, error } = await client.rpc("branch_pickup_exception_delete", {
+    p_actor: actor,
+    p_branch: branchId,
+    p_expected_version: expectedVersion,
+    p_date: date,
+  });
+  if (error) return { ok: false, code: scheduleWriteCode(error.code) };
+  return { ok: true, data: { version: Number((data as { version: number }).version) } };
+}
+
+/** Admin read: each branch's seven windows, upcoming exceptions and a past count. */
+export async function readBranchPickupSchedules(
+  client: ReturnType<typeof createSupabaseAdminClient>,
+  branchIds: string[],
+  todayAccra: string,
+): Promise<Map<string, BranchPickupSchedule>> {
+  const schedules = new Map<string, BranchPickupSchedule>();
+  if (!branchIds.length) return schedules;
+  const [windows, upcoming, past, settings] = await Promise.all([
+    client.from("branch_pickup_windows").select("branch_id,weekday,opens,closes,is_closed").in("branch_id", branchIds),
+    client.from("branch_pickup_exceptions").select("branch_id,exception_date,opens,closes,is_closed,reason").in("branch_id", branchIds).gte("exception_date", todayAccra).order("exception_date"),
+    client.from("branch_pickup_exceptions").select("branch_id").in("branch_id", branchIds).lt("exception_date", todayAccra),
+    client.from("booking_settings").select("pickup_start,pickup_end").eq("id", true).single(),
+  ]);
+  if (windows.error || upcoming.error || past.error || settings.error) return fail("The pickup schedule could not be loaded.");
+  const globalWindow = {
+    start: String(settings.data.pickup_start ?? "07:00").slice(0, 5),
+    end: String(settings.data.pickup_end ?? "17:00").slice(0, 5),
+  };
+  for (const id of branchIds) {
+    const rows = (windows.data ?? [])
+      .filter((row) => row.branch_id === id)
+      .map((row) => toWindow(row as ScheduleWindowRow));
+    schedules.set(id, {
+      windows: completeWeek(rows, globalWindow),
+      exceptions: (upcoming.data ?? [])
+        .filter((row) => row.branch_id === id)
+        .map((row) => toException({ date: row.exception_date, is_closed: row.is_closed, opens: row.opens, closes: row.closes, reason: row.reason })),
+      pastExceptionCount: (past.data ?? []).filter((row) => row.branch_id === id).length,
+      globalWindow,
+    });
+  }
+  return schedules;
 }
 type SavedServiceRow = {
   id: string;

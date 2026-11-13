@@ -146,6 +146,32 @@ export type LocationRecord = {
   hours: [string, string][];
   order: number;
   version: number;
+  /** Admin-only pickup schedule; present in the live Locations load. */
+  pickupSchedule?: BranchPickupSchedule;
+};
+/** One weekly pickup window (ISO weekday 1 = Monday … 7 = Sunday, "HH:MM"). */
+export type PickupWindowDay = {
+  weekday: number;
+  isClosed: boolean;
+  opens: string;
+  closes: string;
+};
+/** A date-specific closure or special-hours entry (date "YYYY-MM-DD"). */
+export type PickupException = {
+  date: string;
+  isClosed: boolean;
+  opens: string | null;
+  closes: string | null;
+  reason: string;
+};
+/** A branch's pickup schedule as shown in the Locations editor. */
+export type BranchPickupSchedule = {
+  windows: PickupWindowDay[];
+  /** Today (Africa/Accra) onward, ordered by date. */
+  exceptions: PickupException[];
+  pastExceptionCount: number;
+  /** The global booking_settings pickup window ("HH:MM"). */
+  globalWindow: { start: string; end: string };
 };
 /** Admin Website Content — a placed Media Library asset in the gallery. */
 export type GalleryPlacement = {

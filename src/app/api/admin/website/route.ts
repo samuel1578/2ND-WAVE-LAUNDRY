@@ -3,6 +3,8 @@ import { getCurrentAdmin } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { toContent, toFaq, toGallery, toGalleryCollection, toPromotion } from "@/lib/website/types";
+import { readBranchPickupSchedules } from "@/lib/website/repository";
+import { accraDate } from "@/lib/bookings/scheduling";
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "private, no-store, max-age=0" } as const;
 export async function GET(request: Request) {
@@ -31,7 +33,9 @@ export async function GET(request: Request) {
     if (contentModule === "locations") {
       const { data, error } = await db.from("branches").select("id,slug,title,label,phone,public_map_url,public_hours,sort_order,version").eq("active", true).order("sort_order");
       if (error) throw Error();
-      return NextResponse.json({ items: (data ?? []).map(r => ({ id: r.id, slug: r.slug, section: "", name: r.title, label: r.label, phone: r.phone, map: r.public_map_url, hours: Array.isArray(r.public_hours) && r.public_hours.length ? r.public_hours : [], order: r.sort_order, version: r.version })) }, { headers: NO_STORE });
+      // Admin-only pickup schedule (weekly windows, upcoming closures/special hours).
+      const schedules = await readBranchPickupSchedules(db, (data ?? []).map(r => r.id), accraDate(new Date()));
+      return NextResponse.json({ items: (data ?? []).map(r => ({ id: r.id, slug: r.slug, section: "", name: r.title, label: r.label, phone: r.phone, map: r.public_map_url, hours: Array.isArray(r.public_hours) && r.public_hours.length ? r.public_hours : [], order: r.sort_order, version: r.version, pickupSchedule: schedules.get(r.id) })) }, { headers: NO_STORE });
     }
     if (contentModule === "gallery") {
       const [galleryResult, mediaResult] = await Promise.all([

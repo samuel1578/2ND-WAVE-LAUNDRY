@@ -25,9 +25,11 @@ import { preferredPickupTimeLabel } from "@/lib/bookings/scheduling";
 import {
   addBookingNoteAction,
   changeBookingStatus,
+  getEffectivePickupWindow,
   saveBookingArrangement,
   type BookingActionResult,
 } from "@/lib/bookings/admin-actions";
+import type { EffectivePickupWindow } from "@/lib/bookings/repository";
 import { Empty, Heading, Skeleton } from "@/components/ui";
 import { BookingImagePanel } from "@/components/admin/booking-image-panel";
 import { BookingEmailStatus } from "@/components/admin/email-delivery";
@@ -945,6 +947,40 @@ function LiveBookingList() {
   );
 }
 
+type EffectiveWindowState = {
+  key: string;
+  status: "loading" | "ready" | "error";
+  window?: EffectivePickupWindow;
+};
+
+const WINDOW_SOURCE_LABELS: Record<EffectivePickupWindow["source"], string> = {
+  exception: "special hours for this date",
+  weekly: "this branch's weekly pickup hours",
+  settings: "default pickup hours from Settings",
+};
+
+/** The branch + agreed date the effective window depends on, or "" when incomplete. */
+function effectiveWindowKey(form: ArrangementForm | null): string {
+  if (!form?.branchId) return "";
+  const date = form.agreedPickup.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${form.branchId}|${date}` : "";
+}
+
+function pickupWindowHint(
+  form: ArrangementForm | null,
+  key: string,
+  effective: EffectiveWindowState | null,
+): string {
+  if (!form?.branchId) return "Select a branch to see its pickup window.";
+  if (!key) return "Choose the agreed date to see this branch's pickup window.";
+  if (!effective || effective.key !== key || effective.status === "loading")
+    return "Checking the pickup window for this date…";
+  if (effective.status === "error" || !effective.window)
+    return "The pickup window could not be loaded. The time is still checked when you save.";
+  if (effective.window.closed) return "Closed on this date";
+  return `Pickup window on this date: ${effective.window.start}–${effective.window.end} (Africa/Accra) · ${WINDOW_SOURCE_LABELS[effective.window.source]}.`;
+}
+
 type ArrangementForm = {
   branchId: string;
   agreedPickup: string;
@@ -993,6 +1029,31 @@ function LiveBookingDetail({
   const [cancel, setCancel] = useState(false);
   const [draft, setDraft] = useState(false);
   const [message, setMessage] = useState("");
+  const [effective, setEffective] = useState<EffectiveWindowState | null>(null);
+  const windowKey = effectiveWindowKey(form);
+
+  // Fetch the window the database enforces whenever the branch or agreed date changes.
+  useEffect(() => {
+    if (!windowKey) return;
+    let active = true;
+    const [branchId, date] = windowKey.split("|");
+    setEffective({ key: windowKey, status: "loading" });
+    getEffectivePickupWindow({ branchId, date })
+      .then((result) => {
+        if (!active) return;
+        setEffective(
+          result.ok
+            ? { key: windowKey, status: "ready", window: result.window }
+            : { key: windowKey, status: "error" },
+        );
+      })
+      .catch(() => {
+        if (active) setEffective({ key: windowKey, status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [windowKey]);
 
   const load = useCallback(
     async (mode: "initial" | "refresh") => {
@@ -1066,8 +1127,14 @@ function LiveBookingDetail({
       setBusy(false);
       return;
     }
-    if (form.branchId && agreedPickupAt) {
-      const windowError = agreedPickupAtWindowError(agreedPickupAt);
+    // Pre-check only against the effective window for this exact branch and date;
+    // when it is not loaded, the server and database checks decide.
+    const currentWindow =
+      effective && effective.key === windowKey && effective.status === "ready"
+        ? effective.window
+        : undefined;
+    if (form.branchId && agreedPickupAt && currentWindow) {
+      const windowError = agreedPickupAtWindowError(agreedPickupAt, currentWindow);
       if (windowError) {
         setFieldErrors({ agreedPickupAt: windowError.message });
         setBusy(false);
@@ -1302,8 +1369,11 @@ function LiveBookingDetail({
           <h2>Agreed arrangements</h2>
           <p>
             Record the agreed branch, pickup time, fee and contact outcome before
-            confirming. The agreed time must fall inside the 07:00–17:00 pickup
-            window (Africa/Accra).
+            confirming. The agreed time must fall inside the selected branch&apos;s
+            pickup window for that date (Africa/Accra).
+          </p>
+          <p className="demo-caption" role="status" aria-live="polite">
+            {pickupWindowHint(form, windowKey, effective)}
           </p>
           <Field id="assign-branch" label="Assign branch">
             <select

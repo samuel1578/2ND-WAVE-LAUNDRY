@@ -536,3 +536,46 @@
   color: var(--muted);
   font-size: 14px;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Branch pickup schedule (Locations editor)                                 */
+/* ------------------------------------------------------------------------- */
+
+.scheduleGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.scheduleRow {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) auto minmax(0, 1.2fr) minmax(0, 1.2fr);
+  gap: 10px;
+  align-items: end;
+  margin: 0;
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+.scheduleDay {
+  align-self: center;
+  color: var(--ink);
+}
+
+.exceptionRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+@media (max-width: 700px) {
+  /* Day + "Closed" on the first line, Opens / Closes side by side below. */
+  .scheduleRow {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}

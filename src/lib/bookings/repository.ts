@@ -33,6 +33,7 @@ import type {
   BookingSubmitResult,
   BookingTransitionInput,
 } from "./types";
+import type { PickupWindow } from "./scheduling";
 
 export type RepositoryResult<T> =
   | { ok: true; data: T }
@@ -231,6 +232,42 @@ export async function addBookingNote(input: {
       reference: result.data.reference,
       status: asStatus(result.data.status),
       version: result.data.version,
+    },
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Effective pickup window (booking detail hint and pre-check)                 */
+/* -------------------------------------------------------------------------- */
+
+/** Which rule supplied the window: a date exception, the weekly row or Settings. */
+export type PickupWindowSource = "exception" | "weekly" | "settings";
+
+export type EffectivePickupWindow = PickupWindow & { source: PickupWindowSource };
+
+/**
+ * The window the database enforces for a branch and date (the same
+ * `private.pickup_window` used by the arrangement and confirmation checks).
+ */
+export async function readEffectivePickupWindow(
+  branchId: string,
+  date: string,
+): Promise<RepositoryResult<EffectivePickupWindow>> {
+  const result = await callBookingRpc<{
+    opens: string | null;
+    closes: string | null;
+    is_closed: boolean;
+    source: PickupWindowSource;
+  }>("branch_effective_pickup_window", { p_branch: branchId, p_date: date });
+  if (!result.ok) return result;
+  const row = result.data;
+  return {
+    ok: true,
+    data: {
+      start: (row.opens ?? "").slice(0, 5),
+      end: (row.closes ?? "").slice(0, 5),
+      closed: Boolean(row.is_closed),
+      source: row.source,
     },
   };
 }
