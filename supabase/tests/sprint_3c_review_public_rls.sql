@@ -65,8 +65,15 @@ BEGIN
         RAISE EXCEPTION 'anon can select private review fields directly';
     END IF;
 
-    IF NOT has_table_privilege('anon', 'public.published_reviews', 'SELECT') THEN
-        RAISE EXCEPTION 'anon cannot select the published review view';
+    -- Since 20261113190000_handover_cleanup.sql the public site reads the view on
+    -- the server with the secret key; anon has no access to reviews at all, so a
+    -- draft reply can never be read through the Data API.
+    IF has_table_privilege('anon', 'public.published_reviews', 'SELECT')
+       OR has_column_privilege('anon', 'public.review_submissions', 'reply_body', 'SELECT') THEN
+        RAISE EXCEPTION 'anon can still read reviews directly';
+    END IF;
+    IF NOT has_table_privilege('service_role', 'public.published_reviews', 'SELECT') THEN
+        RAISE EXCEPTION 'service_role cannot read the published review view';
     END IF;
 
     -- Reply revisions: administrator read only, append-only, never anon-visible.

@@ -1,6 +1,7 @@
 import content from "@/data/content.json";
 import assetData from "@/data/assets.json";
 import { demoMode } from "./demo-mode";
+import { MAIN_BRANCH_MAP_URL } from "./site";
 import { adminRoutes } from "./auth/permissions";
 export { demoMode };
 export type Photo = { src: string; alt: string };
@@ -191,7 +192,7 @@ export const branches = [
       ["Monday–Saturday", "7am–8pm"],
       ["Sunday", "9am–7:30pm"],
     ],
-    map: "https://maps.app.goo.gl/MfrvXSLGNtUu22HL8?g_st=ic",
+    map: MAIN_BRANCH_MAP_URL,
   },
   {
     slug: "katamanso-no-1",

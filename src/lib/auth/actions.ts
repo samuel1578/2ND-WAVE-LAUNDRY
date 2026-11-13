@@ -11,7 +11,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { reconcileInvitationForUser } from "@/lib/admin/staff-service";
 import { getCurrentAdmin } from "./admin";
 import { defaultLandingFor, resolveLoginDestination } from "./permissions";
-import { resolveAuthOrigin } from "./redirect";
+import { configuredAuthOrigin, resolveAuthOrigin } from "./redirect";
 import { MIN_ADMIN_PASSWORD_LENGTH } from "./roles";
 
 /**
@@ -68,7 +68,7 @@ async function currentAuthOrigin(): Promise<string | null> {
   return resolveAuthOrigin({
     host: requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host"),
     protocol: requestHeaders.get("x-forwarded-proto"),
-    siteUrl: process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? null,
+    siteUrl: configuredAuthOrigin(),
   });
 }
 

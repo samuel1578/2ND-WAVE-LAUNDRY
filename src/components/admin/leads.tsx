@@ -3,12 +3,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { updateLead, useDemoStore } from "@/lib/mock-store";
 import type { Lead } from "@/lib/contracts";
+import { removeNewsletterInterestAction } from "@/lib/newsletter/admin-actions";
 import { Empty, Heading } from "@/components/ui";
 import { Dialog } from "@/components/dialog";
 import { Field, Notice, TextField } from "@/components/forms/controls";
 import {
   enquiryDetailFields,
   enquiryDetailFieldsFromValues,
+  enquiryStatusLabel,
   formatEnquirySubmittedAt,
   type EnquiryDetailField,
 } from "@/lib/enquiries/presentation";
@@ -201,7 +203,7 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
             >
               Add Note
             </button>
-            <span className="badge">{item.status}</span>
+            <span className="badge">{enquiryStatusLabel(item.status)}</span>
             <button
               className="button"
               disabled={busy || item.status === "contacted"}
@@ -276,7 +278,7 @@ export function Enquiries({ id, state, demo = false }: { id?: string; state?: st
                 </p>
                 <small>Submitted {formatEnquirySubmittedAt(l.createdAt)}</small>
               </div>
-              <span className="badge">{l.status}</span>
+              <span className="badge">{enquiryStatusLabel(l.status)}</span>
             </Link>
           ))}
         </div>
@@ -314,7 +316,9 @@ export function NewsletterAdmin({
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState<Lead>();
   const [selectedRecord, setSelectedRecord] = useState<NewsletterInterestRecord>();
+  const [confirmRemove, setConfirmRemove] = useState<NewsletterInterestRecord>();
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -390,6 +394,7 @@ export function NewsletterAdmin({
         description="Email campaigns and provider integration are not enabled."
       />
       {error && <Notice error>{error}</Notice>}
+      {success && <Notice success>{success}</Notice>}
       {loadError && <Notice error>{loadError}</Notice>}
       {loading ? (
         <p role="status">Loading newsletter interest…</p>
@@ -482,10 +487,71 @@ export function NewsletterAdmin({
             </p>
             <p>Source: {selectedRecord.source}</p>
             <p className="demo-caption">
-              Withdrawal and campaign controls are not part of this phase.
+              Remove a subscriber when they ask to be taken off the list.
+              Campaign sending is not part of this console.
             </p>
+            <button
+              type="button"
+              className="button danger"
+              disabled={busy}
+              onClick={() => {
+                setError("");
+                setConfirmRemove(selectedRecord);
+              }}
+            >
+              Remove from list
+            </button>
           </>
         )}
+      </Dialog>
+      <Dialog
+        open={!!confirmRemove}
+        onClose={() => setConfirmRemove(undefined)}
+        title="Remove this subscriber?"
+      >
+        <p>
+          This permanently deletes their email address and sign-up record. Use
+          this when someone asks to be removed.
+        </p>
+        <div className="actions">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy}
+            onClick={() => setConfirmRemove(undefined)}
+          >
+            Keep Subscriber
+          </button>
+          <button
+            type="button"
+            className="button danger"
+            disabled={busy}
+            onClick={async () => {
+              if (!confirmRemove) return;
+              setBusy(true);
+              setError("");
+              setSuccess("");
+              try {
+                const result = await removeNewsletterInterestAction({ id: confirmRemove.id });
+                if (result.ok) {
+                  const removedId = confirmRemove.id;
+                  setRecords((current) => (current ?? []).filter((record) => record.id !== removedId));
+                  setSelectedRecord(undefined);
+                  setSuccess(result.message);
+                } else {
+                  setError(result.message);
+                }
+              } catch {
+                setError("The subscriber could not be removed. Try again.");
+              } finally {
+                setConfirmRemove(undefined);
+                setBusy(false);
+              }
+            }}
+          >
+            Remove Subscriber
+          </button>
+        </div>
       </Dialog>
     </>
   );

@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { configuredAuthOrigin } from "@/lib/auth/redirect";
 import { requireAdminRole } from "@/lib/auth/admin";
 import { hasPermission } from "@/lib/auth/permissions";
 import { AdminAuthorisationError } from "@/lib/auth/roles";
@@ -124,7 +125,7 @@ export async function inviteAdministrator(input: {
   // Invite links must be rooted at the configured public site origin. Do not
   // derive this from request headers or fall back to a guessed localhost/domain.
   const siteUrl = resolveCallbackOrigin(
-    process.env.NEXT_PUBLIC_SITE_URL ?? process.env.SITE_URL ?? null,
+    configuredAuthOrigin(),
   );
   if (!siteUrl) return failure("not_configured");
 
@@ -192,7 +193,7 @@ export async function resendAdministratorInvitation(input: {
   if (!UUID_PATTERN.test(input.invitationId)) return failure("invalid_request");
 
   const siteUrl = resolveCallbackOrigin(
-    process.env.NEXT_PUBLIC_SITE_URL ?? process.env.SITE_URL ?? null,
+    configuredAuthOrigin(),
   );
   if (!siteUrl) return failure("not_configured");
 

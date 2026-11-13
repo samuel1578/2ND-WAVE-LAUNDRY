@@ -111,3 +111,35 @@ export async function listNewsletterInterest(): Promise<NewsletterListResult> {
         })),
     };
 }
+
+export type NewsletterRemovalResult =
+    | { ok: true; outboxRemoved: number }
+    | { ok: false; reason: "forbidden" | "not_found" | "not_configured" | "unavailable" };
+
+/**
+ * Permanently removes a subscriber (and their newsletter alert outbox rows)
+ * through `newsletter_interest_remove`. The database re-checks the Full Admin.
+ */
+export async function removeNewsletterInterest(
+    actor: string,
+    id: string,
+): Promise<NewsletterRemovalResult> {
+    if (typeof window !== "undefined") throw new Error("The newsletter repository is server-only.");
+    let client;
+    try {
+        client = createSupabaseAdminClient();
+    } catch (error) {
+        return {
+            ok: false,
+            reason: error instanceof SupabaseElevatedConfigError ? "not_configured" : "unavailable",
+        };
+    }
+    const { data, error } = await client.rpc("newsletter_interest_remove", { p_actor: actor, p_id: id });
+    if (error) {
+        if (error.code === "42501") return { ok: false, reason: "forbidden" };
+        if (error.code === "P0002") return { ok: false, reason: "not_found" };
+        return { ok: false, reason: "unavailable" };
+    }
+    const outboxRemoved = Number((data as { outbox_removed?: unknown } | null)?.outbox_removed ?? 0);
+    return { ok: true, outboxRemoved: Number.isFinite(outboxRemoved) ? outboxRemoved : 0 };
+}

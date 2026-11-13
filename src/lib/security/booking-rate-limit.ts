@@ -17,6 +17,7 @@
  * raw IP address and no customer data is stored.
  */
 
+import { resolveRateLimitMode } from "./rate-limit-mode";
 import {
   createSupabaseAdminClient,
   SupabaseElevatedConfigError,
@@ -179,7 +180,7 @@ export const memoryBookingPhotoRateLimiter: BookingRateLimiter = memoryLimiter(
  * Chooses a limiter for this deployment.
  *
  * `BOOKING_RATE_LIMIT_MODE` can force a mode:
- *   * `memory` — local development and tests only;
+ *   * `memory` — local development and tests only (ignored when NODE_ENV is production);
  *   * `database` — the shared production limiter.
  *
  * Without the override, the shared limiter is used outside demo mode, and the
@@ -188,17 +189,22 @@ export const memoryBookingPhotoRateLimiter: BookingRateLimiter = memoryLimiter(
  * production: if the shared limiter is unavailable the caller receives
  * `unavailable` and the route fails closed.
  */
+function bookingRateLimitMode() {
+  // `memory` is ignored in production, as for newsletter and review limits.
+  return resolveRateLimitMode({
+    mode: process.env[RATE_LIMIT_MODE_VAR],
+    nodeEnv: process.env.NODE_ENV,
+    demo: demoMode,
+  });
+}
+
 export function resolveBookingRateLimiter(): BookingRateLimiter {
-  const mode = (process.env[RATE_LIMIT_MODE_VAR] ?? "").trim().toLowerCase();
-  if (mode === "memory") return memoryBookingRateLimiter;
-  if (mode === "database") return databaseBookingRateLimiter;
-  return demoMode ? memoryBookingRateLimiter : databaseBookingRateLimiter;
+  return bookingRateLimitMode() === "memory" ? memoryBookingRateLimiter : databaseBookingRateLimiter;
 }
 
 /** Photo uploads use the same mode selection with their own allowance. */
 export function resolveBookingPhotoRateLimiter(): BookingRateLimiter {
-  const mode = (process.env[RATE_LIMIT_MODE_VAR] ?? "").trim().toLowerCase();
-  if (mode === "memory") return memoryBookingPhotoRateLimiter;
-  if (mode === "database") return databaseBookingPhotoRateLimiter;
-  return demoMode ? memoryBookingPhotoRateLimiter : databaseBookingPhotoRateLimiter;
+  return bookingRateLimitMode() === "memory"
+    ? memoryBookingPhotoRateLimiter
+    : databaseBookingPhotoRateLimiter;
 }

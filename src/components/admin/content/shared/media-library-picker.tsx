@@ -307,7 +307,7 @@ export function MediaLibraryPicker({
           <div>
             <strong>Drag images here</strong>
             <p className="media-library__hint">
-              WebP, JPEG or PNG · up to 5 MB each. Uploads are added to the shared Media Library.
+              WebP, JPEG or PNG · large images are resized automatically; each upload must be 4 MB or smaller. Uploads are added to the shared Media Library.
             </p>
           </div>
           <div className="actions">

@@ -2,6 +2,7 @@ import type { PublicBranch, PublicService } from "@/lib/website/public-queries";
 import type { BranchProfile } from "@/lib/locations";
 import {
   LOGO_PATH,
+  MAIN_BRANCH_MAP_URL,
   OG_IMAGE_PATH,
   ORGANIZATION_ID,
   PRIMARY_PHONE_E164,
@@ -118,7 +119,7 @@ export function organizationSchema(): Schema {
     sameAs: [
       SOCIAL_PROFILE_URLS.instagram,
       SOCIAL_PROFILE_URLS.tiktok,
-      "https://maps.app.goo.gl/MfrvXSLGNtUu22HL8?g_st=ic",
+      MAIN_BRANCH_MAP_URL,
     ],
   };
 }

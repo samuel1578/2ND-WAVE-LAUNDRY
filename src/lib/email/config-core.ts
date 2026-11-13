@@ -455,7 +455,7 @@ export function emailConfigMessage(
     case "invalid-template-id":
       return templateVariable
         ? `Transactional email is not configured: set the server-only ${templateVariable} to the numeric saved-template ID from Brevo.`
-        : "Transactional email is not configured: set all six server-only BREVO_TEMPLATE_*_ID variables to numeric saved-template IDs from Brevo.";
+        : "Transactional email is not configured: set the six customer template variables (BREVO_TEMPLATE_BOOKING_RECEIVED_ID, BREVO_TEMPLATE_BOOKING_CONFIRMED_ID, BREVO_TEMPLATE_PROCESSING_STARTED_ID, BREVO_TEMPLATE_LAUNDRY_READY_ID, BREVO_TEMPLATE_BOOKING_COMPLETED_ID and BREVO_TEMPLATE_BOOKING_CANCELLED_ID) to unique, numeric saved-template IDs from Brevo. Staff, enquiry and newsletter template IDs are configured separately.";
   }
 }
 

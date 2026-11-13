@@ -91,7 +91,7 @@ export function BookingAlertRecipients({ live }: { live: boolean }) {
         </h2>
         <p>
           Sign in as a Full Admin to manage the central list of addresses that
-          receive staff order alerts.
+          receive staff order alerts and new enquiry alerts.
         </p>
         <p className="demo-caption">
           Demo mode never stores alert recipients and never sends staff emails.
@@ -254,9 +254,10 @@ export function BookingAlertRecipients({ live }: { live: boolean }) {
       </div>
 
       <p>
-        Every pending, processing, ready, completed and cancelled order alert is
-        sent to every address on this list. This is one central list for the whole
-        application; there are no per-order recipients.
+        Every address on this list receives every order alert (pending,
+        processing, ready, completed and cancelled) and every new enquiry alert
+        (general enquiries and commercial quote requests). This is one central
+        list for the whole application; there are no per-order recipients.
       </p>
       <p className="demo-caption">
         Changes apply to subsequent alerts only. Notifications already queued or
@@ -398,7 +399,7 @@ export function BookingAlertRecipients({ live }: { live: boolean }) {
           value={email}
           error={emailError}
           disabled={busy || atLimit}
-          help={`All five order alerts go to every enabled address here. ${enabledCount} of ${maxEnabled} used.`}
+          help={`Every enabled address here receives all five order alerts and every new enquiry alert. ${enabledCount} of ${maxEnabled} used.`}
           onChange={(event) => setEmail(event.target.value)}
         />
         <div className="full-span actions">

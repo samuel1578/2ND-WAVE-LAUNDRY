@@ -546,8 +546,8 @@ test("reply drafts stay private and publishing is gated on a published review", 
     (error: unknown) => String(error).includes("REVIEW_CONFLICT"),
   );
 
-  // A draft reply is not visible through the public view.
-  await db.exec("SET ROLE anon");
+  // A draft reply is not visible through the public view (read as the server does).
+  await db.exec("SET ROLE service_role");
   try {
     const visible = await db.query<{ reply_body: string | null }>(
       "SELECT reply_body FROM public.published_reviews",
@@ -573,7 +573,7 @@ test("submit -> approve -> publish -> reply keeps prior text and the publication
   const firstReply = await publishReply(OPERATIONAL_ADMIN, reviewId, 4);
   assert.equal(firstReply.reply_status, "published");
 
-  await db.exec("SET ROLE anon");
+  await db.exec("SET ROLE service_role");
   try {
     const visible = await db.query<{
       body_published: string;
@@ -603,7 +603,7 @@ test("submit -> approve -> publish -> reply keeps prior text and the publication
 
   // The approved publication stays visible while the replacement reply is a draft;
   // the draft text is withheld.
-  await db.exec("SET ROLE anon");
+  await db.exec("SET ROLE service_role");
   try {
     const visible = await db.query<{
       body_published: string;
@@ -619,7 +619,7 @@ test("submit -> approve -> publish -> reply keeps prior text and the publication
   const secondReply = await publishReply(FULL_ADMIN, reviewId, 6);
   assert.equal(secondReply.reply_status, "published");
 
-  await db.exec("SET ROLE anon");
+  await db.exec("SET ROLE service_role");
   try {
     const visible = await db.query<{ reply_body: string }>(
       "SELECT reply_body FROM public.published_reviews",

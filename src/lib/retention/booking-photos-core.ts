@@ -19,7 +19,7 @@
  * only counts and the job id.
  */
 
-import { readVercelCronSecret, readWorkerSecret } from "../email/config";
+import { readVercelCronSecret, readWorkerSecret } from "../email/config-core";
 import { bearerMatches } from "../email/webhook";
 
 export const BOOKING_PHOTO_RETENTION_JOB = "booking_photos_90_day";

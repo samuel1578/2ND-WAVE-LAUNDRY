@@ -42,6 +42,8 @@ export const bookingRateLimits = {
   // Order alert recipient management. Bounds a scripted Full Admin session
   // without getting in the way of ordinary settings edits.
   alert_recipients: { limit: 60, windowMs: 15 * 60 * 1000 },
+  // Newsletter subscriber removal (Full Admin).
+  newsletter_mutation: { limit: 30, windowMs: 15 * 60 * 1000 },
   // Review moderation/publication. Bounds a scripted administrator session while
   // leaving ordinary queue work and publication edits untouched.
   review_mutation: { limit: 120, windowMs: 15 * 60 * 1000 },

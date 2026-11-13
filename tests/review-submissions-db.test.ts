@@ -198,7 +198,8 @@ test("anon has no writes, no private-column read, and only approved consented pu
         submit_service: true,
     });
 
-    await db.exec("SET ROLE anon");
+    // The public site reads the view on the server with the secret key.
+    await db.exec("SET ROLE service_role");
     try {
         const visible = await db.query<{ id: string; customer_name: string; body_published: string; reply_body: string | null }>(
             "SELECT id, customer_name, body_published, reply_body FROM public.published_reviews",
@@ -208,15 +209,22 @@ test("anon has no writes, no private-column read, and only approved consented pu
         assert.equal(visible.rows[0].body_published, "Edited public version");
         assert.equal(visible.rows[0].reply_body, "Published response");
         assert.equal(visible.rows.some((row) => row.id === draftRow.review_id), false);
-        const hiddenDraft = await db.query<{ reply_body: string }>(
-            "SELECT reply_body FROM public.review_submissions WHERE id = $1",
-            [draftRow.review_id],
-        );
-        assert.equal(hiddenDraft.rows.length, 0);
-        await assert.rejects(
-            db.query("SELECT body_original FROM public.review_submissions WHERE id = $1", [pending.review_id]),
-            (error: unknown) => String(error).includes("permission denied"),
-        );
+    } finally {
+        await db.exec("RESET ROLE");
+    }
+
+    // Anonymous (publishable-key) callers cannot read reviews at all any more, so
+    // a draft reply can never be read through the Data API.
+    await db.exec("SET ROLE anon");
+    try {
+        for (const statement of [
+            "SELECT reply_body FROM public.review_submissions",
+            "SELECT body_original FROM public.review_submissions",
+            "SELECT id FROM public.published_reviews",
+        ]) {
+            await assert.rejects(db.query(statement), (error: unknown) => String(error).includes("permission denied"), statement);
+        }
+        void pending;
     } finally {
         await db.exec("RESET ROLE");
     }

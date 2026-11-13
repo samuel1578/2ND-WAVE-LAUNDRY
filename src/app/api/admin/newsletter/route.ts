@@ -17,8 +17,9 @@ const NO_STORE = { "Cache-Control": "private, no-store, max-age=0" } as const;
  *
  * Reads use the server-only elevated client because `newsletter_interest` has
  * RLS enabled with no client policy. The browser never receives a key, and
- * this route has no write operations: the MVP records first-time sign-ups only
- * (no withdrawal, no status changes).
+ * this route has no write operations. Removing a subscriber who withdraws
+ * consent is the separate server action `removeNewsletterInterestAction`
+ * (src/lib/newsletter/admin-actions.ts).
  */
 export async function GET() {
     const admin = await getCurrentAdmin();

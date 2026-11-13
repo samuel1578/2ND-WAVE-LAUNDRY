@@ -12,7 +12,7 @@ test("staff invitation links use configured site origin and token-hash confirmat
     const confirmRoute = source("src/app/auth/confirm/route.ts");
     const operations = source("docs/implementation/STAFF_INVITATION_OPERATIONS.md");
 
-    assert.match(actions, /NEXT_PUBLIC_SITE_URL/);
+    assert.match(actions, /resolveCallbackOrigin\(\s*configuredAuthOrigin\(\),?\s*\)/);
     assert.match(actions, /redirectTo: `\$\{siteUrl\}\/admin\/set-password`/);
     assert.match(actions, /function resolveCallbackOrigin\(value: string \| null\): string \| null \{\s*return normaliseOrigin\(value\);/);
     assert.match(confirmRoute, /auth\.verifyOtp\(\{[\s\S]*token_hash: tokenHash/);

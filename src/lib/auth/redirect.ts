@@ -124,3 +124,14 @@ function normaliseOrigin(value?: string | null): string | null {
     return null;
   }
 }
+
+/**
+ * The configured origin used to build Supabase Auth links (password reset and
+ * staff invitations). One order everywhere: the server-only `SITE_URL` first,
+ * then `NEXT_PUBLIC_SITE_URL`. Validation stays with the caller.
+ */
+export function configuredAuthOrigin(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  return env.SITE_URL ?? env.NEXT_PUBLIC_SITE_URL ?? null;
+}

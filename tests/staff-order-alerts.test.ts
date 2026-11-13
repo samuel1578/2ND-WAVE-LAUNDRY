@@ -17,7 +17,7 @@ import {
   BREVO_STAFF_TEMPLATE_ID_VARS,
   readStaffEmailTemplateIds,
   readTransactionalEmailConfig,
-} from "../src/lib/email/config";
+} from "../src/lib/email/config-core";
 import {
   runEmailWorker,
   type EmailWorkerDeps,

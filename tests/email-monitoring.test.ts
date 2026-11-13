@@ -14,7 +14,7 @@ import {
 import {
   BREVO_ENQUIRY_TEMPLATE_ID_VARS,
   readEnquiryTemplateIds,
-} from "../src/lib/email/config";
+} from "../src/lib/email/config-core";
 import { resolveAdminRouteAccess } from "../src/lib/auth/permissions";
 
 test("email delivery visibility remains Full Admin-only", () => {

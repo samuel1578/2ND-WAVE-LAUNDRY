@@ -677,7 +677,7 @@ INTERNAL: associate errors with fields and preserve input on failure. Focus erro
 
 ## 18. Policies — bodies supplied (client PDF, 8 October 2026)
 
-Source: `public/UI-UX/POLICY CONTENT FOR 2ND WAVE LAUNDRY WEBSITE.pdf`. Bodies are stored verbatim in `src/data/content.json` section 18 and rendered by `src/components/policy-page.tsx`; each page uses the glowing `page-hero` (dotted-glow) treatment with a "Legal & Compliance" eyebrow.
+Source: `docs/design/UI-UX/POLICY CONTENT FOR 2ND WAVE LAUNDRY WEBSITE.pdf`. Bodies are stored verbatim in `src/data/content.json` section 18 and rendered by `src/components/policy-page.tsx`; each page uses the glowing `page-hero` (dotted-glow) treatment with a "Legal & Compliance" eyebrow.
 
 ### Privacy Policy — /privacy
 

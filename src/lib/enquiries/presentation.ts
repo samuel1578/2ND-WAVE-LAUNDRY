@@ -108,3 +108,14 @@ export function enquiryDetailFields(
 ): EnquiryDetailField[] {
     return enquiryDetailFieldsFromValues(record.kind, flatValues(record));
 }
+
+const ENQUIRY_STATUS_LABELS: Record<string, string> = {
+  new: "New",
+  contacted: "Contacted",
+  closed: "Closed",
+};
+
+/** Display label for a stored enquiry status (the stored value is unchanged). */
+export function enquiryStatusLabel(status: string): string {
+  return ENQUIRY_STATUS_LABELS[status] ?? status;
+}

@@ -23,7 +23,7 @@ import {
   readWorkerSecret,
   BREVO_NEWSLETTER_TEMPLATE_ID_VARS,
   BREVO_ENQUIRY_TEMPLATE_ID_VARS,
-} from "../src/lib/email/config";
+} from "../src/lib/email/config-core";
 import { resolveDispatchTemplates } from "../src/lib/email/dispatch-scope";
 import {
   formatFee,
@@ -31,7 +31,7 @@ import {
   type BookingEmailContext,
   type EmailTemplate,
 } from "../src/lib/email/templates";
-import { createBrevoClient, type BrevoSendResult } from "../src/lib/email/brevo";
+import { createBrevoClient, type BrevoSendResult } from "../src/lib/email/brevo-core";
 import {
   retryDelaySeconds,
   runEmailWorker,

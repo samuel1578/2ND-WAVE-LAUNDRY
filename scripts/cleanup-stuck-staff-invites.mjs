@@ -2,11 +2,38 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
-const TARGET_EMAILS = [
-    "tettehmikael@gmail.com",
-    "samuelbooateng@gmail.com",
-    "2ndwavelaundry@gmail.com",
-];
+const USAGE = `Usage: node scripts/cleanup-stuck-staff-invites.mjs --email <address> [--email <address> ...] [--apply] [--reconcile-confirmed]
+
+Reviews (and with --apply, cleans up) pending/sent staff invitations for the given addresses.
+Dry run is the default; nothing changes without --apply.
+Requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY);
+--apply also requires STAFF_CLEANUP_ACTOR_ID (an active Full Admin's auth user id).`;
+
+/** Addresses from repeated `--email a@b.com` or `--email=a@b.com` arguments. */
+function emailArguments(argv) {
+    const emails = [];
+    for (let i = 0; i < argv.length; i += 1) {
+        const arg = argv[i];
+        if (arg === "--email") {
+            emails.push(argv[i + 1] ?? "");
+            i += 1;
+        } else if (arg.startsWith("--email=")) {
+            emails.push(arg.slice("--email=".length));
+        }
+    }
+    return [...new Set(emails.map((email) => email.trim().toLowerCase()))];
+}
+
+const TARGET_EMAILS = emailArguments(process.argv.slice(2));
+if (TARGET_EMAILS.length === 0 || process.argv.includes("--help")) {
+    console.log(USAGE);
+    process.exit(TARGET_EMAILS.length === 0 ? 2 : 0);
+}
+const invalidEmail = TARGET_EMAILS.find((email) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email));
+if (invalidEmail !== undefined) {
+    console.error(`Not a valid email address: "${invalidEmail}"\n\n${USAGE}`);
+    process.exit(2);
+}
 const APPLY = process.argv.includes("--apply");
 const RECONCILE_CONFIRMED = process.argv.includes("--reconcile-confirmed");
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -144,7 +171,7 @@ async function run() {
         }
     }
 
-    if (!foundCount) console.log("No matching pending/sent invitations were found for the explicit target list.");
+    if (!foundCount) console.log("No matching pending/sent invitations were found for the given addresses.");
     if (!APPLY) console.log("Dry run complete. Review each row, set STAFF_CLEANUP_ACTOR_ID, then rerun with --apply to execute.");
 }
 

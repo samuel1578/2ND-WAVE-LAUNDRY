@@ -389,7 +389,11 @@ function PromotionEditor({ record }: { record?: PromotionRecord }) {
               />
             ) : null}
           </Field>
-          <Field id="promo-image" label="Promotion image">
+          <Field
+            id="promo-image"
+            label="Promotion image"
+            help="JPEG, PNG or WebP. Large images are resized automatically; the upload must be 2 MB or smaller."
+          >
             <input
               id="promo-image"
               type="file"

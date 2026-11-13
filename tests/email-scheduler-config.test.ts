@@ -9,7 +9,7 @@ import {
   VERCEL_CRON_SECRET_VAR,
   BREVO_TEMPLATE_ID_VARS,
   readEmailOperationalConfiguration,
-} from "../src/lib/email/config";
+} from "../src/lib/email/config-core";
 
 test("Vercel Hobby Cron schedules the internal worker once per day", () => {
   const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as {

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { demoMode } from "@/lib/demo-mode";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { isElevatedConfigured } from "@/lib/supabase/admin";
 import { loadPublishedReviews } from "@/lib/reviews/public-service";
+import { fetchPublishedReviewRows } from "@/lib/reviews/public-reader";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,9 +14,10 @@ const NO_STORE = { "Cache-Control": "no-store" } as const;
  * Public published-review list (Sprint 3C).
  *
  * No authentication: this is the same content any visitor may see on
- * `/reviews`. It reads the `security_invoker` view, whose base-table policy
- * exposes only approved, consented, published rows, and it projects that data
- * through the `PublicReview` whitelist. Pending or rejected reviews, the
+ * `/reviews`. The server reads the `published_reviews` view with the secret-key
+ * client (anon has no access to the review tables); the view exposes only
+ * approved, consented, published rows, and the data is projected through the
+ * `PublicReview` whitelist. Pending or rejected reviews, the
  * original submission, moderation notes, source-IP hashes and reply drafts are
  * never selected, so they cannot appear in this payload.
  *
@@ -22,10 +25,10 @@ const NO_STORE = { "Cache-Control": "no-store" } as const;
  * text. `no-store` keeps an unpublish effective immediately.
  */
 export async function GET() {
-  if (demoMode || !isSupabaseConfigured)
+  if (demoMode || !isSupabaseConfigured || !isElevatedConfigured)
     return NextResponse.json({ reviews: [] }, { headers: NO_STORE });
 
-  const result = await loadPublishedReviews();
+  const result = await loadPublishedReviews(fetchPublishedReviewRows);
   if (!result.ok) {
     // Diagnostic only: a stable code and no row data.
     console.warn(`[reviews] public list unavailable code=${result.code}`);

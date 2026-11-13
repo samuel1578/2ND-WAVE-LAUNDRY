@@ -82,7 +82,7 @@ export function MediaAdmin({ id, state }: { id?: string; state?: string }) {
           <Link className="button" href="/admin/media/upload">
             Upload Media
           </Link>
-          <small>WebP, JPEG, PNG · Maximum file size: 5MB per file</small>
+          <small>WebP, JPEG, PNG · Large images are resized automatically; each upload must be 4 MB or smaller</small>
         </Empty>
       )}
     </>
@@ -239,7 +239,7 @@ function MediaEditor({ asset }: { asset?: MediaAsset }) {
               onChange={(event) => select(event.target.files?.[0])}
             />
           </Field>
-          <small>Supported formats: WebP, JPEG, PNG · Maximum file size: 5MB per file</small>
+          <small>Supported formats: WebP, JPEG, PNG · Large images are resized automatically; each upload must be 4 MB or smaller</small>
           {form.name && <p>{form.name}</p>}
           {busy && (
             <>

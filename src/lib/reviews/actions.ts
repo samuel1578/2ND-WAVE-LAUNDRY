@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { revalidatePublicPaths } from "@/lib/website/revalidation";
 import { requireAdmin } from "@/lib/auth/admin";
 import { hasPermission, type Permission } from "@/lib/auth/permissions";
 import { AdminAuthorisationError, type AdminIdentity } from "@/lib/auth/roles";
@@ -126,6 +127,15 @@ function revalidateReview(reviewId: string) {
   revalidatePath("/admin");
 }
 
+/**
+ * Public review pages. The list itself is fetched from the no-store
+ * /api/reviews/public endpoint, so this only refreshes the page shells; called
+ * by every action that can change what is publicly visible.
+ */
+function revalidatePublicReviews() {
+  revalidatePublicPaths(["/reviews", "/reviews/share"]);
+}
+
 /** Approves or rejects a pending review; a rejection requires a recorded reason. */
 export async function moderateReviewAction(input: {
   reviewId: string;
@@ -199,6 +209,7 @@ export async function publishReviewAction(input: {
   if (!result.ok) return failure(result.code);
 
   revalidateReview(input.reviewId);
+  revalidatePublicReviews();
   return {
     ok: true,
     version: result.data.version,
@@ -236,6 +247,7 @@ export async function reopenReviewAction(input: {
   if (!result.ok) return failure(result.code);
 
   revalidateReview(input.reviewId);
+  revalidatePublicReviews();
   return {
     ok: true,
     version: result.data.version,
@@ -299,6 +311,7 @@ export async function publishReplyAction(input: {
   if (!result.ok) return failure(result.code);
 
   revalidateReview(input.reviewId);
+  revalidatePublicReviews();
   return {
     ok: true,
     version: result.data.version,
@@ -343,6 +356,7 @@ export async function overrideReviewAction(input: {
   if (!result.ok) return failure(result.code);
 
   revalidateReview(input.reviewId);
+  revalidatePublicReviews();
   return {
     ok: true,
     version: result.data.version,

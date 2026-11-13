@@ -82,7 +82,6 @@ function invitationStatusLabel(status: string): string {
       accepted: "Accepted",
       failed: "Failed",
       revoked: "Revoked",
-      expired: "Expired",
     }[status] ?? status
   );
 }
