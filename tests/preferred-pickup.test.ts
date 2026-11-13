@@ -1,4 +1,4 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 
 import { mapBookingSummaryRow } from "../src/lib/bookings/admin";
@@ -166,7 +166,7 @@ test("B: a morning selection survives the form, payload, row mapping and both em
       occurredAt: "2026-11-09T08:00:00Z",
       cancellationReason: null,
     },
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
   assert.equal(staff.requestedPickup, "Thursday, 1 January 2099 at 08:30");
 });

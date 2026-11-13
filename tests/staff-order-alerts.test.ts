@@ -1,4 +1,4 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
@@ -58,6 +58,8 @@ const STAFF: StaffNotificationContext = {
   cancellationReason: "Customer requested the cancellation.",
 };
 
+const STAFF_BOOKING_ID = "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
+
 const BASE_KEYS = [
   "actorType",
   "bookingReference",
@@ -67,6 +69,7 @@ const BASE_KEYS = [
   "headerImageAlt",
   "headerImageUrl",
   "privacyUrl",
+  "viewOrderUrl",
   "websiteUrl",
 ];
 
@@ -122,6 +125,7 @@ test("each staff alert renders only the supported parameter set", () => {
   for (const template of staffOrderTemplates) {
     const params = buildStaffOrderTemplateParams(template, CONTEXT, STAFF, {
       siteUrl: "https://2ndwave.example/",
+      bookingId: STAFF_BOOKING_ID,
     });
 
     for (const key of BASE_KEYS) assert.ok(key in params, `${template}: ${key}`);
@@ -134,6 +138,11 @@ test("each staff alert renders only the supported parameter set", () => {
     assert.equal(params.contactUrl, "https://2ndwave.example/contact");
     assert.equal(params.privacyUrl, "https://2ndwave.example/privacy");
     assert.equal(params.bookingReference, CONTEXT.reference);
+    // The direct link uses the persisted booking UUID, never the reference.
+    assert.equal(
+      params.viewOrderUrl,
+      `https://2ndwave.example/admin/bookings/${STAFF_BOOKING_ID}`,
+    );
     assert.equal(params.customerName, CONTEXT.customerName);
     assert.equal(params.serviceSummary, "Wash, iron & fold");
     assert.equal(params.requestedPickup, "Thursday, 1 January 2099 at 09:00");
@@ -183,7 +192,7 @@ test("unknown metadata is omitted rather than fabricated", () => {
       occurredAt: null,
       cancellationReason: null,
     },
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
 
   for (const key of ["serviceSummary", "requestedPickup", "branchName", "previousStatus"])
@@ -194,12 +203,34 @@ test("unknown metadata is omitted rather than fabricated", () => {
   assert.equal(params.customerName, "");
 });
 
+test("a staff alert without a valid booking UUID fails closed", () => {
+  for (const bookingId of [undefined, null, "", CONTEXT.reference]) {
+    assert.throws(() =>
+      buildStaffOrderTemplateParams("staff_order_pending", CONTEXT, STAFF, {
+        siteUrl: "https://2ndwave.example",
+        bookingId,
+      }),
+    );
+  }
+});
+
+test("a controlled template test never links to a real booking", () => {
+  const params = buildStaffOrderTemplateParams("staff_order_ready", CONTEXT, STAFF, {
+    siteUrl: "https://2ndwave.example",
+    isTest: true,
+  });
+  assert.equal(
+    params.viewOrderUrl,
+    "https://2ndwave.example/admin/bookings/00000000-0000-4000-8000-000000000000",
+  );
+});
+
 test("a newly placed order never claims a previous lifecycle status", () => {
   const params = buildStaffOrderTemplateParams(
     "staff_order_pending",
     CONTEXT,
     { ...STAFF, previousStatus: "processing" },
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
 
   assert.equal("previousStatus" in params, false);
@@ -211,7 +242,7 @@ test("only a recorded cancellation carries the cancellation reason", () => {
     "staff_order_cancelled",
     CONTEXT,
     { ...STAFF, cancellationReason: null },
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
   assert.equal("cancellationReason" in withoutReason, false);
 
@@ -219,7 +250,7 @@ test("only a recorded cancellation carries the cancellation reason", () => {
     "staff_order_cancelled",
     CONTEXT,
     { ...STAFF, cancellationReason: "  Customer\n requested  cancellation. " },
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
   assert.equal(withReason.cancellationReason, "Customer requested cancellation.");
 
@@ -228,7 +259,7 @@ test("only a recorded cancellation carries the cancellation reason", () => {
     "staff_order_processing",
     CONTEXT,
     STAFF,
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
   assert.equal("cancellationReason" in processing, false);
 });
@@ -243,7 +274,7 @@ test("actor roles and statuses use deliberate labels", () => {
     "staff_order_completed",
     CONTEXT,
     { ...STAFF, actorRole: "operational_admin" },
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
   assert.equal(operational.actorRole, "Operational administrator");
 
@@ -251,7 +282,7 @@ test("actor roles and statuses use deliberate labels", () => {
     "staff_order_completed",
     CONTEXT,
     { ...STAFF, actorRole: "owner" },
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
   assert.equal("actorRole" in unknownRole, false);
 
@@ -259,7 +290,7 @@ test("actor roles and statuses use deliberate labels", () => {
     "staff_order_pending",
     CONTEXT,
     { ...STAFF, actorType: "customer", actorName: "Ama Mensah", actorRole: null },
-    { siteUrl: "https://2ndwave.example" },
+    { siteUrl: "https://2ndwave.example", bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" },
   );
   assert.equal(customerActor.actorType, "Customer");
   assert.equal(customerActor.actorName, "Ama Mensah");
@@ -439,7 +470,8 @@ function workerDeps(
 }
 
 test("the worker sends a staff alert with the staff template id and contract", async () => {
-  const { repository, calls } = makeRepository([staffRow()]);
+  const row = staffRow();
+  const { repository, calls } = makeRepository([row]);
   const sent: Array<Parameters<EmailWorkerDeps["provider"]["send"]>[0]> = [];
 
   const result = await runEmailWorker(
@@ -467,6 +499,11 @@ test("the worker sends a staff alert with the staff template id and contract", a
   assert.equal(
     payload.params.headerImageUrl,
     "https://2ndwave.example/headers/admin-order-processing.jpeg",
+  );
+  // The worker links to the exact booking using the outbox UUID.
+  assert.equal(
+    payload.params.viewOrderUrl,
+    `https://2ndwave.example/admin/bookings/${row.bookingId}`,
   );
   assert.equal(calls.sent.length, 1);
   if (result.ok) assert.equal(result.sent, 1);

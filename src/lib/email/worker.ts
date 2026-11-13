@@ -71,6 +71,7 @@ const MAX_LEASE_SECONDS = 900;
 const RETRY_BASE_SECONDS = 60;
 const RETRY_CAP_SECONDS = 900;
 const RETRY_JITTER_SECONDS = 30;
+const STAFF_TEMPLATE_TEST_BOOKING_ID = "00000-0000-4000-8000-000";
 
 export type EmailWorkerDeps = {
   enabled: boolean;
@@ -524,7 +525,11 @@ export async function runEmailWorker(
           row.template,
           renderContext,
           staffContext,
-          { siteUrl: deps.siteUrl },
+          {
+            siteUrl: deps.siteUrl,
+            bookingId: row.bookingId,
+            isTest: row.isTest,
+          },
         );
       } else {
         params = buildBrevoTemplateParams(row.template, renderContext, {

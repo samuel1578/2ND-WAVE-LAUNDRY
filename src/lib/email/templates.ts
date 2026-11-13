@@ -104,23 +104,23 @@ export const EMAIL_TEMPLATE_PARAM_CONTRACTS: Record<
     optional: ["serviceSummary", "requestedPickup"],
   },
   staff_order_pending: {
-    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt", "viewOrderUrl"],
     optional: ["serviceSummary", "requestedPickup", "branchName", "eventAt", "actorName", "actorRole"],
   },
   staff_order_processing: {
-    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt", "viewOrderUrl"],
     optional: ["serviceSummary", "requestedPickup", "branchName", "previousStatus", "eventAt", "actorName", "actorRole"],
   },
   staff_order_ready: {
-    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt", "viewOrderUrl"],
     optional: ["serviceSummary", "requestedPickup", "branchName", "previousStatus", "eventAt", "actorName", "actorRole"],
   },
   staff_order_completed: {
-    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt", "viewOrderUrl"],
     optional: ["serviceSummary", "requestedPickup", "branchName", "previousStatus", "eventAt", "actorName", "actorRole"],
   },
   staff_order_cancelled: {
-    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt"],
+    required: ["customerName", "bookingReference", "bookingStatus", "actorType", "websiteUrl", "contactUrl", "privacyUrl", "headerImageUrl", "headerImageAlt", "viewOrderUrl"],
     optional: ["serviceSummary", "requestedPickup", "branchName", "previousStatus", "eventAt", "actorName", "actorRole", "cancellationReason"],
   },
   newsletter_interest_received: {
@@ -194,6 +194,13 @@ export type BrevoBookingTemplateParams = Record<string, string>;
 export type RenderEmailOptions = {
   /** Validated public site origin, without a trailing slash. */
   siteUrl: string;
+};
+
+export type StaffRenderEmailOptions = RenderEmailOptions & {
+  /** Existing booking UUID associated with the outbox row. */
+  bookingId?: string | null;
+  /** True only for a controlled test using the fixed, non-database fixture. */
+  isTest?: boolean;
 };
 
 const TEMPLATE_STATUS: Record<EmailTemplate, string> = {
@@ -424,6 +431,8 @@ const STAFF_ACTOR_TYPE_LABEL: Record<StaffActorType, string> = {
   system: "System",
 };
 
+const BOOKING_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const STAFF_ACTOR_ROLE_LABEL: Record<string, string> = {
   full_admin: "Full administrator",
   operational_admin: "Operational administrator",
@@ -438,15 +447,25 @@ export function formatStaffStatus(status: BookingStatus | null): string | null {
  * Builds the staff alert parameter contract. Optional metadata is omitted rather
  * than fabricated: an unknown actor, an absent previous status or a missing
  * branch simply does not appear in the message.
+ *
+ * `viewOrderUrl` is the direct administrator link built from the persisted booking
+ * UUID on the outbox row, never from the human-readable reference. A normal alert
+ * without a UUID fails closed; only a controlled template test, which has no
+ * booking, falls back to an all-zero sample UUID that matches no record.
  */
 export function buildStaffOrderTemplateParams(
   template: StaffOrderTemplate,
   context: BookingEmailContext,
   staff: StaffNotificationContext,
-  options: RenderEmailOptions,
+  options: StaffRenderEmailOptions,
 ): BrevoBookingTemplateParams {
   if (!isStaffOrderTemplate(template))
     throw new Error("Unknown staff alert template.");
+  const bookingId = options.isTest && !options.bookingId
+    ? "00000000-0000-4000-8000-000000000000"
+    : options.bookingId;
+  if (typeof bookingId !== "string" || !BOOKING_UUID_PATTERN.test(bookingId))
+    throw new Error("A valid booking UUID is required for the staff order link.");
 
   const siteUrl = options.siteUrl.replace(/\/+$/, "");
   const params: BrevoBookingTemplateParams = {
@@ -459,6 +478,7 @@ export function buildStaffOrderTemplateParams(
     privacyUrl: `${siteUrl}/privacy`,
     headerImageUrl: `${siteUrl}/headers/${STAFF_HEADER_ASSETS[template]}`,
     headerImageAlt: STAFF_HEADER_ALT[template],
+    viewOrderUrl: `${siteUrl}/admin/bookings/${bookingId}`, 
   };
 
   const serviceSummary = context.serviceTitles

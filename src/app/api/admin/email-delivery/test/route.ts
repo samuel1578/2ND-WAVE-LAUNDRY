@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
         template as Extract<NotificationTemplate, `staff_order_${string}`>,
         TEST_CONTEXT,
         TEST_STAFF,
-        { siteUrl: config.config.siteUrl },
+        { siteUrl: config.config.siteUrl, isTest: true },
       )
       : buildBrevoTemplateParams(
         template as Exclude<

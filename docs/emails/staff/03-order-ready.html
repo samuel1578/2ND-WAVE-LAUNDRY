@@ -5,7 +5,7 @@ Suggested preview: Order {{ params.bookingReference }} is ready for the next ste
 Audience: the enabled addresses in public.booking_alert_recipients.
 
 Required parameters: bookingReference, bookingStatus, actorType, websiteUrl,
-  contactUrl
+  contactUrl, viewOrderUrl (direct admin link built from the booking UUID)
 Optional parameters: customerName, serviceSummary, requestedPickup, branchName,
   previousStatus, eventAt, actorName, actorRole, cancellationReason
 
@@ -40,7 +40,7 @@ The subject and preview belong in the Brevo template settings, not the HTML.
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0"
           style="width:100%;max-width:600px;background-color:#FFFFFF;border:1px solid #D9E7EF;border-radius:16px;overflow:hidden;">
           <tr>
-            <td style="padding:0;"><img src="https://2ndwave.vercel.app/headers/admin-order-ready.jpeg" width="600"
+            <td style="padding:0;"><img src="https://www.2ndwavelaundry.com/headers/admin-order-ready.jpeg" width="600"
                 alt="Order ready — 2nd Wave Laundry Services"
                 style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;">
             </td>
@@ -101,6 +101,13 @@ The subject and preview belong in the Brevo template settings, not the HTML.
                   </td>
                 </tr>
               </table>
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:22px 0 20px;">
+                <tr>
+                  <td align="center" bgcolor="#0B80CA" style="border-radius:8px;"><a href="{{ params.viewOrderUrl }}"
+                      style="display:inline-block;padding:14px 22px;border:1px solid #0B80CA;border-radius:8px;color:#FFFFFF;font-size:14px;font-weight:700;letter-spacing:0.6px;line-height:1.4;text-decoration:none;text-transform:uppercase;">View Order</a>
+                  </td>
+                </tr>
+              </table>
               <p style="margin:22px 0 0;color:#526477;font-size:15px;line-height:1.65;">This is an internal operations
                 alert for the 2nd Wave team. Please do not forward it.</p>
             </td>
@@ -108,8 +115,8 @@ The subject and preview belong in the Brevo template settings, not the HTML.
           <tr>
             <td align="center" bgcolor="#EDF4FF"
               style="padding:22px 24px;background:#EDF4FF;background-color:#EDF4FF;border-top:1px solid #D9E7EF;">
-              <a href="https://2ndwave.vercel.app/" style="display:inline-block;text-decoration:none;"><img
-                  src="https://2ndwave.vercel.app/images/logo.png" width="76" height="76"
+              <a href="https://www.2ndwavelaundry.com/" style="display:inline-block;text-decoration:none;"><img
+                  src="https://www.2ndwavelaundry.com/images/logo.png" width="76" height="76"
                   alt="2nd Wave Laundry Services"
                   style="display:block;width:76px;height:76px;border:0;outline:none;text-decoration:none;"></a>
               <p style="margin:12px 0 4px;color:#102B51;font-size:14px;font-weight:700;line-height:1.5;">2nd Wave

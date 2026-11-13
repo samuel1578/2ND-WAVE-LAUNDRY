@@ -1,4 +1,4 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
@@ -39,7 +39,7 @@ const templates = [
 test("all customer and staff template builders satisfy their declared contracts", () => {
   for (const template of templates) {
     const params = template.startsWith("staff_order_")
-      ? buildStaffOrderTemplateParams(template as `staff_order_${"pending" | "processing" | "ready" | "completed" | "cancelled"}`, context, staff, { siteUrl })
+      ? buildStaffOrderTemplateParams(template as `staff_order_${"pending" | "processing" | "ready" | "completed" | "cancelled"}`, context, staff, { siteUrl, bookingId: "8f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f" })
       : buildBrevoTemplateParams(template as "booking_created" | "booking_confirmed" | "booking_processing_started" | "booking_ready" | "booking_completed" | "booking_cancelled", context, { siteUrl });
     assert.doesNotThrow(() => validateEmailTemplateParams(template, params), template);
   }
